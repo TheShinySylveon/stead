@@ -16,6 +16,9 @@ __pycache__/
 stead.json
 .env
 
+# Hallmark redesign records. Not the product.
+.hallmark/
+
 # OS noise
 .DS_Store
 Thumbs.db

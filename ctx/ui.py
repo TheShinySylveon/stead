@@ -26,16 +26,29 @@ PAGE_PATH = PKG_DIR / "cockpit.html"
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
 _GATE_PAGE = b"""<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Stead</title>
+<meta name="description" content="Enter the shared-server access token. It is not stored in git.">
 <style>
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
-    background: #f3efe6; color: #1c1915; font: 16px/1.5 "Segoe UI", sans-serif; }
-  form { width: min(420px, 92vw); background: #fffdf9; border: 1px solid #e3d9cc;
-    border-radius: 16px; padding: 28px; }
-  h1 { font: 500 32px/1.1 Georgia, serif; margin: 0 0 8px; }
-  p { color: #6f675e; }
+  /* Hallmark: shape app screen, theme Console, redesign full, v2.0.0 */
+  :root {
+    --color-paper: oklch(17% 0.008 250); --color-paper-2: oklch(21% 0.009 250); --color-paper-3: oklch(13.5% 0.007 250);
+    --color-ink: oklch(95% 0.005 250); --color-muted: oklch(71% 0.01 250);
+    --color-rule: oklch(31% 0.01 250);
+    --color-accent: oklch(82% 0.15 80); --color-accent-ink: oklch(18% 0.04 75); --color-focus: oklch(82% 0.15 80);
+    --font-body: "Host Grotesk", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+  }
+  html, body { margin: 0; min-height: 100%; overflow-x: clip; }
+  body { display: grid; place-items: center; background: var(--color-paper); color: var(--color-ink);
+    font: 1rem/1.55 var(--font-body); }
+  form { width: min(420px, 92vw); background: var(--color-paper-2); border: 1px solid var(--color-rule);
+    border-radius: 10px; padding: 24px; }
+  h1 { font: 500 1.728rem/1.05 var(--font-body); letter-spacing: -0.03em; margin: 0 0 8px; text-wrap: balance; }
+  p { color: var(--color-muted); }
   input, button { font: inherit; width: 100%; box-sizing: border-box; margin-top: 8px;
-    padding: 8px 10px; border-radius: 8px; }
-  button { background: #1f6b4a; color: white; border: 0; cursor: pointer; }
+    padding: 8px 12px; border-radius: 6px; min-height: 36px; }
+  input { background: var(--color-paper-3); color: var(--color-ink); border: 1px solid var(--color-rule); }
+  button { background: var(--color-accent); color: var(--color-accent-ink); border: 1px solid var(--color-accent); cursor: pointer; }
+  button:disabled { opacity: 0.45; cursor: not-allowed; }
+  :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
 </style></head>
 <body>
 <form method="POST" action="/api/session">
