@@ -23,10 +23,11 @@ own projects and the open-source projects you contribute to (one cockpit):
    has one logical home.
 2. **Factories** — specific, shared, scrutinized AI workflows under
    `factories/<name>/`. Each has versioned prompts, evals, and run logs.
-   The first factory is `weekly-contribution-digest`; `weekly-project-status`
-   remains available for own projects. The third, `feature-builder`, turns an
-   authored feature spec into an autonomous issue→PR build (shadow/draft-PR only,
-   always planning-first; see `docs/spec-kit-workflow.md`).
+   `weekly-contribution-digest` covers OSS and own-project PRs.
+   `weekly-project-status` drafts one project's status. `feature-builder` turns
+   an authored feature spec into a planning-first issue→PR build.
+   `context-maintenance` drafts a triage note for the inbox, broken relations,
+   stale objects, and duplicate titles. See `docs/spec-kit-workflow.md`.
 
 ## Layout
 
@@ -47,17 +48,22 @@ context/
   actors/            <- humans and agents who write here (kind: human|agent)
 inbox/               <- unsorted capture; triage it, don't let it rot
 factories/
-  weekly-contribution-digest/   <- first factory (OSS + own-project digest)
+  weekly-contribution-digest/   <- OSS + own-project digest
   weekly-project-status/        <- own-project status updates
-  feature-builder/              <- issue->PR autonomous build (shadow/draft-PR)
+  feature-builder/              <- issue->PR planning-first build
+  context-maintenance/          <- inbox, relations, stale, duplicates
     FACTORY.md       <- trigger, inputs, stages, outputs, risk level
     prompts/v2.md    <- versioned prompt (production; v1 retired)
     evals/           <- test cases + pass criteria (JSON)
     runs/            <- one directory per run: bundle.md, prompt.md, run.json
-ctx/                 <- Python stdlib-only CLI package (python -m stead)
+ctx/                 <- Python stdlib-only package (python -m stead)
   ui.py              <- localhost cockpit (stead ui); cockpit.html is the page
   schema.sql         <- SQLite schema; state.db is rebuilt from this
   sync.py            <- read-only GitHub sync via gh subprocess
+  deliver.py         <- file an approved run as a document
+  schedule.py        <- the Friday local jobs
+stead/               <- the `python -m stead` package entry
+private/             <- GITIGNORED; shared-server account hashes
 state.db             <- GITIGNORED, rebuildable operational index (stead init)
 ```
 

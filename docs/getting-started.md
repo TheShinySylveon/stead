@@ -53,8 +53,9 @@ files still have your notes. `python -m stead init` rebuilds the index.
 | `context/` | Your notes. Empty until the first run. Includes `actors/` once you add people or agents. |
 | `inbox/` | Unsorted capture. File it into `context/` or delete it. |
 | `examples/context/` | Samples. Not part of your data. |
-| `factories/` | The three workflows: digest, project status, feature builder. |
-| `ctx/` | The CLI and the cockpit. |
+| `factories/` | The four workflows: digest, project status, feature builder, context maintenance. |
+| `ctx/` | The implementation package. The command is `stead`. |
+| `private/` | Gitignored. Shared-server account hashes. Created on the first `account add`. |
 | `docs/` | These pages. |
 
 ## Tests

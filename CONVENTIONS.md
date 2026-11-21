@@ -41,6 +41,8 @@ Optional fields:
 - `tags:` — inline list of free labels.
 - `actor:` — id of the human or agent that last wrote the object. Optional.
   Does not change `created` or `id`.
+- `source_run:` — the run id a document was filed from. Set by
+  `stead run file`. Optional, and never edited by hand.
 
 ### Repo fields (`context/repos/`)
 

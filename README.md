@@ -32,6 +32,8 @@ A fresh checkout shows Welcome instead.
 - A local cockpit in the browser, or the same actions from the CLI.
 - Four factories that assemble a prompt. `--generate` drafts with the model
   you configure. The default still calls nothing.
+- A weekly local job that syncs read-only and drafts, plus `stead run file` to
+  keep an approved draft as a private document.
 - A first-run choice: this computer, or a shared Docker server where each person signs in.
 
 Docs: [docs/README.md](docs/README.md).
@@ -105,6 +107,12 @@ python -m stead sync github --limit 30    # read-only, needs gh
 python -m stead sync github --digest      # assemble only if the cache changed
 python -m stead digest                    # shadow digest
 python -m stead schedule show             # the Friday local jobs
+```
+
+An approved digest or status becomes a private document:
+
+```bash
+python -m stead run file --run 7
 ```
 
 More: [docs/factories.md](docs/factories.md) and

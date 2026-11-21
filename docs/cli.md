@@ -66,7 +66,7 @@ python -m stead contribution set ID [--state S] [--ci C] [--review R] \
 `method` chooses tooling for feature-builder. It does not turn planning off.
 Omitted, it is `spec-kit`.
 
-## Status and GitHub
+## People, status, and GitHub
 
 ```bash
 python -m stead actor add --title "Ada" --kind human|agent
@@ -79,18 +79,11 @@ python -m stead account reset --name ada
 python -m stead status PROJECT
 python -m stead sync github [--author @me] [--limit N] [--digest]
 python -m stead sync github --offline
-python -m stead schedule show [--project P]
-python -m stead schedule install [--project P]```
+```
 
 `sync github` is read-only. It uses `gh`. `--offline` only re-indexes files
 already on disk. `--digest` assembles the digest only when the cache changed.
 It still does not post.
-
-`schedule show` prints the Friday command for cron or Task Scheduler.
-`schedule install` creates the current user's Windows task. It runs a
-read-only sync, a local digest if the cache changed, a maintenance draft, and
-the status of `--project` when you pass one. It does not push or merge. On
-other systems, use `show`.
 
 `actor use` remembers who is writing on this computer. Later writes stamp
 `actor:` when that file exists. `account add` is a shared-server sign-in for
@@ -98,34 +91,26 @@ one actor. The password is printed once and stored as a hash in gitignored
 `private/accounts.json`. `account list` never prints it. This computer does
 not ask for that password.
 
-## Factories and prompts
+Scheduling is under [Capture and schedule](#capture-and-schedule).
+
+## Factories and models
 
 ```bash
 python -m stead model show
 python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME [--base-url URL] [--key KEY]
+
 python -m stead factory run --factory weekly-contribution-digest [--shadow|--live] [--generate]
 python -m stead factory run --factory weekly-project-status --project P [--shadow|--live] [--generate]
-python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge]
-python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr]
-python -m stead factory new --name NAME --title "What it drafts"
-python -m stead factory run --factory context-maintenance --shadow
-python -m stead inbox import PATH
-python -m stead hook set
-python -m stead hook show
-python -m stead factory watch
-python -m stead factory publish --contribution ID
-python -m stead factory merge --contribution ID
-python -m stead repo set ID --path DIR
+python -m stead factory run --factory context-maintenance [--shadow|--live] [--generate]
 python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live] [--generate] [--reach REACH]
 python -m stead digest [--generate]
+python -m stead factory new --name NAME --title "What it drafts"
+python -m stead factory watch
+python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr]
+python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge] [--path DIR]
+
 python -m stead eval run [--factory F]
 python -m stead eval judge --factory F --case ID --output PATH [--prompt-version V]
-
-python -m stead run log --factory F --task REF --prompt-version V \
-    [--output TEXT] [--verdict approved|rejected]
-python -m stead run file --run ID [--title T]
-python -m stead prompt list --factory F
-python -m stead prompt promote --factory F --version V
 ```
 
 `factory run` and `digest` assemble a prompt. They call a model only with
@@ -135,9 +120,55 @@ raise the ceiling and it does not open a pull request. `--reach` is
 feature-builder only. It cannot exceed the repo ceiling. Merge is not an
 install default. See [Models](models.md).
 
-`prompt promote` marks one version production and retires the previous one.
-It refuses until every eval case has a recorded pass for that version. Judge
-with `--prompt-version` first. Old prompt files are kept.
+`factory new` writes `FACTORY.md`, `prompts/v1.md`, and one eval. Run
+`stead init` after that so the prompt is indexed.
+
+## Capture and schedule
+
+```bash
+python -m stead inbox import PATH
+python -m stead hook set
+python -m stead hook show
+python -m stead schedule show [--project P]
+python -m stead schedule install [--project P]
+```
+
+`inbox import` copies a local `.eml`, `.ics`, `.md`, or `.txt` file into
+`inbox/`. It does not write `context/`. `hook set` prints a token once.
+`POST /hook` with header `X-Stead-Hook` captures one inbox note and does not
+run a factory. The hook is off until that token exists.
+
+`schedule show` prints the Friday command for cron or Task Scheduler.
+`schedule install` creates the current user's Windows task. The job runs a
+read-only sync, a local digest if the cache changed, a maintenance draft, and
+the status of `--project` when you pass one. It does not push or merge.
+
+## Publishing and merging
+
+```bash
+python -m stead factory publish --contribution ID
+python -m stead factory merge --contribution ID
+```
+
+`factory publish` pushes the checkout's current branch and opens a pull
+request. The branch must not be the default, and it must be ahead of that
+default. Set `code_path` with `repo set --path` first. The ceiling must be
+`draft-pr`, `pr`, or `merge`. This command does not merge.
+
+`factory merge` is separate. The repo file must say `reach: merge`. The pull
+request must be open, and the checks must be green. It does not pass
+`--admin`, and it does not push the default branch. A factory run does not
+call it.
+
+## Runs and prompts
+
+```bash
+python -m stead run log --factory F --task REF --prompt-version V \
+    [--output TEXT] [--verdict approved|rejected]
+python -m stead run file --run ID [--title T]
+python -m stead prompt list --factory F
+python -m stead prompt promote --factory F --version V
+```
 
 `run file` writes an approved digest or project status into
 `context/documents/` as a private document. It refuses a pending or rejected
@@ -145,22 +176,9 @@ run, a run whose prompt version is not production, an empty draft, and a
 feature-builder run. It never posts, pushes, or merges. Filing the same run
 twice is refused.
 
-`factory new` writes `FACTORY.md`, `prompts/v1.md`, and one eval. Run
-`stead init` after that so the prompt is indexed. `inbox import` copies a
-local `.eml`, `.ics`, `.md`, or `.txt` file into `inbox/`. It does not write
-`context/`. `hook set` prints a token once. `POST /hook` with header
-`X-Stead-Hook` captures one inbox note and does not run a factory. The hook
-is off until that token exists.
-
-`factory publish` pushes the checkout's current branch and opens a pull
-request. The branch must not be the default, and it must be ahead of that
-default. The repo ceiling must be `draft-pr`, `pr`, or `merge`. Set
-`code_path` with `repo set --path` first. This command does not merge.
-
-`factory merge` is separate. The repo file must say `reach: merge`. The pull
-request must be open, and the checks must be green. It does not pass
-`--admin`, and it does not push the default branch. A factory run does not
-call it.
+`prompt promote` marks one version production and retires the previous one.
+It refuses until every eval case has a recorded pass for that version. Judge
+with `--prompt-version` first. Old prompt files are kept.
 
 ## Tests
 

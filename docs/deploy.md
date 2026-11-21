@@ -79,6 +79,9 @@ token, add a sign-in, and add actors (`kind: human` or `kind: agent`).
 python -m stead actor add --title "Ada" --kind human
 python -m stead actor add --title "Review bot" --kind agent
 python -m stead actor list
+python -m stead account add --name ada --actor actor-ada
+python -m stead account list
+python -m stead account reset --name ada
 ```
 
 Actors are attribution. An account is the sign-in for one actor on a shared

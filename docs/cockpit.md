@@ -15,8 +15,8 @@ On this computer the server refuses any address except loopback
 The page has no external fonts or scripts. It works offline.
 
 Writes go through the same rules as the CLI. Markdown stays the source of
-truth. The page never calls a model, and it never pushes or opens a pull
-request.
+truth. The page calls a model only when you check **Draft with model**. It
+never pushes, opens a pull request, or merges.
 
 ## First visit
 
@@ -59,6 +59,10 @@ to any agent. Come back and approve or reject the run on Home.
 Draft pull requests are not a button. `stead factory publish` opens one
 from an isolated branch. `stead factory merge` is a separate command, and
 only when that repo says `reach: merge`. The cockpit does not push or merge.
+
+An approved digest or status can be filed as a private document with
+`stead run file --run ID`. That is a CLI step on purpose. The cockpit has no
+file button.
 
 ## Stopping it
 

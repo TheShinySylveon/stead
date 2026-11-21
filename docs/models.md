@@ -51,6 +51,7 @@ python -m stead factory run --factory feature-builder --contribution ID --genera
 That writes `output.md` next to `bundle.md` and `prompt.md`. The draft is
 text. Stead does not run it, post it, push it, or open a pull request.
 `--live` only changes the run label. A person still approves or rejects it.
+An approved digest or status can be filed with `stead run file --run ID`.
 
 In the cockpit, check **Draft with model** on the Factories page.
 

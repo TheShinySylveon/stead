@@ -53,6 +53,7 @@ A factory is a folder under `factories/<name>/`: a definition, versioned
 prompts, evals, and run logs. `stead factory run` assembles a bundle and a
 prompt. It does not generate the answer. You hand `prompt.md` to an agent and
 record the verdict with `stead run log`, or with Approve / Reject in the cockpit.
+An approved digest or status can then be filed with `stead run file --run ID`.
 
 Shadow mode is the default. It drafts locally. It does not push or open a
 pull request. See [Factories](factories.md).

@@ -20,7 +20,7 @@ the copyright in code you write.
 
 - [Cockpit](cockpit.md) — the local browser UI.
 - [CLI](cli.md) — every `stead` command.
-- [Factories](factories.md) — the three workflows, and why a draft is not a merge.
+- [Factories](factories.md) — the four workflows, scheduling, and why a draft is not a merge.
 - [Models](models.md) — the optional OpenAI-compatible endpoint factories draft with.
 - [Spec Kit](spec-kit-workflow.md) — planning before code, and `stead onboard`.
 

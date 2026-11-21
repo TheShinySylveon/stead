@@ -72,6 +72,16 @@ decomposition instead of being built. `method` on the spec is `spec-kit` or
 `builtin`. Both plan before code. Only the tooling changes. See
 [Spec Kit](spec-kit-workflow.md).
 
+### context-maintenance
+
+A triage note for one checkout: inbox notes waiting, relations that point at a
+missing object, objects unchanged for over 30 days, and titles that appear
+twice. The draft recommends; it never edits, merges, or deletes.
+
+```bash
+python -m stead factory run --factory context-maintenance --shadow
+```
+
 ## Shadow and the ceiling
 
 Shadow is the only mode the cockpit offers, and the default on the CLI.
@@ -111,9 +121,22 @@ call it. See
 
 ## Scheduling
 
-There is no built-in timer. Any scheduler can run the CLI:
+`stead schedule` wires the weekly local jobs. It is still just the CLI, so any
+scheduler can run it.
 
 ```bash
-python -m stead sync github --limit 30
-python -m stead factory run --factory weekly-contribution-digest --shadow
+python -m stead schedule show                 # print the command
+python -m stead schedule show --project P     # add a status draft
+python -m stead schedule install              # Windows, current user
+```
+
+The job runs a read-only GitHub sync, the digest only if the cache changed, the
+maintenance draft, and the status of `--project` when you pass one. Nothing is
+posted, pushed, or merged.
+
+For any other scheduler, use the same shape:
+
+```bash
+python -m stead sync github --limit 30 --digest
+python -m stead factory run --factory context-maintenance --shadow
 ```
