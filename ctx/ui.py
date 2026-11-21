@@ -83,9 +83,15 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
         "path": _rel(root, path),
     }
     for key in ("status", "project", "repo", "kind", "url", "role", "state",
-                "ci", "review", "method", "number"):
+                "ci", "review", "method", "number", "trigger", "reach"):
         if meta.get(key) not in (None, ""):
             item[key] = meta[key]
+    if otype == "repo":
+        from ctx.autonomy import effective
+        policy = effective(root, meta)
+        item["factory_trigger"] = policy["trigger"]
+        item["factory_reach"] = policy["ceiling"]
+        item["merge_explicit"] = policy["merge_explicit"]
     tags = _tags(meta)
     if tags:
         item["tags"] = tags
@@ -204,6 +210,11 @@ def _needs_welcome(root: Path) -> bool:
     return needs_welcome(root)
 
 
+def _factory_defaults(root: Path) -> dict:
+    from ctx.autonomy import factory_defaults
+    return factory_defaults(root)
+
+
 def _model_view(root: Path) -> dict:
     from ctx.models import public_model
     try:
@@ -275,6 +286,7 @@ def snapshot(root: Path) -> dict:
         "first_run": _needs_welcome(root),
         "deployment": _deployment_view(root),
         "model": _model_view(root),
+        "factory": _factory_defaults(root),
         "actors": _list(root, "actor"),
         "counts": {
             "open_tasks": open_tasks,
@@ -303,6 +315,9 @@ def snapshot(root: Path) -> dict:
             "project_status": list(PROJECT_STATUSES),
             "repo_kind": list(cli.REPO_KINDS),
             "repo_status": list(cli.REPO_STATUSES),
+            "factory_trigger": ["on-demand", "watch"],
+            "factory_reach": ["shadow", "draft-pr", "pr", "merge"],
+            "factory_reach_install": ["shadow", "draft-pr", "pr"],
         },
     }
 
@@ -572,6 +587,18 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
             raise UiError(f"invalid kind {payload['kind']!r}")
         meta["kind"] = payload["kind"]
         changed = True
+    if payload.get("trigger"):
+        from ctx.autonomy import TRIGGERS
+        if payload["trigger"] not in TRIGGERS:
+            raise UiError(f"invalid trigger {payload['trigger']!r}")
+        meta["trigger"] = payload["trigger"]
+        changed = True
+    if payload.get("reach"):
+        from ctx.autonomy import REACHES
+        if payload["reach"] not in REACHES:
+            raise UiError(f"invalid reach {payload['reach']!r}")
+        meta["reach"] = payload["reach"]
+        changed = True
     if "notes" in payload:
         notes = (payload.get("notes") or "").strip()
         if len(notes) > 400:
@@ -747,6 +774,9 @@ def _public_run(info: dict) -> dict:
         "flags": info.get("flags") or [],
         "generated": bool(info.get("generated")),
         "output_path": info.get("output_path") or "",
+        "reach": info.get("reach") or "",
+        "ceiling": info.get("ceiling") or "",
+        "remote": info.get("remote") or "",
     }
 
 
@@ -790,7 +820,8 @@ def shadow_run(root: Path, payload: dict) -> dict:
         if name == factory.FEATURE_BUILDER_FACTORY:
             if not payload.get("contribution"):
                 raise UiError("feature-builder needs a contribution")
-            info = factory.assemble_feature_build(root, payload["contribution"], mode="shadow")
+            info = factory.assemble_feature_build(
+                root, payload["contribution"], mode="shadow", reach=payload.get("reach") or None)
         elif name == factory.DIGEST_FACTORY:
             info = factory.assemble_digest(root, mode="shadow")
         else:
@@ -913,6 +944,17 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = delete_inbox(root, payload.get("name") or "")
         elif path == "/api/sync":
             result = sync_github(root, bool(payload.get("offline")))
+        elif path == "/api/factory/defaults":
+            from ctx.autonomy import AutonomyError, set_defaults
+            try:
+                result = set_defaults(
+                    root,
+                    trigger=payload.get("trigger") or None,
+                    reach=payload.get("reach") or None,
+                )
+                result["ok"] = True
+            except AutonomyError as exc:
+                raise UiError(str(exc)) from exc
         elif path == "/api/model":
             from ctx.models import ModelError, set_model
             try:

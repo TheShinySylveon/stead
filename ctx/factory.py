@@ -323,6 +323,32 @@ def spec_flags(description: str, criteria: list[tuple[bool, str]]) -> list[str]:
     return flags
 
 
+_REACH_SAFETY = {
+    "shadow": (
+        "Mode: **SHADOW** (default). Propose a plan and a proposed diff ONLY.\n"
+        "NO remote writes of any kind: no push, no branch creation on the remote,\n"
+        "no PR/issue/comment/label creation. All output stays local for human review."
+    ),
+    "draft-pr": (
+        "Mode: **DRAFT-PR**. You may push an isolated feature branch and open\n"
+        "a DRAFT PR via `gh pr create --draft` with passing tests. A HUMAN reviews\n"
+        "and merges. NEVER push to the default branch, NEVER merge, NEVER mark the\n"
+        "PR ready-for-review without explicit human approval."
+    ),
+    "pr": (
+        "Mode: **PULL REQUEST**. You may push an isolated feature branch and open\n"
+        "a pull request that is not a draft. A HUMAN reviews and merges.\n"
+        "NEVER push to the default branch. NEVER merge."
+    ),
+    "merge": (
+        "Mode: **MERGE**. This repo explicitly allows a merge. Never the default.\n"
+        "You may push an isolated feature branch and merge only after the checks\n"
+        "are actually green and branch protection allows it. NEVER push to the\n"
+        "default branch. NEVER merge a red or pending check."
+    ),
+}
+
+
 _MODE_SAFETY = {
     "shadow": (
         "Mode: **SHADOW** (default). Propose a plan and a proposed diff ONLY.\n"
@@ -339,7 +365,7 @@ _MODE_SAFETY = {
 
 
 def assemble_feature_build(root: Path, contribution_ref: str,
-                           mode: str = "shadow") -> dict:
+                           mode: str = "shadow", reach: str | None = None) -> dict:
     """Deterministically assemble the feature-builder bundle for one spec.
 
     Inputs (all local files, no network, no LLM): the spec contribution
@@ -368,6 +394,12 @@ def assemble_feature_build(root: Path, contribution_ref: str,
         raise SystemExit(f"repo not found: {repo_ref!r} — add it with `ctx repo add` first")
     repo_path, repo_meta, repo_body = repo_found
     repo_id = repo_meta["id"]
+    from ctx.autonomy import AutonomyError, effective, permit
+    policy = effective(root, repo_meta)
+    try:
+        requested = permit(policy, reach)
+    except AutonomyError as exc:
+        raise SystemExit(str(exc)) from exc
 
     method = spec_meta.get("method", DEFAULT_METHOD)
     if method not in CONTRIB_METHODS:
@@ -457,10 +489,13 @@ def assemble_feature_build(root: Path, contribution_ref: str,
             parts.append("_No other contributions cached for this repo._\n")
         parts += [
             "## Mode & safety (binding)",
-            _MODE_SAFETY.get(mode, _MODE_SAFETY["shadow"]),
+            _REACH_SAFETY.get(requested, _REACH_SAFETY["shadow"]),
+            f"Allowed reach this run: {requested}. Ceiling for {repo_id}: {policy['ceiling']}.",
+            "Do not go past the ceiling. Merge is never inherited.",
             "Hard rules in every mode: never push to main/the default branch directly; "
-            "never auto-merge; a human reviews before anything consequential; "
+            "never auto-merge by default; a human reviews before anything consequential; "
             "vague or large specs are flagged for decomposition, never guessed.",
+            "Stead did not push, open, or merge. The remote step is not implemented.",
         ]
         bundle = "\n".join(parts)
         assembled_prompt = prompt_text.rstrip() + "\n\n---\n\n" + bundle
@@ -485,9 +520,11 @@ def assemble_feature_build(root: Path, contribution_ref: str,
             "flags": flags,
             "needs_decomposition": bool(flags),
             "verdict": "pending",
-            "note": "Deterministic assembly; no LLM call, no network, no remote writes. "
-                    "Hand prompt.md to a pluggable coding agent; record output via `ctx run log`. "
-                    "Shadow = plan + diff only; live = draft PR, human merges.",
+            "reach": requested,
+            "ceiling": policy["ceiling"],
+            "trigger": policy["trigger"],
+            "remote": "none" if requested == "shadow" else "not-implemented",
+            "note": "Local assembly only. Nothing was pushed, opened, or merged.",
         }
         (run_dir / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
 
@@ -504,3 +541,54 @@ def assemble_feature_build(root: Path, contribution_ref: str,
         return info
     finally:
         conn.close()
+
+
+def _tags(meta: dict) -> list[str]:
+    tags = meta.get("tags") or []
+    if isinstance(tags, str):
+        return [tags]
+    return [str(tag) for tag in tags]
+
+
+def watch_specs(root: Path) -> dict:
+    """Assemble every open authored feature spec whose repo trigger is watch.
+
+    Flagged specs are skipped, not guessed. On-demand repos are skipped.
+    Nothing is pushed. A reach above shadow is recorded and not performed.
+    """
+    from ctx.autonomy import effective
+    ran: list[dict] = []
+    skipped: list[dict] = []
+    for _path, meta, body in objects.iter_objects(root, "contribution"):
+        if meta.get("kind") != "issue" or meta.get("role") != "author":
+            continue
+        if meta.get("state") not in (None, "", "open"):
+            continue
+        if "feature-spec" not in _tags(meta):
+            continue
+        repo = objects.find(root, "repo", meta.get("repo") or "")
+        if repo is None:
+            skipped.append({"id": meta.get("id"), "reason": "repo missing"})
+            continue
+        policy = effective(root, repo[1])
+        if policy["trigger"] != "watch":
+            continue
+        description, criteria = split_spec(body)
+        flags = spec_flags(description, criteria)
+        if flags:
+            skipped.append({"id": meta.get("id"), "reason": ", ".join(flags)})
+            continue
+        try:
+            info = assemble_feature_build(root, meta["id"], reach=policy["ceiling"])
+        except SystemExit as exc:
+            skipped.append({"id": meta.get("id"), "reason": str(exc)})
+            continue
+        ran.append({
+            "id": meta.get("id"),
+            "run_id": info.get("run_id"),
+            "run_dir": info.get("run_dir"),
+            "reach": info.get("reach"),
+            "ceiling": info.get("ceiling"),
+            "remote": info.get("remote"),
+        })
+    return {"ran": ran, "skipped": skipped}

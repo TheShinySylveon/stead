@@ -464,9 +464,11 @@ def cmd_prompt_promote(root: Path, factory_name: str, version: str) -> int:
 # --- factory run --------------------------------------------------------------
 
 def cmd_feature_build(root: Path, contribution: str, live: bool = False,
-                      *, generate: bool = False) -> int:
+                      *, generate: bool = False, reach: str | None = None) -> int:
     mode = "live" if live else "shadow"
-    info = _maybe_draft(root, factory.assemble_feature_build(root, contribution, mode=mode), generate)
+    info = _maybe_draft(
+        root, factory.assemble_feature_build(root, contribution, mode=mode, reach=reach),
+        generate)
     c = info["counts"]
     print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
           f"prompt {info['prompt_version']} for {info['contribution']}")
@@ -483,14 +485,19 @@ def cmd_feature_build(root: Path, contribution: str, live: bool = False,
     else:
         print("spec flags: none — spec looks buildable")
     print(f"run dir: {info['run_dir']}/ (bundle.md, prompt.md, run.json)")
+    print(f"reach: {info.get('reach', 'shadow')} (ceiling {info.get('ceiling', 'shadow')})")
+    if info.get("remote") == "not-implemented":
+        print("remote step is not implemented. Nothing was pushed, opened, or merged.")
     _print_draft(info, generate, coding=True)
     return 0
 
 
 def cmd_factory_run(root: Path, factory_name: str, project: str | None,
                     live: bool = False, contribution: str | None = None,
-                    *, generate: bool = False) -> int:
+                    *, generate: bool = False, reach: str | None = None) -> int:
     mode = "live" if live else "shadow"
+    if reach and factory_name != factory.FEATURE_BUILDER_FACTORY:
+        raise SystemExit("--reach is only valid for --factory feature-builder")
     if contribution is not None and factory_name != factory.FEATURE_BUILDER_FACTORY:
         raise SystemExit("--contribution is only valid for --factory feature-builder")
     if factory_name == factory.FEATURE_BUILDER_FACTORY:
@@ -498,7 +505,7 @@ def cmd_factory_run(root: Path, factory_name: str, project: str | None,
             raise SystemExit("--contribution is required for factory 'feature-builder' "
                              "(a spec contribution: kind issue, role author, "
                              "with a ## Acceptance criteria checklist)")
-        return cmd_feature_build(root, contribution, live=live, generate=generate)
+        return cmd_feature_build(root, contribution, live=live, generate=generate, reach=reach)
     if factory_name == factory.DIGEST_FACTORY or project is None:
         if factory_name != factory.DIGEST_FACTORY and project is None:
             raise SystemExit(f"--project is required for factory {factory_name!r}")
@@ -577,6 +584,10 @@ def build_parser() -> argparse.ArgumentParser:
     ra.add_argument("--notes")
     rlist = repo.add_parser("list", help="list repos")
     rlist.add_argument("--kind", choices=REPO_KINDS)
+    rs = repo.add_parser("set", help="set this repo's factory trigger and ceiling")
+    rs.add_argument("id")
+    rs.add_argument("--trigger", choices=("on-demand", "watch"))
+    rs.add_argument("--reach", choices=("shadow", "draft-pr", "pr", "merge"))
 
     contrib = sub.add_parser("contribution", help="manage issues/PRs you're involved with").add_subparsers(dest="sub", required=True)
     ca = contrib.add_parser("add", help="add a contribution (writes markdown + index)")
@@ -670,6 +681,13 @@ def build_parser() -> argparse.ArgumentParser:
     frun.add_argument("--live", action="store_true", help="record as live. Still does not push or open a PR.")
     frun.add_argument("--generate", action="store_true",
                       help="draft with the configured model. Nothing is posted or pushed.")
+    frun.add_argument("--reach", choices=("shadow", "draft-pr", "pr", "merge"),
+                      help="feature-builder only. Cannot exceed the repo ceiling. "
+                           "Does not push. Merge is never inherited.")
+    fwatch = fr.add_parser("watch", help="assemble open feature specs on repos set to watch")
+    fdef = fr.add_parser("defaults", help="install factory preference. Cannot be merge.")
+    fdef.add_argument("--trigger", choices=("on-demand", "watch"))
+    fdef.add_argument("--reach", choices=("shadow", "draft-pr", "pr"))
 
     welcome = sub.add_parser("welcome", help="first run: name a project and optional GitHub URL")
     welcome.add_argument("--title", required=True)
@@ -731,6 +749,17 @@ def main(argv: list[str] | None = None) -> int:
                                 args.default_branch, args.contributing, args.notes)
         if args.sub == "list":
             return cmd_repo_list(root, args.kind)
+        if args.sub == "set":
+            from ctx.autonomy import AutonomyError, set_repo
+            try:
+                policy = set_repo(root, args.id, trigger=args.trigger, reach=args.reach)
+            except AutonomyError as exc:
+                raise SystemExit(str(exc)) from exc
+            print(f"{args.id}: trigger {policy['trigger']}, ceiling {policy['ceiling']}")
+            if policy["ceiling"] == "merge":
+                print("merge is explicit on this repo. It is not the install default.")
+            print("nothing was pushed, opened, or merged")
+            return 0
     if args.command == "contribution":
         if args.sub == "add":
             return cmd_contribution_add(root, args.title, args.repo, args.kind,
@@ -807,7 +836,35 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_prompt_promote(root, args.factory, args.version)
     if args.command == "factory" and args.sub == "run":
         return cmd_factory_run(root, args.factory, args.project, live=args.live,
-                               contribution=args.contribution, generate=args.generate)
+                               contribution=args.contribution, generate=args.generate,
+                               reach=args.reach)
+    if args.command == "factory" and args.sub == "watch":
+        report = factory.watch_specs(root)
+        if not report["ran"] and not report["skipped"]:
+            print("no watched feature specs. Set a repo to --trigger watch,")
+            print("and tag an open authored issue feature-spec.")
+            return 0
+        for item in report["ran"]:
+            print(f"assembled {item['id']} reach {item['reach']} -> {item['run_dir']}")
+            if item.get("remote") == "not-implemented":
+                print("  remote step is not implemented. Nothing was pushed, opened, or merged.")
+        for item in report["skipped"]:
+            print(f"skipped {item['id']}: {item['reason']}")
+        return 0
+    if args.command == "factory" and args.sub == "defaults":
+        from ctx.autonomy import AutonomyError, factory_defaults, set_defaults
+        try:
+            if args.trigger or args.reach:
+                shown = set_defaults(root, trigger=args.trigger, reach=args.reach)
+                print("install default saved in stead.json (gitignored)")
+            else:
+                shown = factory_defaults(root)
+        except AutonomyError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"trigger: {shown['trigger']}")
+        print(f"reach: {shown['reach']}")
+        print("merge is not an install default. Set it on the repo.")
+        return 0
     if args.command == "welcome":
         from ctx.onboard import OnboardError, welcome as run_welcome
         try:

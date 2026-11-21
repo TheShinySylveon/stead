@@ -250,7 +250,7 @@ const TITLES = {
   repos: ["Repos", "Own projects and OSS. Sync is read-only. Contribution files stay public."],
   inbox: ["Inbox", "Unsorted capture. File it into a document, meeting, or task, or delete it."],
   factories: ["Factories", "Assemble a shadow bundle. A person or an agent still has to write the output."],
-  settings: ["Settings", "This computer, a shared server, and the model factories may draft with."],
+  settings: ["Settings", "This computer, a shared server, the model, and how far the software factory may go."],
 };
 const state = { snap: null, view: "home", q: "", onboardResult: null };
 
@@ -496,6 +496,8 @@ function renderRepos() {
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
           <select data-set-repo data-id="${esc(r.id)}" data-field="kind" aria-label="Kind for ${esc(r.title)}">${options(choices.repo_kind, r.kind || "oss")}</select>
           <select data-set-repo data-id="${esc(r.id)}" data-field="status" aria-label="Status for ${esc(r.title)}">${options(choices.repo_status, r.status || "active")}</select>
+          <select data-set-repo data-id="${esc(r.id)}" data-field="trigger" aria-label="Trigger for ${esc(r.title)}">${options(choices.factory_trigger, r.factory_trigger || "on-demand")}</select>
+          <select data-set-repo data-id="${esc(r.id)}" data-field="reach" aria-label="Ceiling for ${esc(r.title)}">${options(choices.factory_reach, r.factory_reach || "shadow")}</select>
         </div>
       </div>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
     <form class="stack" id="add-spec">
@@ -552,8 +554,10 @@ function renderFactories() {
     } else if (f.needs === "contribution") {
       const specs = state.snap.contributions.filter(c => c.kind === "issue");
       const opts = specs.map(c => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
+      const reaches = (state.snap.choices.factory_reach || []).map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
       form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="contribution">
         <select name="contribution" aria-label="Spec for ${esc(f.name)}">${opts}</select>
+        <select name="reach" aria-label="Reach for ${esc(f.name)}">${reaches}</select>
         ${draftBox}
         <button class="primary" type="submit" ${specs.length ? "" : "disabled"}>Assemble shadow</button></form>`;
     } else {
@@ -590,6 +594,15 @@ function renderSettings() {
         <input type="text" name="base_url" placeholder="Base URL, optional" aria-label="Model base URL" value="${esc(m.base_url)}">
         <input type="password" name="api_key" placeholder="API key, leave blank to keep" aria-label="Model API key" autocomplete="off">
         <div><button class="primary" type="submit">Save model</button></div>
+      </form>
+    </div>
+    <div class="panel" style="padding:14px 16px;margin-bottom:16px">
+      <strong>Software factory</strong>
+      <p class="meta">Install default is ${esc((state.snap.factory || {}).trigger || "on-demand")} / ${esc((state.snap.factory || {}).reach || "shadow")}. A repo can be lower or, if it says so, merge. Merge is never inherited. Nothing is pushed.</p>
+      <form class="inline" id="set-factory">
+        <select name="trigger" aria-label="Install trigger">${options(state.snap.choices.factory_trigger, (state.snap.factory || {}).trigger || "on-demand")}</select>
+        <select name="reach" aria-label="Install ceiling">${options(state.snap.choices.factory_reach_install, (state.snap.factory || {}).reach || "shadow")}</select>
+        <button class="primary" type="submit">Save factory default</button>
       </form>
     </div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
@@ -820,7 +833,8 @@ document.body.addEventListener("submit", async (event) => {
     || form.id === "add-document" || form.id === "add-meeting" || form.id === "add-repo"
     || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
     || form.id === "add-spec" || form.id === "onboard" || form.id === "welcome"
-    || form.id === "add-actor" || form.id === "set-model" || form.dataset.factory || form.dataset.triage;
+    || form.id === "add-actor" || form.id === "set-model" || form.id === "set-factory"
+    || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
@@ -844,6 +858,11 @@ document.body.addEventListener("submit", async (event) => {
         return;
       }
       toast("Project created");
+    } else if (form.id === "set-factory") {
+      await api("/api/factory/defaults", {method: "POST", body: JSON.stringify({
+        trigger: data.trigger, reach: data.reach,
+      })});
+      toast("Factory default saved");
     } else if (form.id === "set-model") {
       const body = {provider: data.provider, name: data.name, base_url: data.base_url || ""};
       if (data.api_key) body.api_key = data.api_key;
@@ -917,7 +936,10 @@ document.body.addEventListener("submit", async (event) => {
     } else {
       const payload = {factory: form.dataset.factory};
       if (form.dataset.needs === "project") payload.project = data.project;
-      if (form.dataset.needs === "contribution") payload.contribution = data.contribution;
+      if (form.dataset.needs === "contribution") {
+        payload.contribution = data.contribution;
+        if (data.reach) payload.reach = data.reach;
+      }
       if (data.generate === "1") payload.generate = true;
       const result = await api("/api/factory/run", {method: "POST", body: JSON.stringify(payload)});
       toast(result.generated ? "Draft " + result.output_path : "Shadow run " + result.run_id + " · " + result.run_dir);

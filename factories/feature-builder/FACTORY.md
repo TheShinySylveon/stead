@@ -12,25 +12,43 @@ code, calls no LLM, uses no network, and performs **no remote writes in any
 mode**. The coding happens later, outside the factory, under the autonomy
 ladder below.
 
+## Knobs
+
+Two settings, not one ladder everyone climbs. The ceiling is per repo.
+
+- **trigger:** `on-demand` (default) or `watch`. Watch may assemble open
+  authored issues tagged `feature-spec` when a scheduler runs
+  `ctx factory watch`. Flagged specs are skipped. On-demand repos are skipped.
+- **reach:** `shadow` (default), `draft-pr`, `pr`, or `merge`. A run may ask
+  for less. It may not ask for more.
+
+An install default in gitignored `stead.json` can be `shadow`, `draft-pr`, or
+`pr`. Merge is never inherited. The repo file has to say `reach: merge`.
+A fresh install starts at on-demand and shadow.
+
+The remote step is not implemented. A run above shadow is recorded and stays
+on disk. Nothing is pushed, opened, or merged.
+
 ## Autonomy ladder (incremental trust — never skip a rung)
+
+The reaches above are the rungs. A repo may sit on any rung.
 
 1. **SHADOW (default, current).** The agent reads `prompt.md` and proposes a
    **plan + proposed diff only**. NO remote writes, NO push, NO PR/issue/
    comment/label creation. A human reviews the plan and diff locally before
-   anything is applied. This is the only mode new specs and new prompt
-   versions run in.
-2. **DRAFT-PR (next, per-spec opt-in).** After shadow runs are consistently
-   approved, the agent may push an **isolated feature branch** and open a
-   **DRAFT PR** via `gh pr create --draft` with passing tests and a structured
-   body linking the issue. A **HUMAN reviews and merges**. The agent never
-   marks the PR ready-for-review, never merges, never pushes to the default
-   branch.
-3. **TRUSTED (far future, never the default).** Auto-merge only after ALL of:
-   a proven record of approved draft-PR runs, an adversarial review of the
-   agent's work and prompts, and repository branch protection (required
-   reviews + required status checks) enforced server-side. Even then,
-   auto-merge is limited to repos where the human explicitly enables it.
-   Nothing in this repo enables it today.
+   anything is applied.
+2. **DRAFT-PR.** When the repo ceiling allows it, the agent may push an
+   isolated feature branch and open a **DRAFT PR** via `gh pr create --draft`
+   with passing tests and a structured body linking the issue. A **HUMAN
+   reviews and merges**. The agent never marks the PR ready-for-review, never
+   merges, never pushes to the default branch. Stead does not perform that
+   push yet.
+3. **PULL REQUEST.** A normal pull request. A human still merges.
+4. **TRUSTED (explicit per repo, never the default).** Auto-merge only after ALL of:
+   the repo file says `reach: merge`, the checks are actually green, and
+   repository branch protection (required reviews + required status checks) is
+   enforced server-side. Even then, Stead does not merge today. Nothing in
+   this repo enables it.
 
 ## Hard safety rules (every rung, every mode)
 
@@ -75,11 +93,13 @@ local, and network-free for both. Full flow, install, and own-vs-OSS rules:
 
 ## Trigger
 
-- **Manual / on-demand (now):**
-  `python3 -m ctx factory run --factory feature-builder --contribution <spec-id> --shadow`
-- **Event-driven (later):** when a spec contribution is tagged `feature-spec`
-  and its spec-quality flags are clear. Scheduler-agnostic: any cron / Task
-  Scheduler / Hermes job can invoke the CLI.
+- **On demand (default):**
+  `python3 -m ctx factory run --factory feature-builder --contribution <spec-id>`
+  Optional `--reach` cannot exceed the repo ceiling.
+- **Watch:** `python3 -m ctx factory watch` assembles open authored issues
+  tagged `feature-spec` whose repo `trigger` is `watch` and whose spec flags
+  are clear. Scheduler-agnostic: any cron / Task Scheduler / Hermes job can
+  invoke that command. It does not push.
 
 ## Inputs (all local files — no network at assembly time)
 

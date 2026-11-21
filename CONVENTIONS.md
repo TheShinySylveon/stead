@@ -58,6 +58,9 @@ default_branch: main                 # optional
 contributing: https://github.com/example-org/example-repo/blob/main/CONTRIBUTING.md  # optional, url or path
 notes: ...                           # optional, short scalar
 project: project-shared-context-rollout  # optional; set by ctx onboard
+trigger: on-demand                   # optional: on-demand | watch. Default on-demand.
+reach: shadow                        # optional ceiling: shadow | draft-pr | pr | merge.
+                                     # merge is never inherited from the install default.
 ---
 ```
 

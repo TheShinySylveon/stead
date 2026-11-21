@@ -77,9 +77,19 @@ Shadow is the only mode the cockpit offers, and the default on the CLI.
 Output stays on disk. Draft with model writes `output.md` in that same
 directory. It does not change the mode.
 
-A future draft-PR step would push an isolated branch and open a draft pull
-request for a human to merge. That step is not implemented. Nothing in this
-repository auto-merges.
+feature-builder has two knobs, set per repo. The install default cannot be
+merge.
+
+| Knob | Values | Default |
+|---|---|---|
+| trigger | `on-demand`, `watch` | on-demand |
+| reach | `shadow`, `draft-pr`, `pr`, `merge` | shadow |
+
+A run may ask for less than the repo ceiling. It may not ask for more.
+`ctx factory watch` assembles open authored `feature-spec` issues on repos
+set to watch, and skips flagged specs. The remote step is not implemented.
+Nothing is pushed, opened, or merged. See
+[feature-builder/FACTORY.md](../factories/feature-builder/FACTORY.md).
 
 ## Scheduling
 

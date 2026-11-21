@@ -251,11 +251,18 @@ class TestFeatureBuilderAssembly(FeatureBuilderTestCase):
 
     def test_live_mode_bundle_encodes_draft_pr_rules(self) -> None:
         self.seed_spec()
+        repo = self.root / "context" / "repos" / "testuser-my-app.md"
+        meta, body = frontmatter.parse(repo.read_text(encoding="utf-8"))
+        meta["reach"] = "draft-pr"
+        repo.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
         info = factory.assemble_feature_build(self.root, SPEC_ID, mode="live")
+        self.assertEqual(info["reach"], "draft-pr")
+        self.assertEqual(info["remote"], "not-implemented")
         bundle = (self.root / info["run_dir"] / "bundle.md").read_text(encoding="utf-8")
         self.assertIn("DRAFT-PR", bundle)
         self.assertIn("gh pr create --draft", bundle)
         self.assertIn("HUMAN reviews", bundle)
+        self.assertIn("did not push", bundle)
         conn = db.connect(self.root)
         try:
             row = conn.execute("SELECT mode FROM runs").fetchone()

@@ -32,10 +32,10 @@ See [First run](first-run.md).
 | Tasks | Add a task, move its status. The title opens the note. |
 | Projects | Onboard a later project (repo + constitution, optional Spec Kit). Or add a project with no repo. Change a project's status. |
 | Library | Add and edit documents and meetings. Rename them. The id does not change. |
-| Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind and status. Add a local issue or feature spec. |
+| Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. |
 | Inbox | Drop a note. File it as a document, meeting, or task, or delete it. |
 | Factories | Assemble a shadow run. Check Draft with model to write `output.md`. Nothing is posted. |
-| Settings | This computer or a shared server. The rented model. Rotate the access token. Add actors (`human` or `agent`). |
+| Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add actors (`human` or `agent`). |
 
 Opening a project, task, document, or meeting shows the note and an editor.
 Saving updates the body and the `updated` date. It does not change `created`

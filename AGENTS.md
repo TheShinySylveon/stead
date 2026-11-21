@@ -104,6 +104,8 @@ python3 -m ctx version                       # print 0.0.1
 python3 -m ctx model show                    # configured endpoint; never prints the key
 python3 -m ctx model set --provider openai|openrouter|ollama|custom --name NAME
 python3 -m ctx eval run [--factory F]        # structural check, no model
+python3 -m ctx repo set ID --trigger on-demand|watch --reach shadow|draft-pr|pr|merge
+python3 -m ctx factory watch                # watched feature specs; no push
 python3 -m ctx init                          # rebuild state.db from schema.sql + files
 python3 -m ctx task add --title T --project P [--status to-do]
 python3 -m ctx task list [--project P] [--status S]
@@ -201,13 +203,19 @@ rules: `docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`
 (`ctx init` seeds the highest version as production; switch or roll back with
 `ctx prompt promote`).
 
-**Autonomy ladder (never skip a rung):**
-1. **SHADOW (default; only mode enabled today):** plan + proposed diff only; zero
-   remote writes. A human reviews locally.
-2. **DRAFT-PR (per-spec opt-in after approved shadow runs):** push an isolated
-   feature branch + `gh pr create --draft`; a HUMAN reviews and merges.
-3. **TRUSTED (far future, never default):** auto-merge only after a proven record
-   + adversarial review + server-side branch protection, explicitly enabled per repo.
+**Autonomy is two knobs, per repo.** `trigger` is `on-demand` (default) or
+`watch`. `reach` is the ceiling: `shadow` (default), `draft-pr`, `pr`, or
+`merge`. A run may ask for less. It may not ask for more. Merge is never
+inherited from the install default. The remote step is not implemented:
+nothing is pushed, opened, or merged.
+
+**Autonomy ladder (a repo may sit on any rung):**
+1. **SHADOW (default):** plan + proposed diff only; zero remote writes.
+2. **DRAFT-PR:** isolated branch + `gh pr create --draft`; a HUMAN merges.
+   Not performed by Stead yet.
+3. **TRUSTED (never the install default):** merge only when the repo file says
+   `reach: merge`, checks are green, and branch protection is server-side.
+   Not performed by Stead yet.
 
 **Hard rules (every mode):** never push to main/default branch; never auto-merge
 by default; human review gate before anything consequential; vague/large specs

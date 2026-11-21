@@ -73,10 +73,22 @@ def save(root: Path, data: dict) -> None:
         "port": int(data.get("port") or 8765),
         "access_token": token,
     }
-    model = data["model"] if "model" in data else current.get("model")
-    if isinstance(model, dict) and model:
-        payload["model"] = model
+    for key in ("model", "factory"):
+        value = data[key] if key in data else current.get(key)
+        if isinstance(value, dict) and value:
+            payload[key] = value
     config_path(root).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def save_factory(root: Path, factory: dict) -> None:
+    """Write the install factory preference without dropping other settings."""
+    current = read_raw(root)
+    current["factory"] = factory
+    current.setdefault("deployment", "single")
+    current.setdefault("bind", "127.0.0.1")
+    current.setdefault("port", 8765)
+    current.setdefault("access_token", "")
+    config_path(root).write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
 
 
 def save_model(root: Path, model: dict) -> None:

@@ -138,8 +138,8 @@ then builds the Docker image. It does not push the image.
 
 ## Coming soon
 
-- Draft pull requests: an isolated branch and a draft PR, still merged by a
-  human. Not auto-merge.
+- The remote step for feature-builder: push, open a pull request, or merge.
+  The ceiling can be set now. The push is not built.
 - Automatic `actor:` on each write.
 - Per-person sign-in, instead of one shared token.
 - Promote refuses until the eval cases for that prompt have recorded passes.
