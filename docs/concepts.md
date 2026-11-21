@@ -2,16 +2,34 @@
 
 Rent the model. Keep the files.
 
-Stead is two things in one folder:
+Stead is two things in one folder, borrowed from Notion's guidebook and pushed
+one step further:
 
 1. A **context system** — projects, tasks, notes, meetings, repos, and the
    issues and pull requests you touch.
-2. **Factories** — a few named workflows that assemble a prompt from those
-   files. A person or any coding agent writes the result. A factory calls a
-   model only when you pass `--generate`.
+2. **Factories** — named pipelines that take an input through plan, build,
+   verify, and delivery. A factory can stop at a draft, or with a model
+   configured it can write the code, run the checks, and open or merge the
+   pull request under a per-repo ceiling.
 
 Nothing here is tied to one vendor. Hermes, Claude Code, Codex, or a human
-can read the same files.
+can read the same files; the model is rented, not required.
+
+## Notion's model, our twist
+
+| Notion's concept | What Stead keeps | What Stead changes |
+|---|---|---|
+| Context system | One organized place where people and agents read and write | It is a folder of markdown in git. SQLite is only a rebuildable index |
+| Factory | A specific, repeatable, scrutinized workflow | The factory executes: `stead build` plans, edits, checks, and commits |
+| Human review | A person watches consequential steps | Review is a per-repo `reach`: human at `shadow`/`draft-pr`, autonomous at `pr`/`merge` |
+| Prompt versions and evals | Test prompts before trusting them | Built in: eval cases, recorded passes, and a promote gate |
+| Model choice | Intelligence is rented | Any OpenAI-compatible server, Anthropic, Grok, or Ollama; no vendor SDK |
+| Governance | The work is legible | Git history, run logs, and an explicit ceiling per repo |
+
+Two differences matter most. First, a Stead factory is not only an assembly
+step; it is a pipeline that can deliver. Second, autonomy is not one global
+switch. It is granted per repo, and the top rung (`merge`) must be written on
+that repo file before any run can use it.
 
 ## Files are the truth
 

@@ -12,7 +12,7 @@ the copyright in code you write.
 
 1. [Getting started](getting-started.md) — clone, requirements, first command.
 2. [First run](first-run.md) — the welcome screen, and what it does not do.
-3. [Concepts](concepts.md) — files, the index, factories, and what stays private.
+3. [Concepts](concepts.md) — files, the index, and our twist on Notion's model.
 4. [Several people and agents](multi-actor.md) — git shares the files. SQLite stays local.
 5. [Deploy](deploy.md) — this computer, or a Docker shared server.
 

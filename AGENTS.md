@@ -15,7 +15,10 @@ specific tool, model, or vendor.
 ## What this system is
 
 A local **context system** plus **factories**, covering both your
-own projects and the open-source projects you contribute to (one cockpit):
+own projects and the open-source projects you contribute to (one cockpit).
+The shape comes from Notion's *A New Shape for Work*. The deliberate twist is
+that a factory executes as a pipeline, not merely a prompt, and that autonomy
+is granted per repo rather than globally.
 
 1. **Context system** — one shared, organized, versioned place where humans and
    agents read and write knowledge. Objects: projects, tasks, documents,

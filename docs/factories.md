@@ -1,7 +1,8 @@
 # Factories
 
-A factory is a repeatable pipeline: plan, build, verify, and deliver. Each one
-lives in `factories/<name>/`:
+A factory is a repeatable pipeline: plan, build, verify, and deliver. That is
+the deliberate divergence from Notion's advisory model: the factory executes,
+and the per-repo reach decides how far. Each one lives in `factories/<name>/`:
 
 - `FACTORY.md` — what it is, what it may do, and what it must not do.
 - `prompts/vN.md` — versioned instructions. The highest version is production

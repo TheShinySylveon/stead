@@ -4,18 +4,31 @@
 [![License](https://img.shields.io/github/license/TheShinySylveon/stead)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](docs/getting-started.md)
 
-Stead is a local implementation of the system in Notion's guidebook
-[*A New Shape for Work*](https://www.notion.com/nsfw): a **context system**
-(one organized place where people and agents read and write knowledge) plus
-a few **factories** (shared, specific, scrutinized workflows on top of that
-place). Notion describes the idea. Stead is one way to keep it in files you
-own.
+Stead takes the shape of Notion's guidebook
+[*A New Shape for Work*](https://www.notion.com/nsfw) — a **context system**
+plus **factories** — and adds one deliberate twist: a factory does not stop at
+drafting. With a model configured it can plan, write the code, run the repo's
+checks, open the pull request, and merge when that repo explicitly allows it.
 
 > Rent the intelligence. Own the context.
 
-The model can be swapped. The files stay yours. The command is `stead`.
+The files stay yours and the model can be swapped. The command is `stead`.
 Version **0.1.0**. Licensed under Apache-2.0. Copyright 2026 Tyler Rathbone.
 See [LICENSE](LICENSE).
+
+## The twist
+
+- **Factories execute.** `stead build` runs a model agent that plans first,
+  edits the checkout, runs the repo's `checks:`, and commits. `--publish` and
+  `--merge` carry it to delivery.
+- **Autonomy is per repo, not per install.** `reach` is `shadow`, `draft-pr`,
+  `pr`, or `merge`. The safe rungs stay the default; `merge` is never
+  inherited and never bypasses branch protection.
+- **The context stays local and portable.** Markdown and git are the truth.
+  The index is rebuildable. The cockpit is one offline file. A shared server
+  is your own container, not a hosted account.
+- **Scrutiny is built in.** Versioned prompts, eval cases, run logs, and a
+  promote gate keep the autonomous path from becoming an unexamined one.
 
 ![Stead cockpit](docs/images/cockpit.png)
 
@@ -30,8 +43,8 @@ A fresh checkout shows Welcome instead.
 - Markdown files with flat YAML frontmatter. That is the source of truth.
 - A SQLite index (`state.db`) that `stead init` can rebuild. It is not shared.
 - A local cockpit in the browser, or the same actions from the CLI.
-- Four factories that assemble a prompt. `--generate` drafts with the model
-  you configure. The default still calls nothing.
+- Four factories that plan, assemble, and — with a model — execute a pipeline.
+  `--generate` drafts text; `stead build` edits code, runs checks, and commits.
 - A model-driven build: `stead build` plans, edits the repo, runs its checks,
   commits, and can publish or merge under that repo's reach.
 - A weekly local job that syncs read-only and drafts, plus `stead run file` to

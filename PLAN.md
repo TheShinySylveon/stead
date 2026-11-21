@@ -1,8 +1,10 @@
 # Stead — design record
 
-A local, model-agnostic version of Notion's *A New Shape for Work*: a **context
+A local, model-agnostic take on Notion's *A New Shape for Work*: a **context
 system** (one shared place where humans and agents read and write knowledge)
-plus **factories** (shared, scrutinized workflows).
+plus **factories**. The twist is that a factory is a pipeline, not a prompt:
+with a model configured it can plan, edit code, run checks, and deliver under
+a per-repo reach ceiling.
 
 > Guiding line: **Rent the intelligence. Own the context.**
 

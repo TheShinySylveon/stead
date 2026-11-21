@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- README, concepts, PLAN, and factories state the Notion lineage and the
+  deliberate twist: factories execute, and reach is per repo.
 - `stead build --contribution ID` has the configured model plan, edit the
   repo checkout, run the repo's `checks:`, and commit on an isolated branch.
   `--publish` opens the pull request; `--merge` merges when the repo says
