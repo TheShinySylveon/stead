@@ -87,8 +87,8 @@ merge.
 
 A run may ask for less than the repo ceiling. It may not ask for more.
 `stead factory watch` assembles open authored `feature-spec` issues on repos
-set to watch, and skips flagged specs. The remote step is not implemented.
-Nothing is pushed, opened, or merged. See
+set to watch, and skips flagged specs. `stead factory publish` opens a pull request from an isolated branch when
+the ceiling allows it. It does not merge. See
 [feature-builder/FACTORY.md](../factories/feature-builder/FACTORY.md).
 
 ## Scheduling

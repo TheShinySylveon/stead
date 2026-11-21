@@ -26,8 +26,9 @@ An install default in gitignored `stead.json` can be `shadow`, `draft-pr`, or
 `pr`. Merge is never inherited. The repo file has to say `reach: merge`.
 A fresh install starts at on-demand and shadow.
 
-The remote step is not implemented. A run above shadow is recorded and stays
-on disk. Nothing is pushed, opened, or merged.
+Assembly stays on disk. `stead factory publish` pushes an isolated branch
+and opens a pull request when the ceiling allows `draft-pr` or `pr`. It
+refuses the default branch. It does not merge.
 
 ## Autonomy ladder (incremental trust — never skip a rung)
 

@@ -59,6 +59,7 @@ contributing: https://github.com/example-org/example-repo/blob/main/CONTRIBUTING
 notes: ...                           # optional, short scalar
 project: project-shared-context-rollout  # optional; set by stead onboard
 trigger: on-demand                   # optional: on-demand | watch. Default on-demand.
+code_path: /path/to/the/checkout   # optional local git checkout for publish
 reach: shadow                        # optional ceiling: shadow | draft-pr | pr | merge.
                                      # merge is never inherited from the install default.
 ---

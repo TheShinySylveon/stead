@@ -91,7 +91,7 @@ def permit(policy: dict, requested: str | None) -> str:
 
 
 def set_repo(root: Path, repo_id: str, *, trigger: str | None = None,
-             reach: str | None = None) -> dict:
+             reach: str | None = None, code_path: str | None = None) -> dict:
     found = objects.find(root, "repo", repo_id)
     if found is None:
         raise AutonomyError(f"repo not found: {repo_id}")
@@ -104,7 +104,14 @@ def set_repo(root: Path, repo_id: str, *, trigger: str | None = None,
         if reach not in REACHES:
             raise AutonomyError(f"invalid reach {reach!r}")
         meta["reach"] = reach
-    if trigger is None and reach is None:
+    if code_path is not None:
+        target = Path(code_path).expanduser()
+        if not target.is_dir():
+            raise AutonomyError(f"code_path is not a directory: {code_path}")
+        if target.resolve() == root.resolve():
+            raise AutonomyError("code_path must be the project checkout, not this Stead repo")
+        meta["code_path"] = str(target)
+    if trigger is None and reach is None and code_path is None:
         raise AutonomyError("nothing to set")
     from datetime import date
     meta["updated"] = date.today().isoformat()

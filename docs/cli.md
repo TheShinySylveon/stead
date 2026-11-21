@@ -89,6 +89,8 @@ python -m stead factory run --factory weekly-project-status --project P [--shado
 python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge]
 python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr]
 python -m stead factory watch
+python -m stead factory publish --contribution ID
+python -m stead repo set ID --path DIR
 python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live] [--generate] [--reach REACH]
 python -m stead digest [--generate]
 python -m stead eval run [--factory F]

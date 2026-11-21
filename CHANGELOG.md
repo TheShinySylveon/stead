@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `stead factory publish` pushes an isolated branch and opens a pull request
+  when the repo ceiling allows it. It refuses the default branch and does not merge.
 - The command is `python -m stead`. `python -m ctx` still runs and says so.
 - feature-builder trigger and reach. On demand or watch. Ceiling is per repo:
   shadow, draft-pr, pr, or merge. Merge is never inherited. A run above the

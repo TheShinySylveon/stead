@@ -487,7 +487,8 @@ def cmd_feature_build(root: Path, contribution: str, live: bool = False,
     print(f"run dir: {info['run_dir']}/ (bundle.md, prompt.md, run.json)")
     print(f"reach: {info.get('reach', 'shadow')} (ceiling {info.get('ceiling', 'shadow')})")
     if info.get("remote") == "not-implemented":
-        print("remote step is not implemented. Nothing was pushed, opened, or merged.")
+        print("nothing was pushed. To open a pull request from an isolated branch:")
+        print(f"  python -m stead factory publish --contribution {info.get('contribution')}")
     _print_draft(info, generate, coding=True)
     return 0
 
@@ -588,6 +589,7 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("id")
     rs.add_argument("--trigger", choices=("on-demand", "watch"))
     rs.add_argument("--reach", choices=("shadow", "draft-pr", "pr", "merge"))
+    rs.add_argument("--path", help="local checkout for this repo. Not this Stead directory.")
 
     contrib = sub.add_parser("contribution", help="manage issues/PRs you're involved with").add_subparsers(dest="sub", required=True)
     ca = contrib.add_parser("add", help="add a contribution (writes markdown + index)")
@@ -686,6 +688,8 @@ def build_parser() -> argparse.ArgumentParser:
                       help="feature-builder only. Cannot exceed the repo ceiling. "
                            "Does not push. Merge is never inherited.")
     fwatch = fr.add_parser("watch", help="assemble open feature specs on repos set to watch")
+    fpub = fr.add_parser("publish", help="push an isolated branch and open a pull request. Never merges.")
+    fpub.add_argument("--contribution", required=True)
     fdef = fr.add_parser("defaults", help="install factory preference. Cannot be merge.")
     fdef.add_argument("--trigger", choices=("on-demand", "watch"))
     fdef.add_argument("--reach", choices=("shadow", "draft-pr", "pr"))
@@ -753,7 +757,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.sub == "set":
             from ctx.autonomy import AutonomyError, set_repo
             try:
-                policy = set_repo(root, args.id, trigger=args.trigger, reach=args.reach)
+                policy = set_repo(root, args.id, trigger=args.trigger, reach=args.reach,
+                                  code_path=args.path)
             except AutonomyError as exc:
                 raise SystemExit(str(exc)) from exc
             print(f"{args.id}: trigger {policy['trigger']}, ceiling {policy['ceiling']}")
@@ -839,6 +844,16 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_factory_run(root, args.factory, args.project, live=args.live,
                                contribution=args.contribution, generate=args.generate,
                                reach=args.reach)
+    if args.command == "factory" and args.sub == "publish":
+        from ctx.publish import PublishError, publish
+        try:
+            opened = publish(root, args.contribution)
+        except PublishError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"opened {opened['url']}")
+        print(f"branch {opened['branch']} -> {opened['base']} [{opened['reach']}]")
+        print("not merged. A person reviews.")
+        return 0
     if args.command == "factory" and args.sub == "watch":
         report = factory.watch_specs(root)
         if not report["ran"] and not report["skipped"]:

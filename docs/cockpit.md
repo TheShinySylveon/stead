@@ -56,7 +56,8 @@ Assemble shadow writes `bundle.md`, `prompt.md`, and `run.json` under
 `factories/<name>/runs/`. Those directories are gitignored. Hand `prompt.md`
 to any agent. Come back and approve or reject the run on Home.
 
-Draft pull requests are not a button. They are not implemented.
+Draft pull requests are not a button. `stead factory publish` opens one
+from an isolated branch. The cockpit does not push.
 
 ## Stopping it
 

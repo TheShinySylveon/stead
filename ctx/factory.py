@@ -495,7 +495,7 @@ def assemble_feature_build(root: Path, contribution_ref: str,
             "Hard rules in every mode: never push to main/the default branch directly; "
             "never auto-merge by default; a human reviews before anything consequential; "
             "vague or large specs are flagged for decomposition, never guessed.",
-            "Stead did not push, open, or merge. The remote step is not implemented.",
+            "Assembly did not push, open, or merge. Publish is a separate command.",
         ]
         bundle = "\n".join(parts)
         assembled_prompt = prompt_text.rstrip() + "\n\n---\n\n" + bundle

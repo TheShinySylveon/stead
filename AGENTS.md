@@ -206,8 +206,9 @@ rules: `docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`
 **Autonomy is two knobs, per repo.** `trigger` is `on-demand` (default) or
 `watch`. `reach` is the ceiling: `shadow` (default), `draft-pr`, `pr`, or
 `merge`. A run may ask for less. It may not ask for more. Merge is never
-inherited from the install default. The remote step is not implemented:
-nothing is pushed, opened, or merged.
+inherited from the install default. `stead factory publish` may push an
+isolated branch and open a pull request. It does not merge, and it refuses
+the default branch.
 
 **Autonomy ladder (a repo may sit on any rung):**
 1. **SHADOW (default):** plan + proposed diff only; zero remote writes.
