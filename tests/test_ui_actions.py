@@ -169,6 +169,20 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(body["rollup"]["counts"]["to-do"], 0)
         self.assertEqual(body["rollup"]["runs"][0]["factory"], "weekly-project-status")
 
+    def test_eval_judge_uses_the_latest_draft(self) -> None:
+        import unittest.mock as mock
+        from ctx import models
+        settings = {"provider": "openai", "name": "test", "base_url": "", "api_key": "k",
+                    "key_env": "STEAD_MODEL_API_KEY", "key_from": "stead.json"}
+        with mock.patch.object(models, "resolve", lambda root: settings), \
+             mock.patch.object(models, "complete",
+                               lambda *a, **k: "verdict: pass\nreason: fits the bundle"):
+            status, body = self._post("/api/eval/judge", {
+                "factory": "weekly-project-status", "case": "eval-demo", "version": "v2"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["verdict"], "pass")
+        self.assertEqual(body["prompt_version"], "v2")
+
     def test_eval_status_lists_cases_without_a_result(self) -> None:
         status, body = self._post("/api/eval/status",
                                   {"factory": "weekly-project-status", "version": "v2"})

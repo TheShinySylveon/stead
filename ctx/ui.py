@@ -959,6 +959,30 @@ def watch_now(root: Path) -> dict:
     return {"ok": True, **report}
 
 
+def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -> dict:
+    """Judge the newest draft for one factory. Local result file only."""
+    from ctx.models import ModelError, judge
+    if not db.db_path(root).exists():
+        raise UiError("state.db not found — run stead init first", 404)
+    conn = db.connect(root)
+    try:
+        _ensure_note_column(conn)
+        row = conn.execute(
+            "SELECT id, output, prompt_version FROM runs "
+            "WHERE factory = ? AND output IS NOT NULL AND TRIM(output) != '' "
+            "ORDER BY id DESC LIMIT 1", (factory_name,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise UiError("no draft to judge. Run the factory with --generate, or record output.")
+    try:
+        return judge(root, factory_name, case_id, None,
+                     prompt_version=version or row["prompt_version"],
+                     output_text=row["output"])
+    except ModelError as exc:
+        raise UiError(str(exc)) from exc
+
+
 def check_evals(root: Path, factory_name: str) -> dict:
     from ctx.models import check_eval_files
     return check_eval_files(root, factory_name)
@@ -1335,6 +1359,9 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             from ctx.models import eval_status
             result = eval_status(root, payload.get("factory") or "",
                                  payload.get("version") or "")
+        elif path == "/api/eval/judge":
+            result = judge_eval(root, payload.get("factory") or "",
+                                payload.get("case") or "", payload.get("version") or "")
         elif path == "/api/object/delete":
             result = delete_object(root, payload.get("type") or "",
                                    payload.get("id") or "", bool(payload.get("force")))

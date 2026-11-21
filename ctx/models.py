@@ -161,11 +161,13 @@ def check_eval_files(root: Path, factory_name: str | None = None) -> dict:
     return {"ok": not problems, "cases": len(paths), "problems": problems}
 
 
-def judge(root: Path, factory_name: str, case_id: str, output_path: str,
-          *, transport=None, timeout: float = 120, prompt_version: str = "") -> dict:
+def judge(root: Path, factory_name: str, case_id: str, output_path: str | None,
+          *, transport=None, timeout: float = 120, prompt_version: str = "",
+          output_text: str | None = None) -> dict:
     """Ask the configured model whether one draft meets one case. Local file only."""
     case = _load_case(root, factory_name, case_id)
-    draft_text = Path(output_path).read_text(encoding="utf-8")
+    draft_text = (output_text if output_text is not None
+                  else Path(output_path).read_text(encoding="utf-8"))
     if not draft_text.strip():
         raise ModelError("the draft is empty")
     prompt = (

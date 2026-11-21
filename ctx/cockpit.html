@@ -675,7 +675,7 @@ function renderFactories() {
       <strong>Evals${report.version ? " for " + esc(report.version) : ""}</strong>
       <div class="list" style="margin-top:8px">${report.cases.map(c => `<div class="row">
         <span><strong>${esc(c.title)}</strong><br><small>${esc(c.id)}${c.recorded_version ? " · recorded " + esc(c.recorded_version) : ""}</small></span>
-        ${chip(c.ok ? "pass" : c.verdict, c.ok ? "done" : "fail")}
+        <span class="chips">${chip(c.ok ? "pass" : c.verdict, c.ok ? "done" : "fail")}<button type="button" class="quiet" data-eval-judge="${esc(c.id)}" data-factory="${esc(f.name)}" data-version="${esc(report.version || "")}">Judge</button></span>
       </div>`).join("") || `<div class="empty">No eval cases.</div>`}</div>
       <p class="meta">Promote needs a pass for every case at that version.</p>
       <button type="button" class="quiet" data-eval-close="${esc(f.name)}">Close evals</button>
@@ -1096,6 +1096,23 @@ document.body.addEventListener("click", async (event) => {
   if (evalClose) {
     delete state.evals[evalClose.dataset.evalClose];
     render();
+    return;
+  }
+  const judge = event.target.closest("[data-eval-judge]");
+  if (judge) {
+    try {
+      judge.disabled = true;
+      const result = await api("/api/eval/judge", {method: "POST", body: JSON.stringify({
+        factory: judge.dataset.factory, case: judge.dataset.evalJudge,
+        version: judge.dataset.version || "",
+      })});
+      toast(result.verdict + ": " + result.reason);
+      const status = await api("/api/eval/status", {method: "POST", body: JSON.stringify({
+        factory: judge.dataset.factory, version: judge.dataset.version || "",
+      })});
+      state.evals[judge.dataset.factory] = status;
+      render();
+    } catch (err) { toast(err.message); judge.disabled = false; }
     return;
   }
   if (event.target.closest("[data-watch]")) {

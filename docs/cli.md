@@ -129,7 +129,6 @@ install default. See [Models](models.md).
 
 `factory new` writes `FACTORY.md`, `prompts/v1.md`, and one eval. Run
 `stead init` after that so the prompt is indexed.
-
 ## Capture and schedule
 
 ```bash
