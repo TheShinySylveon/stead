@@ -187,6 +187,8 @@ Built:
 - `stead schedule show` / `install` wire the weekly read-only sync, the
   digest when the cache changed, and the maintenance draft. `--project P` adds
   that project's status draft.
+- `stead run file --run ID` files an approved digest or status into
+  `context/documents/`. Approval is the gate. Nothing is posted.
 - `stead sync github --digest` is the event-driven path. It assembles only
   after a change, and it does not post.
 
