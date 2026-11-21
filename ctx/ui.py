@@ -85,6 +85,7 @@ PROJECT_STATUSES = ("active", "paused", "done")
 # What a shadow assemble needs. Unknown factories ask for a project.
 FACTORY_NEEDS = {
     factory.DIGEST_FACTORY: "none",
+    factory.MAINTENANCE_FACTORY: "none",
     "weekly-project-status": "project",
     factory.FEATURE_BUILDER_FACTORY: "contribution",
 }
@@ -771,7 +772,7 @@ def sync_github(root: Path, offline: bool = False) -> dict:
     return {"ok": True, "offline": bool(offline)}
 
 
-def capture(root: Path, title: str, body: str) -> dict:
+def capture(root: Path, title: str, body: str, source: str = "the local cockpit") -> dict:
     title = (title or "").strip()
     body = (body or "").strip()
     if not title:
@@ -788,7 +789,7 @@ def capture(root: Path, title: str, body: str) -> dict:
         path = folder / f"{today}-{slug}-{n}.md"
         n += 1
     text = (f"# {title}\n\n{body}\n\n"
-            f"Captured {today} from the local cockpit. "
+            f"Captured {today} from {source}. "
             "Triage into context/ — do not leave this here.\n")
     path.write_text(text, encoding="utf-8")
     return {"name": path.name, "path": _rel(root, path)}
@@ -892,6 +893,8 @@ def shadow_run(root: Path, payload: dict) -> dict:
                 root, payload["contribution"], mode="shadow", reach=payload.get("reach") or None)
         elif name == factory.DIGEST_FACTORY:
             info = factory.assemble_digest(root, mode="shadow")
+        elif name == factory.MAINTENANCE_FACTORY:
+            info = factory.assemble_maintenance(root, mode="shadow")
         else:
             if not payload.get("project"):
                 raise UiError(f"{name or 'this factory'} needs a project")
@@ -1160,6 +1163,9 @@ class CockpitHandler(BaseHTTPRequestHandler):
             self._reject(403, "cockpit only answers on loopback")
             return
         parsed = urlparse(self.path)
+        if method == "POST" and parsed.path == "/hook":
+            self._capture_hook()
+            return
         if not self._access_ok():
             if method == "GET" and parsed.path == "/":
                 self._send(200, _gate_page(self._people() > 0), "text/html; charset=utf-8")
@@ -1186,6 +1192,27 @@ class CockpitHandler(BaseHTTPRequestHandler):
             self._send(status, body, content_type)
         finally:
             unbind(bound)
+
+    def _capture_hook(self) -> None:
+        """Write one inbox note. Does not run a factory or edit context/."""
+        from ctx.config import hook_token
+        expected = hook_token(self.server.root)
+        presented = self.headers.get("X-Stead-Hook", "")
+        if not expected:
+            self._reject(404, "webhook is off")
+            return
+        if not presented or not secrets.compare_digest(presented, expected):
+            self._reject(401, "webhook token required")
+            return
+        try:
+            payload = self._read_json()
+            result = capture(self.server.root, payload.get("title") or "",
+                             payload.get("body") or "", source="a webhook")
+        except UiError as exc:
+            self._reject(exc.status, str(exc))
+            return
+        self._send(200, _json({"ok": True, "name": result["name"]}),
+                   "application/json; charset=utf-8")
 
     def _open_session(self) -> None:
         length = int(self.headers.get("Content-Length") or "0")

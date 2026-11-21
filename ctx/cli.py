@@ -517,6 +517,16 @@ def cmd_factory_run(root: Path, factory_name: str, project: str | None,
         raise SystemExit("--reach is only valid for --factory feature-builder")
     if contribution is not None and factory_name != factory.FEATURE_BUILDER_FACTORY:
         raise SystemExit("--contribution is only valid for --factory feature-builder")
+    if factory_name == factory.MAINTENANCE_FACTORY:
+        info = _maybe_draft(root, factory.assemble_maintenance(root, mode=mode), generate)
+        print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
+              f"prompt {info['prompt_version']}")
+        c = info["counts"]
+        print(f"bundle: {c['inbox']} inbox, {c['broken']} broken relations, {c['stale']} stale")
+        print(f"run dir: {info['run_dir']}/ (bundle.md, prompt.md, run.json)")
+        print("no files were edited. Nothing was posted, pushed, or merged.")
+        _print_draft(info, generate)
+        return 0
     if factory_name == factory.FEATURE_BUILDER_FACTORY:
         if contribution is None:
             raise SystemExit("--contribution is required for factory 'feature-builder' "
@@ -651,6 +661,13 @@ def build_parser() -> argparse.ArgumentParser:
     ar = account.add_parser("reset", help="replace a password. Prints the new one once.")
     ar.add_argument("--name", required=True)
 
+    inbox = sub.add_parser("inbox", help="unsorted capture").add_subparsers(dest="sub", required=True)
+    imported = inbox.add_parser("import", help="copy a local .eml, .ics, .md, or .txt file into inbox/")
+    imported.add_argument("path")
+    hook = sub.add_parser("hook", help="loopback or shared-server capture webhook").add_subparsers(dest="sub", required=True)
+    hook.add_parser("set", help="create a webhook token. Printed once. Stored in stead.json.")
+    hook.add_parser("show", help="say whether a webhook token is set. Never prints it.")
+
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
     sg.add_argument("--author", default="@me")
@@ -716,6 +733,9 @@ def build_parser() -> argparse.ArgumentParser:
                       help="feature-builder only. Cannot exceed the repo ceiling. "
                            "Does not push. Merge is never inherited.")
     fwatch = fr.add_parser("watch", help="assemble open feature specs on repos set to watch")
+    fnew = fr.add_parser("new", help="scaffold a factory folder. Does not call a model.")
+    fnew.add_argument("--name", required=True)
+    fnew.add_argument("--title", required=True)
     fpub = fr.add_parser("publish", help="push an isolated branch and open a pull request. Never merges.")
     fpub.add_argument("--contribution", required=True)
     fmerge = fr.add_parser("merge", help="merge a green pull request. Repo must say reach: merge. Never bypasses protection.")
@@ -883,6 +903,36 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_factory_run(root, args.factory, args.project, live=args.live,
                                contribution=args.contribution, generate=args.generate,
                                reach=args.reach)
+    if args.command == "inbox" and args.sub == "import":
+        from ctx.inbox_import import InboxImportError, import_file
+        try:
+            written = import_file(root, args.path)
+        except InboxImportError as exc:
+            raise SystemExit(str(exc)) from exc
+        for item in written:
+            print(f"inbox {item['name']}")
+        print("triage into context/. Nothing was posted.")
+        return 0
+    if args.command == "hook":
+        from ctx.config import hook_token, set_hook_token
+        if args.sub == "set":
+            token = set_hook_token(root)
+            print("webhook token, shown once:")
+            print(token)
+            print("stored in stead.json. POST /hook with header X-Stead-Hook.")
+            print("It only writes inbox/. It does not run a factory.")
+            return 0
+        print("webhook token: set" if hook_token(root) else "webhook token: not set")
+        return 0
+    if args.command == "factory" and args.sub == "new":
+        from ctx.scaffold import ScaffoldError, scaffold
+        try:
+            folder = scaffold(root, args.name, args.title)
+        except ScaffoldError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"scaffolded {folder.relative_to(root).as_posix()}")
+        print("run python -m stead init to index the prompt")
+        return 0
     if args.command == "factory" and args.sub == "publish":
         from ctx.publish import PublishError, publish
         try:

@@ -32,7 +32,7 @@ package is still `ctx`. `python -m ctx` still runs and says so.
 | Prompt versions | `factories/<name>/prompts/` plus the `prompt_versions` table |
 | Evals | `factories/<name>/evals/`. `stead eval run` checks files. `stead eval judge` records a pass or fail. Promote refuses without a pass for that version |
 | Scheduled triggers | Any scheduler calling `python -m stead`. No timer is built in |
-| Event-driven triggers | `inbox/` capture. Webhooks are not built |
+| Event-driven triggers | `inbox/` capture, `stead inbox import`, and `POST /hook` when a webhook token is set. The hook only writes inbox. It does not run a factory |
 | Governance / audit | git history, run logs, shadow assembly |
 | Sync external context | `stead sync github` via `gh`. Read-only. Offline re-index with `--offline` |
 | Who writes | `context/actors/` files. A shared server also has sign-ins. Attribution, not a permission system |
@@ -167,16 +167,35 @@ single user, single machine, and `python3 -m ctx`. Those are retired.
 
 ---
 
-## 6. Not built
+## 6. Feature list
 
-- A context-maintenance factory, and a factory that scaffolds factories.
-- Email, calendar, or transcript import. Inbox is manual capture.
-- Webhooks. A scheduler is still whatever calls the CLI.
-- Per-object permissions, or per-person passwords on this computer.
-- Auto-merge. Merge is an explicit command, and only when the repo file says so.
-- A published container that is public without the one-time package setting.
-  CI publishes the image. GitHub leaves the package private until the owner
-  changes it.
+Closed. The items that fit the decisions are built. The rest are decided
+against, not left unfinished.
+
+Built:
+
+- `context-maintenance` drafts a triage note from the inbox, broken relations,
+  and stale objects. Assembly does not edit those files.
+- `stead factory new` scaffolds a factory folder. It does not call a model.
+- `stead inbox import` copies a local `.eml`, `.ics`, `.md`, or `.txt` file
+  into `inbox/`. No network. A person still triages it.
+- `stead hook set` creates a token. `POST /hook` writes one inbox note. It
+  does not run a factory. A scheduler is still whatever calls the CLI.
+
+Decided against:
+
+- Per-object permissions. If you can write the file, you can write the object.
+  Repository or host access is the permission.
+- A password on this computer. Loopback has no login. Sign-in is only for the
+  shared server.
+- Auto-merge. `stead factory merge` stays an explicit command. A factory run
+  does not call it.
+
+Still a person, once:
+
+- GitHub creates `ghcr.io/theshinysylveon/stead` private. The Actions token
+  cannot change that visibility. Set the package public at
+  https://github.com/users/TheShinySylveon/packages/container/stead/settings
 
 ## 7. Principles
 

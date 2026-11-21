@@ -147,6 +147,8 @@ def assemble(root: Path, factory: str, project_ref: str, mode: str = "shadow") -
 
 
 DIGEST_FACTORY = "weekly-contribution-digest"
+MAINTENANCE_FACTORY = "context-maintenance"
+STALE_DAYS = 30
 
 
 def _contribution_entry(path: Path, meta: dict, body: str, root: Path) -> str:
@@ -548,6 +550,107 @@ def _tags(meta: dict) -> list[str]:
     if isinstance(tags, str):
         return [tags]
     return [str(tag) for tag in tags]
+
+
+def assemble_maintenance(root: Path, factory: str = MAINTENANCE_FACTORY,
+                         mode: str = "shadow") -> dict:
+    """Bundle inbox, broken relations, and stale objects. Does not edit them."""
+    db.require_db(root)
+    fdir = _check_factory_dir(root, factory)
+    today = datetime.now(timezone.utc).date()
+    inbox = _inbox_notes(root)
+    broken = []
+    stale = []
+    for otype in ("project", "task", "document", "meeting", "repo", "contribution"):
+        for path, meta, _body in objects.iter_objects(root, otype):
+            _relation_flags(root, path, meta, broken)
+            _stale_flag(path, meta, today, stale)
+    counts = {"inbox": len(inbox), "broken": len(broken), "stale": len(stale)}
+    conn = db.connect(root)
+    try:
+        version, prompt_text = _production_prompt(conn, root, factory)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        run_dir = _run_dir(fdir, stamp, "maintenance")
+        created = db.utcnow()
+        parts = [
+            "# Context maintenance bundle",
+            f"<!-- factory: {factory} | prompt: {version} | mode: {mode} | created: {created} -->",
+            "",
+            "## Summary",
+            f"- inbox notes: {counts['inbox']}",
+            f"- broken relations: {counts['broken']}",
+            f"- stale objects: {counts['stale']}",
+            "",
+            "Assembly did not edit these files. It did not post, push, or merge.",
+            "",
+            "## Inbox",
+        ]
+        parts.extend(inbox or ["_None._"])
+        parts.extend(["", "## Broken relations"])
+        parts.extend(broken or ["_None._"])
+        parts.extend(["", "## Stale"])
+        parts.extend(stale or ["_None._"])
+        bundle = "\n".join(parts) + "\n"
+        assembled_prompt = prompt_text.rstrip() + "\n\n---\n\n" + bundle
+        (run_dir / "bundle.md").write_text(bundle, encoding="utf-8")
+        (run_dir / "prompt.md").write_text(assembled_prompt, encoding="utf-8")
+        info = {
+            "factory": factory,
+            "project": None,
+            "prompt_version": version,
+            "mode": mode,
+            "created": created,
+            "counts": counts,
+            "verdict": "pending",
+            "note": "Deterministic assembly. No file edits, no network, no remote writes.",
+        }
+        (run_dir / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+        cur = conn.execute(
+            "INSERT INTO runs (factory, task_ref, project, prompt_version, mode, bundle_path, verdict, created) "
+            "VALUES (?, 'maintenance', NULL, ?, ?, ?, 'pending', ?)",
+            (factory, version, mode, run_dir.relative_to(root).as_posix(), created),
+        )
+        conn.commit()
+        info["run_id"] = cur.lastrowid
+        info["run_dir"] = run_dir.relative_to(root).as_posix()
+        info["assembled_prompt"] = assembled_prompt
+        return info
+    finally:
+        conn.close()
+
+
+def _inbox_notes(root: Path) -> list[str]:
+    folder = root / "inbox"
+    if not folder.is_dir():
+        return []
+    notes = []
+    for path in sorted(folder.glob("*.md")):
+        notes.append(f"- {path.name}")
+    return notes
+
+
+def _relation_flags(root: Path, path: Path, meta: dict, broken: list[str]) -> None:
+    for key, otype in (("project", "project"), ("repo", "repo")):
+        ref = meta.get(key)
+        if not ref:
+            continue
+        if objects.find(root, otype, ref) is None:
+            broken.append(f"- {meta.get('id') or path.name}: {key} {ref} is missing")
+
+
+def _stale_flag(path: Path, meta: dict, today, stale: list[str]) -> None:
+    if meta.get("status") in {"done", "archived"}:
+        return
+    updated = str(meta.get("updated") or "")
+    try:
+        then = datetime.fromisoformat(updated[:10]).date()
+    except ValueError:
+        if updated:
+            stale.append(f"- {meta.get('id') or path.name}: updated date is not readable")
+        return
+    age = (today - then).days
+    if age > STALE_DAYS:
+        stale.append(f"- {meta.get('id') or path.name}: updated {updated[:10]} ({age} days)")
 
 
 def watch_specs(root: Path) -> dict:

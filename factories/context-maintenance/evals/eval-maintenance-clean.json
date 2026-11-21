@@ -1,0 +1,7 @@
+{
+  "id": "eval-maintenance-clean",
+  "factory": "context-maintenance",
+  "title": "Clean checkout",
+  "input": "Bundle with zero inbox notes, zero broken relations, and zero stale objects.",
+  "pass_criteria": "The draft says the checkout is clean or that each of Inbox, Broken relations, and Stale is none. It does not invent notes, relations, or dates. It does not say files were edited or that anything was posted, pushed, or merged."
+}

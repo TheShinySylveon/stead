@@ -20,6 +20,7 @@ ENV_DEPLOYMENT = "STEAD_DEPLOYMENT"
 ENV_BIND = "STEAD_BIND"
 ENV_PORT = "STEAD_PORT"
 ENV_TOKEN = "STEAD_ACCESS_TOKEN"
+ENV_HOOK = "STEAD_HOOK_TOKEN"
 
 
 class ConfigError(Exception):
@@ -77,7 +78,32 @@ def save(root: Path, data: dict) -> None:
         value = data[key] if key in data else current.get(key)
         if isinstance(value, dict) and value:
             payload[key] = value
+    hook = data["hook_token"] if "hook_token" in data else current.get("hook_token")
+    if isinstance(hook, str) and hook:
+        payload["hook_token"] = hook
     config_path(root).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def hook_token(root: Path) -> str:
+    """Webhook secret. Env wins. Never written into context markdown."""
+    chosen = os.environ.get(ENV_HOOK, "").strip()
+    if chosen:
+        return chosen
+    raw = read_raw(root).get("hook_token") or ""
+    return raw.strip() if isinstance(raw, str) else ""
+
+
+def set_hook_token(root: Path) -> str:
+    """Create a webhook token. Does not drop other settings. Returns it once."""
+    token = secrets.token_urlsafe(24)
+    current = read_raw(root)
+    current["hook_token"] = token
+    current.setdefault("deployment", "single")
+    current.setdefault("bind", "127.0.0.1")
+    current.setdefault("port", 8765)
+    current.setdefault("access_token", "")
+    config_path(root).write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    return token
 
 
 def save_actor(root: Path, actor_id: str) -> None:

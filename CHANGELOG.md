@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `context-maintenance` drafts a triage note and does not edit the files.
+  `stead factory new` scaffolds a factory. `stead inbox import` and `POST /hook`
+  capture into the inbox only.
 - Docs match the command: sign-in, publish, merge, and the image.
 - `stead factory merge` merges a green pull request when the repo file says
   `reach: merge`. It does not bypass branch protection, and it does not push

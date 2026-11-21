@@ -99,6 +99,11 @@ python -m stead factory run --factory weekly-contribution-digest [--shadow|--liv
 python -m stead factory run --factory weekly-project-status --project P [--shadow|--live] [--generate]
 python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge]
 python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr]
+python -m stead factory new --name NAME --title "What it drafts"
+python -m stead factory run --factory context-maintenance --shadow
+python -m stead inbox import PATH
+python -m stead hook set
+python -m stead hook show
 python -m stead factory watch
 python -m stead factory publish --contribution ID
 python -m stead factory merge --contribution ID
@@ -120,6 +125,13 @@ Nothing is posted or pushed. `--live` records the run as live. It does not
 raise the ceiling and it does not open a pull request. `--reach` is
 feature-builder only. It cannot exceed the repo ceiling. Merge is not an
 install default. See [Models](models.md).
+
+`factory new` writes `FACTORY.md`, `prompts/v1.md`, and one eval. Run
+`stead init` after that so the prompt is indexed. `inbox import` copies a
+local `.eml`, `.ics`, `.md`, or `.txt` file into `inbox/`. It does not write
+`context/`. `hook set` prints a token once. `POST /hook` with header
+`X-Stead-Hook` captures one inbox note and does not run a factory. The hook
+is off until that token exists.
 
 `factory publish` pushes the checkout's current branch and opens a pull
 request. The branch must not be the default, and it must be ahead of that

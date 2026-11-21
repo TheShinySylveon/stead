@@ -108,6 +108,9 @@ python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|cus
 python -m stead eval run [--factory F]        # structural check, no model
 python -m stead repo set ID --trigger on-demand|watch --reach shadow|draft-pr|pr|merge
 python -m stead factory watch                # watched feature specs; no push
+python -m stead factory new --name NAME --title T
+python -m stead inbox import PATH             # local .eml .ics .md .txt into inbox/
+python -m stead hook set                      # webhook token, printed once
 python -m stead factory publish --contribution ID  # isolated branch + pull request. Never merges.
 python -m stead factory merge --contribution ID    # green checks only. Repo must say reach: merge.
 python -m stead account add --name NAME --actor ACTOR  # shared-server sign-in. Hash only.

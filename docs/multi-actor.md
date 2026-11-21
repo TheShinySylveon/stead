@@ -84,10 +84,12 @@ actor. `stead actor use` does the same for this computer, without a password.
 
 This is attribution. It is not a permission check.
 
-## What is not built yet
+## What this does not do
 
-- No per-object permission checks in the CLI. If you can write the file, you
-  can write the object. Repository access is the permission.
+- No per-object permission checks. If you can write the file, you can write
+  the object. Repository or host access is the permission. That is a decision,
+  not a missing feature.
+- This computer has no password. Sign-in is only for the shared server.
 - Agents are not registered for you. Add an actor file when a new agent
   starts writing.
 

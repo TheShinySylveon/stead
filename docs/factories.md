@@ -87,6 +87,14 @@ merge.
 | reach | `shadow`, `draft-pr`, `pr`, `merge` | shadow |
 
 A run may ask for less than the repo ceiling. It may not ask for more.
+`context-maintenance` drafts a triage note from the inbox, broken relations,
+and objects older than 30 days. Assembly does not edit those files.
+
+```bash
+python -m stead factory run --factory context-maintenance --shadow
+python -m stead factory new --name NAME --title "What it drafts"
+```
+
 `stead factory watch` assembles open authored `feature-spec` issues on repos
 set to watch, and skips flagged specs. It does not push.
 
