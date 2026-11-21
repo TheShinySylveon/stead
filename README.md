@@ -129,8 +129,8 @@ then builds the Docker image. It does not push the image.
 - `actor:` is not stamped automatically. Add actors in Settings or with
   `ctx actor add`. Attribution is a file, not a login.
 - A factory calls a model only when you pass `--generate` or check Draft
-  with model. The endpoint is yours (OpenAI-compatible). The draft is a
-  file. Nothing is posted, pushed, or merged.
+  with model. The endpoint is yours: OpenAI, Anthropic, Grok, or another
+  chat server. The draft is a file. Nothing is posted, pushed, or merged.
 - `specify` is optional. If it is missing, onboarding still writes the
   constitution in `context/documents/`.
 - Git history before the empty-context commit still contains early demo

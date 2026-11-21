@@ -80,6 +80,43 @@ class ModelTest(unittest.TestCase):
                 models.complete("prompt", settings)
         self.assertNotIn("sk-secret", str(caught.exception))
 
+    def test_anthropic_and_grok_use_their_own_endpoints(self) -> None:
+        models.set_model(self.root, provider="anthropic", name="claude-test", api_key="sk-ant")
+        settings = models.resolve(self.root)
+        url, headers, body = models._request(settings, "draft this", 0.2)
+        self.assertEqual(url, "https://api.anthropic.com/v1/messages")
+        self.assertEqual(headers["x-api-key"], "sk-ant")
+        self.assertNotIn("Authorization", headers)
+        self.assertEqual(body["max_tokens"], models.ANTHROPIC_MAX_TOKENS)
+        self.assertEqual(
+            models.complete("draft this", settings, transport=lambda _body, _settings: {
+                "content": [{"type": "text", "text": "claude draft"}],
+            }),
+            "claude draft",
+        )
+
+        models.set_model(self.root, provider="grok", name="grok-test", api_key="xai-secret")
+        settings = models.resolve(self.root)
+        url, headers, body = models._request(settings, "draft this", 0.2)
+        self.assertEqual(url, "https://api.x.ai/v1/chat/completions")
+        self.assertEqual(headers["Authorization"], "Bearer xai-secret")
+        self.assertEqual(body["model"], "grok-test")
+        self.assertNotIn("xai-secret", json.dumps(models.public_model(self.root)))
+
+        def boom(req, timeout=None):
+            self.assertEqual(req.get_header("X-api-key"), "sk-ant")
+            self.assertIsNone(req.get_header("Authorization"))
+            raise urllib.error.URLError("timed out")
+
+        anthropic = {
+            "provider": "anthropic", "name": "claude-test",
+            "base_url": "https://api.anthropic.com/v1", "api_key": "sk-ant",
+        }
+        with mock.patch("urllib.request.urlopen", boom):
+            with self.assertRaises(models.ModelError) as caught:
+                models.complete("draft this", anthropic)
+        self.assertNotIn("sk-ant", str(caught.exception))
+
     def test_custom_url_must_be_http(self) -> None:
         with self.assertRaises(models.ModelError):
             models.set_model(self.root, provider="custom", name="local", base_url="file:///tmp/model")

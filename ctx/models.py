@@ -1,8 +1,9 @@
-"""Optional model client. OpenAI-compatible chat completions, stdlib only.
+"""Optional model client. Stdlib only. No vendor SDK.
 
 Assembly never calls this. `ctx factory run --generate` and `ctx eval judge`
-do. The endpoint is yours: OpenAI, OpenRouter, Ollama, or any other server
-that speaks `/v1/chat/completions`. No vendor is hardwired.
+do. OpenAI, Grok, OpenRouter, and Ollama speak chat completions. Anthropic
+speaks its own messages API. Custom is any other chat-completions server.
+No vendor is hardwired.
 
 The API key lives in the environment or in gitignored stead.json. It is never
 written into context markdown, a factory bundle, or a run file.
@@ -23,10 +24,22 @@ from ctx import config
 ENV_KEY = "STEAD_MODEL_API_KEY"
 PROVIDERS = {
     "openai": "https://api.openai.com/v1",
+    "anthropic": "https://api.anthropic.com/v1",
+    "grok": "https://api.x.ai/v1",
     "openrouter": "https://openrouter.ai/api/v1",
     "ollama": "http://127.0.0.1:11434/v1",
     "custom": "",
 }
+PROVIDER_LABELS = {
+    "openai": "OpenAI",
+    "anthropic": "Anthropic",
+    "grok": "Grok",
+    "openrouter": "OpenRouter",
+    "ollama": "Ollama, this computer",
+    "custom": "Custom",
+}
+ANTHROPIC_VERSION = "2023-06-01"
+ANTHROPIC_MAX_TOKENS = 8192
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 _REQUIRED = ("id", "title", "input", "pass_criteria")
 
@@ -109,16 +122,13 @@ def draft(root: Path, prompt: str, *, transport=None, timeout: float = 120) -> s
 
 def complete(prompt: str, settings: dict, *, transport=None,
              timeout: float = 120, temperature: float = 0.2) -> str:
-    body = {
-        "model": settings["name"],
-        "messages": [{"role": "user", "content": prompt}],
-        "temperature": temperature,
-    }
+    url, headers, body = _request(settings, prompt, temperature)
+    key = settings.get("api_key") or ""
     if transport is None:
-        raw = _post(settings["base_url"], body, settings.get("api_key") or "", timeout)
+        raw = _post(url, body, headers, key, timeout)
     else:
         raw = transport(body, settings)
-    return _content(raw)
+    return _content(raw, settings.get("provider") or "")
 
 
 def check_eval_files(root: Path, factory_name: str | None = None) -> dict:
@@ -224,14 +234,41 @@ def _needs_key(settings: dict) -> bool:
     return host not in _LOOPBACK
 
 
-def _post(base_url: str, body: dict, api_key: str, timeout: float) -> dict:
-    url = _check_url(base_url) + "/chat/completions"
+def _request(settings: dict, prompt: str, temperature: float) -> tuple[str, dict, dict]:
+    """URL, headers, and body for one call. Headers may contain the key."""
+    base = _check_url(settings["base_url"])
+    key = settings.get("api_key") or ""
+    if settings.get("provider") == "anthropic":
+        headers = {
+            "content-type": "application/json",
+            "accept": "application/json",
+            "anthropic-version": ANTHROPIC_VERSION,
+        }
+        if key:
+            headers["x-api-key"] = key
+        body = {
+            "model": settings["name"],
+            "max_tokens": ANTHROPIC_MAX_TOKENS,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": temperature,
+        }
+        return base + "/messages", headers, body
+    headers = {"Content-Type": "application/json", "Accept": "application/json"}
+    if key:
+        headers["Authorization"] = "Bearer " + key
+    body = {
+        "model": settings["name"],
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": temperature,
+    }
+    return base + "/chat/completions", headers, body
+
+
+def _post(url: str, body: dict, headers: dict, api_key: str, timeout: float) -> dict:
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
-    req.add_header("Content-Type", "application/json")
-    req.add_header("Accept", "application/json")
-    if api_key:
-        req.add_header("Authorization", "Bearer " + api_key)
+    for name, value in headers.items():
+        req.add_header(name, value)
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
@@ -248,7 +285,18 @@ def _post(base_url: str, body: dict, api_key: str, timeout: float) -> dict:
     return parsed
 
 
-def _content(data: dict) -> str:
+def _content(data: dict, provider: str = "") -> str:
+    if provider == "anthropic":
+        parts = data.get("content") if isinstance(data, dict) else None
+        if not isinstance(parts, list):
+            raise ModelError("the model response had no message")
+        message = "".join(
+            part.get("text", "") if isinstance(part, dict) else str(part)
+            for part in parts if isinstance(part, (dict, str))
+        )
+        if not message.strip():
+            raise ModelError("the model returned an empty draft")
+        return message
     try:
         message = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError, TypeError) as exc:

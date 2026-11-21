@@ -210,6 +210,11 @@ def _needs_welcome(root: Path) -> bool:
     return needs_welcome(root)
 
 
+def _model_providers() -> list[dict]:
+    from ctx.models import PROVIDER_LABELS, PROVIDERS
+    return [{"id": key, "label": PROVIDER_LABELS[key]} for key in PROVIDERS]
+
+
 def _factory_defaults(root: Path) -> dict:
     from ctx.autonomy import factory_defaults
     return factory_defaults(root)
@@ -318,6 +323,7 @@ def snapshot(root: Path) -> dict:
             "factory_trigger": ["on-demand", "watch"],
             "factory_reach": ["shadow", "draft-pr", "pr", "merge"],
             "factory_reach_install": ["shadow", "draft-pr", "pr"],
+            "model_provider": _model_providers(),
         },
     }
 

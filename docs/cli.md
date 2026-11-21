@@ -83,7 +83,7 @@ already on disk.
 
 ```bash
 python3 -m ctx model show
-python3 -m ctx model set --provider openai|openrouter|ollama|custom --name NAME [--base-url URL] [--key KEY]
+python3 -m ctx model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME [--base-url URL] [--key KEY]
 python3 -m ctx factory run --factory weekly-contribution-digest [--shadow|--live] [--generate]
 python3 -m ctx factory run --factory weekly-project-status --project P [--shadow|--live] [--generate]
 python3 -m ctx repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge]

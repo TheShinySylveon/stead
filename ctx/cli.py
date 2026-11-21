@@ -632,7 +632,8 @@ def build_parser() -> argparse.ArgumentParser:
     model = sub.add_parser("model", help="the rented model factories may draft with").add_subparsers(dest="sub", required=True)
     model.add_parser("show", help="show the configured model. Never prints the key.")
     ms = model.add_parser("set", help="choose an OpenAI-compatible endpoint")
-    ms.add_argument("--provider", required=True, choices=("openai", "openrouter", "ollama", "custom"))
+    from ctx.models import PROVIDERS
+    ms.add_argument("--provider", required=True, choices=tuple(PROVIDERS))
     ms.add_argument("--name", required=True, help="model name, such as gpt-4.1-mini or llama3.2")
     ms.add_argument("--base-url", help="defaults to the provider preset")
     ms.add_argument("--key", help="stored in gitignored stead.json. Prefer STEAD_MODEL_API_KEY.")

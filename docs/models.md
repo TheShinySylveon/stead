@@ -3,14 +3,16 @@
 Factories can draft without you pasting the prompt into a chat window. The
 model is rented. The files stay here.
 
-No vendor is hardwired. Stead speaks the OpenAI chat-completions API, which
-OpenAI, OpenRouter, Ollama, and most local servers already speak. Python
-standard library only. No pip package.
+No vendor is hardwired. OpenAI, Grok, OpenRouter, and Ollama use chat
+completions. Anthropic uses its messages API. Custom is any other
+chat-completions server. Python standard library only. No pip package.
 
 ## Set one
 
 ```bash
 python3 -m ctx model set --provider openai --name gpt-4.1-mini
+python3 -m ctx model set --provider anthropic --name claude-sonnet-4-5
+python3 -m ctx model set --provider grok --name grok-4
 python3 -m ctx model set --provider openrouter --name openai/gpt-4.1-mini
 python3 -m ctx model set --provider ollama --name llama3.2
 python3 -m ctx model set --provider custom --name my-model --base-url http://127.0.0.1:8000/v1

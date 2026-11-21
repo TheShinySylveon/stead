@@ -5,6 +5,8 @@
 - feature-builder trigger and reach. On demand or watch. Ceiling is per repo:
   shadow, draft-pr, pr, or merge. Merge is never inherited. A run above the
   ceiling is refused. Nothing is pushed, opened, or merged.
+- Anthropic and Grok are model choices. Grok uses chat completions.
+  Anthropic uses its messages API. The key stays out of git.
 - Optional model drafts. `ctx factory run --generate` and the cockpit checkbox
   call an OpenAI-compatible endpoint and write `output.md`. Assembly still
   calls nothing. Nothing is posted or pushed.

@@ -102,7 +102,7 @@ state.db             <- GITIGNORED, rebuildable operational index (ctx init)
 ```
 python3 -m ctx version                       # print 0.0.1
 python3 -m ctx model show                    # configured endpoint; never prints the key
-python3 -m ctx model set --provider openai|openrouter|ollama|custom --name NAME
+python3 -m ctx model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME
 python3 -m ctx eval run [--factory F]        # structural check, no model
 python3 -m ctx repo set ID --trigger on-demand|watch --reach shadow|draft-pr|pr|merge
 python3 -m ctx factory watch                # watched feature specs; no push

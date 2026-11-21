@@ -589,7 +589,7 @@ function renderSettings() {
       <strong>${m.configured ? esc(m.provider) + " · " + esc(m.name) : "No model"}</strong>
       <p class="meta">Factories stay offline until you check Draft with model. Key ${m.key_set ? "set (" + esc(m.key_from) + ")" : "not set"}. Prefer ${esc(m.key_env)}. It is not written into context/.</p>
       <form class="stack" id="set-model">
-        <select name="provider" aria-label="Model provider">${opt("openai", "OpenAI")}${opt("openrouter", "OpenRouter")}${opt("ollama", "Ollama, this computer")}${opt("custom", "Custom")}</select>
+        <select name="provider" aria-label="Model provider">${(state.snap.choices.model_provider || []).map(p => opt(p.id, p.label)).join("")}</select>
         <input type="text" name="name" placeholder="Model name" required aria-label="Model name" value="${esc(m.name)}">
         <input type="text" name="base_url" placeholder="Base URL, optional" aria-label="Model base URL" value="${esc(m.base_url)}">
         <input type="password" name="api_key" placeholder="API key, leave blank to keep" aria-label="Model API key" autocomplete="off">
