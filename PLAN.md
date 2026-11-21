@@ -1,160 +1,188 @@
-# Shared Context — Local Implementation Plan
+# Stead — design record
 
 A local, model-agnostic version of Notion's *A New Shape for Work*: a **context
-system** (one shared place where humans and agents read/write knowledge) plus
-**factories** (shared, scrutinized AI workflows that compound over time).
+system** (one shared place where humans and agents read and write knowledge)
+plus **factories** (shared, scrutinized workflows).
 
-> Guiding line from the source: **"Rent the intelligence. Own the context."**
+> Guiding line: **Rent the intelligence. Own the context.**
+
+This file is the design record, not the user guide. Human docs start at
+`docs/README.md`. Agent rules are `AGENTS.md`. Git history holds the earlier
+draft of this plan, including the name Shared Context and the command `ctx`.
 
 **Build philosophy: sustainable, not convenient.** Open standards (Markdown +
-YAML frontmatter, SQLite, git, `AGENTS.md`), Python **stdlib only** (zero pip
-deps), local-first, tool- and scheduler-agnostic, no hardwired LLM provider.
-The system must outlive any single agent, model, or scheduler.
+flat YAML frontmatter, SQLite, git, `AGENTS.md`), Python **stdlib only** (zero
+pip dependencies), local-first, no hardwired model. The system must outlive
+any single agent, model, or scheduler.
 
-**Scope:** one unified cockpit for **both your own projects and the open source
-projects you contribute to**. Specific repos are seeded later; the ontology is
-built to accommodate them now.
+The product name is **Stead**. The command is `python -m stead`. The Python
+package is still `ctx`. `python -m ctx` still runs and says so.
 
 ---
 
 ## 1. Concept → local mapping
 
-| Notion concept | Local equivalent |
+| Notion concept | What Stead does |
 |---|---|
-| Context system / workspace | This folder: markdown + JSON, git-versioned |
-| Core databases (Projects/Repos, Tasks, Contributions, Documents) | `context/` markdown + SQLite tables |
-| Ontology / relations | YAML frontmatter links (`repo:`, `project:`, `issue:`, `pr:`) + `CONVENTIONS.md` |
-| Factory (specific, shared, scrutinized) | `factories/<name>/` = definition + versioned prompts + evals + run logs |
-| Task queue (to-do / doing / done) | `context/tasks/` files with a `status` field |
-| Prompt versions (testing / production / retired) | `factories/<name>/prompts/` + `registry.json` status |
-| Evals (tasks + judgement criteria) | `factories/<name>/evals/` cases, judged by agent or human |
-| Scheduled triggers | Any scheduler calling `python3 -m ctx factory run ...` |
-| Event-driven triggers | `inbox/` drop folder + (later) Hermes webhooks |
-| Governance / audit / preview | git history + run logs + **shadow-run** mode |
-| Sync external context | `ctx sync github` (via `gh`, cached in SQLite, offline-capable) + import scripts → `inbox/` |
-| Agent execution engine | **Tool-agnostic:** `AGENTS.md` + stdlib CLI (`python3 -m ctx`); any agent/scheduler drives it |
+| Context system / workspace | This folder: markdown, git, optional Docker |
+| Core objects | `context/` markdown. `state.db` is a rebuildable index |
+| Ontology / relations | Flat YAML frontmatter. Schema: `CONVENTIONS.md` |
+| Factory | `factories/<name>/`: definition, versioned prompts, evals, run logs |
+| Task queue | `context/tasks/` with `status: to-do\|doing\|done\|blocked` |
+| Prompt versions | `factories/<name>/prompts/` plus the `prompt_versions` table |
+| Evals | `factories/<name>/evals/`. `stead eval run` checks files. `stead eval judge` records a pass or fail. Promote refuses without a pass for that version |
+| Scheduled triggers | Any scheduler calling `python -m stead`. No timer is built in |
+| Event-driven triggers | `inbox/` capture. Webhooks are not built |
+| Governance / audit | git history, run logs, shadow assembly |
+| Sync external context | `stead sync github` via `gh`. Read-only. Offline re-index with `--offline` |
+| Who writes | `context/actors/` files. A shared server also has sign-ins. Attribution, not a permission system |
+| Execution | Stdlib CLI. Any agent can drive it. Optional `--generate` rents a model |
 
-**Runtime choice:** context + factory definitions live in open files + SQLite.
-Execution is a plain Python-stdlib CLI (`python3 -m ctx`) that *any* agent or
-scheduler can invoke. Hermes can drive it today, but nothing requires Hermes.
-Structured state (tasks, prompt versions, runs, evals) lives in SQLite; knowledge
-objects stay markdown. `state.db` is a rebuildable, gitignored artifact.
+**Runtime.** Knowledge stays in markdown. SQLite indexes it and can be rebuilt
+with `stead init`. Do not put `state.db` on a network share. Do not replace
+SQLite for this release.
 
 ---
 
-## 2. Folder structure
+## 2. What is in the tree
 
 ```
-Shared Context/
-├── AGENTS.md              # cross-agent entry point (open convention)
-├── README.md              # human entry point: quick start, structure
-├── CONVENTIONS.md         # ontology: object types, frontmatter schema, naming
+stead/
+├── AGENTS.md              # agent entry point
+├── README.md              # human front door
+├── CONVENTIONS.md         # frontmatter schema
 ├── PLAN.md                # this file
-├── ctx/                   # Python stdlib-only CLI (python3 -m ctx)
-│   ├── __main__.py        # argparse subcommands (incl. sync github via gh)
-│   ├── schema.sql         # SQLite schema (tracked, diffable)
-│   └── test_ctx.py        # stdlib unittest tests
-├── state.db               # SQLite state (gitignored, rebuildable via ctx init)
-├── context/
-│   ├── repos/             # one .md per repo/project (own + OSS): url, branch,
-│   │                      # contributing guide, conventions, maintainers
-│   ├── contributions/     # issues/PRs you're working: repo, github #/url, status
-│   ├── tasks/             # local tasks (status: to-do|doing|done|blocked)
-│   ├── documents/         # your PRIVATE notes, decisions, learnings
-│   └── meetings/          # notes/discussions, linked to repos
-├── factories/
-│   └── weekly-contribution-digest/
-│       ├── FACTORY.md     # trigger, inputs, stages, outputs, tools, risk level
-│       ├── prompts/       # v1.md ... (versioned; status in prompt_versions table)
-│       ├── evals/         # test cases + pass criteria
-│       └── runs/          # context bundles + run logs (also in runs table)
-├── inbox/                 # unsorted capture; triage factory files it away
-├── .gitignore
-└── .git/                  # version control = audit trail + rollback
+├── docs/                  # human documentation
+├── ctx/                   # implementation package. Command is stead
+├── stead/                 # python -m stead
+├── context/               # projects, tasks, documents, meetings, repos,
+│                          # contributions, actors. Empty in a fresh clone
+├── examples/context/      # samples. Not loaded
+├── factories/             # weekly-contribution-digest, weekly-project-status,
+│                          # feature-builder
+├── inbox/
+├── Dockerfile             # shared server. Image: ghcr.io/theshinysylveon/stead
+└── docker-compose.yml     # one process, one index. Do not scale it
 ```
 
-Rules that keep it agent-friendly (from the article's "bad context is Enemy No. 1"):
-- Every object has frontmatter: `id`, `type`, `title`, `created`, `updated`, relations.
-- One logical place for everything; `inbox/` is the only dumping ground, and it
-  gets triaged, not left to rot.
-- Agents write through the conventions, never freestyle scattered files.
+`private/accounts.json` and `stead.json` are gitignored. Passwords and keys
+never go in `context/`.
 
 ---
 
-## 3. Phased rollout
+## 3. What shipped
 
-### Phase 1 — Context skeleton (one session)
-- `git init`, `README.md`, `CONVENTIONS.md` (ontology + frontmatter schema).
-- Create `context/` dirs and seed 1–2 real projects + a few tasks.
-- Author **`AGENTS.md`** (open cross-agent convention) + a stdlib `ctx/` CLI so
-  *any* agent/session can navigate, read, and write here correctly. This is the
-  single most important artifact — tool-agnostic, not a Hermes-only skill.
-- **Done when:** a fresh agent session can answer "what's the status of project X?"
-  by navigating the folder, not by being hand-fed context.
+### Context system
 
-### Phase 2 — First factory: `weekly-contribution-digest` (start tiny)
-- Inputs: your PRs in flight, reviews awaiting your reply, claimed issues, CI
-  status — pulled by `ctx sync github` (cached) across your repos.
-- Write `FACTORY.md` + `prompts/v1.md`; trigger **manually** first.
-- **Shadow runs first:** it drafts the digest; a human reviews before filing.
-  Never auto-posts to GitHub. Log every run to `runs/`.
-- **Done when:** the factory produces 3–5 real digests end-to-end with logs.
+- Markdown objects, frontmatter, and a rebuildable SQLite index.
+- Local cockpit. One offline page. Loopback unless `--deploy` or Docker.
+- Welcome on an empty `context/`: project title, optional GitHub URL, this
+  computer or a shared server.
+- Actors as files. `stead actor use` or a signed-in session stamps `actor:`.
+- Public/private split. GitHub cache is public. Documents and meetings are
+  private strategy.
 
-### Phase 3 — Scrutiny loop (make it compound)
-- Build an **eval suite** (5–10 representative cases + pass criteria) so prompt
-  changes are tested against the whole suite, not just the latest failure.
-- Prompt versioning via the `prompt_versions` table (testing → production → retired).
-- Wire a **scheduler** (Task Scheduler/cron/Hermes) for recurring runs; low volume
-  first, expand as trust grows.
-- Review run logs weekly; fix real observed failures, not imagined ones.
-- **Done when:** a prompt improvement is validated by evals before promotion.
+### This computer or a shared server
 
-### Phase 4 — Compounding flywheel
-- More factories (same template), notably **`feature-builder` (issue → PR):**
-  you write an issue/feature with acceptance criteria into `context/contributions/`;
-  a pluggable coding agent (Hermes / Claude Code / Codex) implements it on a branch
-  with tests and opens a PR via `gh`; ctx tracks status + run logs + the PR link.
-  Follows the proven issue-to-PR discipline (read thread, sweep duplicates, validate
-  premise, TDD, sabotage-test the regression, quality gates, honest CI).
-- **Syncs:** `ctx sync github` for issues/PRs/reviews; import email/calendar/transcripts into `inbox/`.
-- A **context-maintenance factory**: triage inbox, dedupe, flag stale docs,
-  keep relations consistent (agents maintaining the system, per the article).
-- Eventually a **factory factory** that scaffolds new factories from the template.
+- **This computer.** `stead ui` stays on loopback. No login.
+- **Shared server.** One Docker process. Each person signs in. The access
+  token only starts a server that has no accounts yet. Hashes live in the
+  private volume, not in git.
+- The image is published from `main` to `ghcr.io/theshinysylveon/stead`.
+  GitHub creates the package private. The owner sets it public once.
 
-**Autonomy ladder for code-writing factories (e.g. `feature-builder`):**
-1. **Shadow** — agent proposes a plan + diff; nothing pushed.
-2. **Draft PR** — agent opens a PR with passing tests; **you review and merge.**
-3. **Trusted** — auto-merge only after a proven track record + adversarial review +
-   branch protection. Never the default.
+### Factories
 
-Best for well-scoped, verifiable work (clear acceptance criteria + a test suite);
-vague/large features are decomposed first. Requires the repo locally cloneable with
-quality gates. ctx stores/tracks; the coding agent is pluggable; `gh` opens PRs; git
-branches give isolation + audit.
+Three factories assemble a prompt and stop. `--generate` may draft
+`output.md`. Assembly does not post, push, or merge.
+
+- `weekly-contribution-digest` — PRs, reviews, claimed issues, CI. Never posts.
+- `weekly-project-status` — one project's tasks, documents, and meetings.
+- `feature-builder` — planning-first, always. `method` selects tooling only:
+  `spec-kit` (default, optional `specify` CLI) or `builtin` markdown.
+
+feature-builder has two knobs, per repo. A run may ask for less. It may not
+ask for more. Merge is never inherited.
+
+| Knob | Values | Default |
+|---|---|---|
+| trigger | `on-demand`, `watch` | on-demand |
+| reach | `shadow`, `draft-pr`, `pr`, `merge` | shadow |
+
+- `stead factory watch` assembles open authored `feature-spec` issues on repos
+  set to watch. It skips flagged specs. It does not push.
+- `stead factory publish` pushes an isolated branch and opens a pull request
+  when the ceiling allows `draft-pr`, `pr`, or `merge`. It refuses the default
+  branch. It does not merge.
+- `stead factory merge` is a separate command. The repo file must say
+  `reach: merge`. The checks must be green. It does not pass `--admin`. It
+  does not push the default branch. A factory run does not call it. The
+  cockpit does not push or merge.
+
+`stead prompt promote` refuses until every eval case has a recorded pass for
+that version.
 
 ---
 
-## 4. Principles carried over from the source
-- **Start simple, watch it fail, fix real failures.** Don't pre-build complexity.
-- **Incremental risk:** shadow run → low volume → consequential actions.
-- **Specific + shared + scrutinized** — the three factory tests.
-- **Humans stay in the loop** where judgment/creativity matters; the system
-  elevates people to overseeing the assembly line, not removes them.
-- **Model-agnostic:** plain files mean you can swap the underlying LLM freely.
+## 4. Autonomy ladder
 
-## 5. Decisions (locked)
-1. **First factory:** `weekly-contribution-digest` — recurring, verifiable,
-   low-risk. Summarizes PRs in flight, reviews awaiting reply, claimed issues,
-   and CI across your repos. Human reviews before filing; never auto-posts.
-2. **Scope:** single user, single machine; covers **both own projects and OSS
-   contributions** in one unified cockpit. Specific repos seeded later. No
-   `people/` DB, no permissions layer. Frontmatter relations keep it extensible.
-   Public GitHub-derived data is kept separate from your private notes.
-3. **Git inside OneDrive:** fine for single-machine use. OneDrive acts as
-   backup; revisit only if this ever syncs across machines/people.
-4. **Sustainable stack:** open formats + SQLite + git + `AGENTS.md` + Python
-   stdlib only; no third-party deps; no hardwired LLM provider; scheduler-agnostic.
-5. **GitHub integration:** `ctx sync github` shells out to the open-source `gh`
-   CLI (an external tool like git, not a pip dep), caches results in SQLite, and
-   stays offline-capable. Sync is explicit/on-demand, not a hardwired cloud call.
-   Authenticated account: TheShinySylveon.
+A repo may sit on any rung. The install default cannot be merge.
+
+1. **Shadow.** Plan and proposed diff only. No remote writes.
+2. **Draft PR.** `stead factory publish` opens a draft. A person reviews and
+   merges.
+3. **Pull request.** The same command opens a normal pull request. A person
+   still merges, unless the repo file says merge.
+4. **Trusted.** `stead factory merge` only when the repo file says
+   `reach: merge`, the checks are green, and GitHub accepts the merge. Never
+   the install default. Never a red check. Never a bypass of branch protection.
+
+Vague or large specs are flagged. They are not guessed.
+
+---
+
+## 5. Decisions
+
+These replace the earlier locks where they conflict. The earlier draft said
+single user, single machine, and `python3 -m ctx`. Those are retired.
+
+1. **Command.** `stead`. Package remains `ctx`.
+2. **Scope.** One cockpit for own projects and open-source contributions.
+   This computer is one person and the agents on that machine. A shared server
+   is one process and several browsers, with per-person sign-in. No per-object
+   permission checks. If you can write the file, you can write the object.
+3. **Index.** SQLite stays. Git shares the markdown. Each clone keeps its own
+   `state.db`. Do not put the database on a network share. Do not scale the
+   container.
+4. **Stack.** Stdlib only. Optional external tools: `gh`, `specify`, Docker.
+   Optional rented model: OpenAI, Anthropic, Grok, OpenRouter, Ollama, or a
+   custom chat server. The key stays out of git.
+5. **GitHub.** Sync and digest are read-only. Publish and merge are explicit
+   commands with a ceiling. Neither runs from assembly. Neither pushes the
+   default branch.
+6. **License.** Apache-2.0. Open source. Commercial use is allowed. Copyright
+   2026 Tyler Rathbone.
+7. **Public repo.** `https://github.com/TheShinySylveon/stead`. A fresh clone
+   has an empty `context/`. Samples live in `examples/context/`.
+
+---
+
+## 6. Not built
+
+- A context-maintenance factory, and a factory that scaffolds factories.
+- Email, calendar, or transcript import. Inbox is manual capture.
+- Webhooks. A scheduler is still whatever calls the CLI.
+- Per-object permissions, or per-person passwords on this computer.
+- Auto-merge. Merge is an explicit command, and only when the repo file says so.
+- A published container that is public without the one-time package setting.
+  CI publishes the image. GitHub leaves the package private until the owner
+  changes it.
+
+## 7. Principles
+
+- Start simple. Fix real failures, not imagined ones.
+- Incremental risk: shadow, then an explicit remote command, never a skip of
+  the ceiling.
+- Specific, shared, and scrutinized. Those are the factory tests.
+- A person stays in the loop before anything consequential.
+- Plain files. The model can be swapped. The notes stay here.
