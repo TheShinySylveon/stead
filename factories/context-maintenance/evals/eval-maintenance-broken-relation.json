@@ -1,0 +1,7 @@
+{
+  "id": "eval-maintenance-broken-relation",
+  "factory": "context-maintenance",
+  "title": "A relation points at a missing object",
+  "input": "Bundle with one task whose project: is project-missing. No inbox, stale, or duplicate items.",
+  "pass_criteria": "The draft names the task id and project-missing under Broken relations, and says None for the other sections. It does not guess or create the missing project, and it does not edit any file."
+}

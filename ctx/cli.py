@@ -736,7 +736,7 @@ def build_parser() -> argparse.ArgumentParser:
     fr = sub.add_parser("factory", help="factory runner").add_subparsers(dest="sub", required=True)
     frun = fr.add_parser("run", help="assemble a bundle. --generate drafts with the configured model.")
     frun.add_argument("--factory", required=True)
-    frun.add_argument("--project", help="project id (not needed for weekly-contribution-digest)")
+    frun.add_argument("--project", help="project id. Not needed for weekly-contribution-digest or context-maintenance")
     frun.add_argument("--contribution", help="spec contribution id (required for feature-builder)")
     frun.add_argument("--shadow", action="store_true", help="shadow mode (default)")
     frun.add_argument("--live", action="store_true", help="record as live. Still does not push or open a PR.")

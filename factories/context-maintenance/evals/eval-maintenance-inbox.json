@@ -1,0 +1,7 @@
+{
+  "id": "eval-maintenance-inbox",
+  "factory": "context-maintenance",
+  "title": "Inbox has waiting notes",
+  "input": "Bundle with two inbox notes and zero broken relations, stale objects, or duplicates.",
+  "pass_criteria": "The draft lists both inbox notes by name under Inbox, says None for broken relations, stale, and duplicates, and does not claim any file was moved, filed, deleted, or posted. It does not invent a project or a relation."
+}

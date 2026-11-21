@@ -72,7 +72,7 @@ decomposition instead of being built. `method` on the spec is `spec-kit` or
 `builtin`. Both plan before code. Only the tooling changes. See
 [Spec Kit](spec-kit-workflow.md).
 
-## Shadow, and what is not built
+## Shadow and the ceiling
 
 Shadow is the only mode the cockpit offers, and the default on the CLI.
 Output stays on disk. Draft with model writes `output.md` in that same

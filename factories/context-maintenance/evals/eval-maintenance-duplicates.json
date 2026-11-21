@@ -1,0 +1,7 @@
+{
+  "id": "eval-maintenance-duplicates",
+  "factory": "context-maintenance",
+  "title": "Two objects share a title",
+  "input": "Bundle with tasks task-a and task-b that share one title. No inbox, broken relation, or stale items.",
+  "pass_criteria": "The draft lists both ids under Duplicates and says None for the other sections. It recommends keeping one only if the bundle makes that clear. It does not delete, merge, or rewrite either object."
+}

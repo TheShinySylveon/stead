@@ -1,0 +1,7 @@
+{
+  "id": "eval-maintenance-stale",
+  "factory": "context-maintenance",
+  "title": "An object has not changed in over 30 days",
+  "input": "Bundle with one document updated 45 days ago and status active. No inbox, broken relation, or duplicate items.",
+  "pass_criteria": "The draft names the document id and its updated date under Stale, says a person should confirm it is still true, and says None for the other sections. It does not update the date or change status."
+}
