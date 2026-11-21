@@ -22,7 +22,8 @@ own projects and the open-source projects you contribute to (one cockpit):
 2. **Factories** — specific, shared, scrutinized AI workflows under
    `factories/<name>/`. Each has versioned prompts, evals, and run logs.
    The first factory is `weekly-contribution-digest`; `weekly-project-status`
-   remains available for own projects.
+   remains available for own projects. The third, `feature-builder`, turns an
+   authored feature spec into an autonomous issue→PR build (shadow/draft-PR only).
 
 ## Layout
 
@@ -42,6 +43,7 @@ inbox/               <- unsorted capture; triage it, don't let it rot
 factories/
   weekly-contribution-digest/   <- first factory (OSS + own-project digest)
   weekly-project-status/        <- own-project status updates
+  feature-builder/              <- issue->PR autonomous build (shadow/draft-PR)
     FACTORY.md       <- trigger, inputs, stages, outputs, risk level
     prompts/v1.md    <- versioned prompt (production)
     evals/           <- test cases + pass criteria (JSON)
@@ -80,8 +82,11 @@ state.db             <- GITIGNORED, rebuildable operational index (ctx init)
 - **Public/private split:** GitHub-derived data (`repos/`, `contributions/`) is
   public; your notes and strategy (`documents/`, `meetings/`, project/task bodies)
   are private. Never copy private strategy into a contribution file or a digest.
-- **GitHub is read-only:** never create issues/PRs/comments/labels and never push.
-  The digest only drafts locally; a human reviews before anything is filed/shared.
+- **Core GitHub access is read-only:** `sync`/`digest` never create
+  issues/PRs/comments/labels and never push; the digest only drafts locally and a
+  human reviews before anything is filed. The sole gated exception is
+  `feature-builder`'s future draft-PR rung (isolated branch + draft PR, human
+  merges) — shadow-only today, zero remote writes.
 - Do not edit `PLAN.md`. Do not delete run logs under `factories/*/runs/`.
 - Commit meaningful changes with git; the history is the audit trail.
 
@@ -108,6 +113,7 @@ python3 -m ctx prompt list --factory F
 python3 -m ctx prompt promote --factory F --version V
 python3 -m ctx factory run --factory weekly-contribution-digest [--shadow|--live]
 python3 -m ctx factory run --factory weekly-project-status --project P [--shadow|--live]
+python3 -m ctx factory run --factory feature-builder --contribution ID [--shadow|--live]
 python3 -m ctx digest                        # shortcut for the digest shadow run
 python3 -m unittest discover -s tests        # run the test suite
 ```
@@ -116,7 +122,8 @@ python3 -m unittest discover -s tests        # run the test suite
 emits the assembled prompt under `factories/<name>/runs/<run-id>/`. The digest
 factory groups cached contributions by repo (PRs in flight / reviews awaiting
 reply / claimed issues / CI flags); the status factory bundles a project's tasks +
-documents + meetings. Generation is pluggable: any agent (or human) reads
+documents + meetings; feature-builder bundles a feature spec + acceptance criteria
++ repo conventions. Generation is pluggable: any agent (or human) reads
 `prompt.md`, produces the output, and records it with
 `ctx run log --output ... --verdict ...`. Triggers are scheduler-agnostic: any
 cron/Task Scheduler/systemd timer can invoke the CLI.
@@ -133,11 +140,37 @@ cron/Task Scheduler/systemd timer can invoke the CLI.
 - `gh` missing or not authenticated -> clear message; use `--offline`. Seed data
   marked `EXAMPLE` in title/tags is demonstrative, not real.
 
+## feature-builder (issue → PR, shadow/draft-PR only)
+
+A build target is a `contribution` with `kind: issue`, `role: author`, linked to a
+`repo`, tagged `feature-spec`, whose body has a description + a `## Acceptance
+criteria` checklist. `ctx factory run --factory feature-builder --contribution ID`
+assembles a deterministic, LLM-free, network-free bundle (spec + criteria + repo
+conventions + related docs + sibling contributions for a duplicate sweep) and
+flags thin/large/criteria-less specs for decomposition. A pluggable coding agent
+then reads `prompt.md` and implements under the issue-to-PR discipline (read
+issue + comments → duplicate sweep → validate premise → criterion→test map → TDD
+red-green → sabotage-test → quality gates → honest CI).
+
+**Autonomy ladder (never skip a rung):**
+1. **SHADOW (default; only mode enabled today):** plan + proposed diff only; zero
+   remote writes. A human reviews locally.
+2. **DRAFT-PR (per-spec opt-in after approved shadow runs):** push an isolated
+   feature branch + `gh pr create --draft`; a HUMAN reviews and merges.
+3. **TRUSTED (far future, never default):** auto-merge only after a proven record
+   + adversarial review + server-side branch protection, explicitly enabled per repo.
+
+**Hard rules (every mode):** never push to main/default branch; never auto-merge
+by default; human review gate before anything consequential; vague/large specs
+are flagged, never guessed; report CI honestly. Assembly itself does no
+LLM/network/subprocess/remote writes.
+
 ## Factory protocol (incremental risk)
 
 1. **Shadow first.** New factories and new prompt versions run in shadow mode
    (`--shadow`, the default): outputs are drafts, a human reviews before anything
-   is filed or acted on. The digest **never auto-posts** to GitHub.
+   is filed or acted on. The digest **never auto-posts** to GitHub; feature-builder
+   is shadow-only today (autonomy ladder above).
 2. Promote prompts only after evals pass: `ctx prompt promote` (old production
    version is retired, never deleted).
 3. Log every run. Review run logs; fix real observed failures, not imagined
