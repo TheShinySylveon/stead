@@ -58,9 +58,17 @@ attribution, not a login. Git history remains the audit trail.
 4. Pull before a long edit. If two people change the same file, git shows a
    text conflict. Do not invent a silent merge in the database.
 
-The cockpit still binds to loopback. It is a local window onto a local
-clone, not a multi-user website. Two people do not share one cockpit
-process. They each run their own, against their own clone, and meet in git.
+Two ways to share:
+
+- **Several clones.** Each person runs a loopback cockpit. They meet in git.
+  Each clone has its own `state.db`.
+- **One shared server.** Docker runs a single process with an access token.
+  Several browsers use that one index. Do not scale the container. See
+  [Deploy](deploy.md).
+
+A normal `ctx ui` stays on loopback even after you choose Shared server.
+The choice is recorded in gitignored `stead.json`. The open port is the
+container, started with `STEAD_ACCESS_TOKEN` set.
 
 ## What is not built yet
 

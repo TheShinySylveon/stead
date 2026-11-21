@@ -11,6 +11,10 @@ __pycache__/
 *.pyc
 *.pyo
 
+# Deployment secrets. Never commit an access token.
+stead.json
+.env
+
 # OS noise
 .DS_Store
 Thumbs.db

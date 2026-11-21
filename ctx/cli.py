@@ -585,6 +585,12 @@ def build_parser() -> argparse.ArgumentParser:
     cs.add_argument("--role", choices=CONTRIB_ROLES)
     cs.add_argument("--method", choices=CONTRIB_METHODS)
 
+    actor = sub.add_parser("actor", help="humans and agents who write here").add_subparsers(dest="sub", required=True)
+    aa = actor.add_parser("add", help="add an actor file")
+    aa.add_argument("--title", required=True)
+    aa.add_argument("--kind", default="human", choices=("human", "agent"))
+    actor.add_parser("list", help="list actors")
+
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
     sg.add_argument("--author", default="@me")
@@ -627,6 +633,8 @@ def build_parser() -> argparse.ArgumentParser:
     welcome = sub.add_parser("welcome", help="first run: name a project and optional GitHub URL")
     welcome.add_argument("--title", required=True)
     welcome.add_argument("--url", help="https://github.com/owner/name")
+    welcome.add_argument("--deployment", default="single", choices=("single", "multi"),
+                         help="single: this computer. multi: shared server, needs Docker")
 
     ob = sub.add_parser("onboard", help="create a project, its repo record, and the initial constitution")
     ob.add_argument("--title", required=True)
@@ -641,9 +649,11 @@ def build_parser() -> argparse.ArgumentParser:
                     help="do not run specify init, even if it is installed")
 
     cockpit = sub.add_parser("ui", help="open the local cockpit in a browser (loopback only)")
-    cockpit.add_argument("--port", type=int, default=8765)
-    cockpit.add_argument("--host", default="127.0.0.1",
-                         help="loopback only: 127.0.0.1, localhost, or ::1")
+    cockpit.add_argument("--port", type=int, default=None)
+    cockpit.add_argument("--host", default=None,
+                         help="single-user: loopback only. multi-user --deploy: 0.0.0.0")
+    cockpit.add_argument("--deploy", action="store_true",
+                         help="shared server. Requires an access token. Prefer Docker.")
     cockpit.add_argument("--no-browser", action="store_true",
                          help="serve without opening a browser")
 
@@ -687,6 +697,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.sub == "set":
             return cmd_contribution_set(root, args.id, args.state, args.ci,
                                         args.review, args.role, args.method)
+    if args.command == "actor":
+        from ctx.ui import UiError, add_actor
+        from ctx import objects
+        if args.sub == "add":
+            try:
+                added = add_actor(root, args.title, args.kind)
+            except UiError as exc:
+                raise SystemExit(str(exc)) from exc
+            print(f"added {added['id']} [{added['kind']}]")
+            return 0
+        for _path, meta, _body in objects.iter_objects(root, "actor"):
+            print(f"{meta.get('id')}  {meta.get('kind', 'human')}  {meta.get('title')}")
+        return 0
     if args.command == "sync" and args.sub == "github":
         return cmd_sync_github(root, args.author, args.limit, args.offline)
     if args.command == "digest":
@@ -710,9 +733,22 @@ def main(argv: list[str] | None = None) -> int:
             result = run_welcome(root, args.title, url=args.url)
         except OnboardError as exc:
             raise SystemExit(str(exc)) from exc
+        from ctx.config import ConfigError, choose
+        try:
+            chosen = choose(root, args.deployment)
+        except ConfigError as exc:
+            raise SystemExit(str(exc)) from exc
         print(f"welcome {result['project']}")
         print(f"repo: {result['repo']}")
-        print("context/ is yours now. Open the cockpit with: python3 -m ctx ui")
+        print(f"deployment: {chosen['deployment']}")
+        if chosen.get("access_token"):
+            print("access token (shown once, not saved in git):")
+            print(chosen["access_token"])
+            print("Shared server: set STEAD_ACCESS_TOKEN to that value, then")
+            print("  docker compose up --build")
+            print("This computer stays loopback until you start that container.")
+        else:
+            print("context/ is yours now. Open the cockpit with: python3 -m ctx ui")
         return 0
     if args.command == "onboard":
         from ctx.onboard import OnboardError, onboard
@@ -738,5 +774,6 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "ui":
         from ctx import ui as cockpit
-        return cockpit.serve(root, args.host, args.port, open_browser=not args.no_browser)
+        return cockpit.serve(root, args.host, args.port,
+                             open_browser=not args.no_browser, deploy=args.deploy)
     raise SystemExit(f"unhandled command: {args.command}")

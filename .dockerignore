@@ -1,0 +1,12 @@
+.git
+.github
+state.db
+state.db-wal
+state.db-shm
+stead.json
+.env
+**/__pycache__
+**/*.pyc
+factories/*/runs
+.DS_Store
+Thumbs.db

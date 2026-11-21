@@ -240,6 +240,7 @@ const VIEWS = [
   ["repos", "Repos"],
   ["inbox", "Inbox"],
   ["factories", "Factories"],
+  ["settings", "Settings"],
 ];
 const TITLES = {
   home: ["Home", "What needs you, across projects and contributions."],
@@ -249,6 +250,7 @@ const TITLES = {
   repos: ["Repos", "Own projects and OSS. Sync is read-only. Contribution files stay public."],
   inbox: ["Inbox", "Unsorted capture. File it into a document, meeting, or task, or delete it."],
   factories: ["Factories", "Assemble a shadow bundle. A person or an agent still has to write the output."],
+  settings: ["Settings", "This computer, or a shared server. Actors are the people and agents who write here."],
 };
 const state = { snap: null, view: "home", q: "", onboardResult: null };
 
@@ -567,17 +569,44 @@ function renderFactories() {
   }).join("") || `<div class="empty">No factories.</div>`;
 }
 
+function renderSettings() {
+  const d = state.snap.deployment || {deployment: "single", token_set: false, bind: "127.0.0.1", port: 8765};
+  const actors = (state.snap.actors || []).filter(match);
+  const shown = state.settingsToken ? `<div class="banner">New access token, shown once: ${esc(state.settingsToken)}</div>` : "";
+  return `
+    ${shown}
+    <div class="panel" style="padding:14px 16px;margin-bottom:16px">
+      <strong>${d.deployment === "multi" ? "Shared server" : "This computer"}</strong>
+      <p class="meta">Bind ${esc(d.bind)} · port ${esc(d.port)} · token ${d.token_set ? "set" : "not set"}. A normal cockpit stays on loopback until you start Docker or pass --deploy.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="quiet" data-deploy="single">Use this computer</button>
+        <button type="button" class="primary" data-deploy="multi">Use a shared server</button>
+        <button type="button" class="quiet" data-rotate-token ${d.deployment === "multi" ? "" : "disabled"}>Rotate token</button>
+      </div>
+    </div>
+    <form class="inline" id="add-actor">
+      <input type="text" name="title" placeholder="Person or agent name" required aria-label="Actor name">
+      <select name="kind" aria-label="Actor kind"><option value="human">human</option><option value="agent">agent</option></select>
+      <button class="primary" type="submit">Add actor</button>
+    </form>
+    ${actors.length ? `<div class="list">${actors.map(a => `
+      <div class="row"><span><strong>${esc(a.title)}</strong><br><small>${esc(a.id)}</small></span>${chip(a.kind || "human")}</div>`).join("")}</div>`
+      : `<div class="empty">No actors yet. Add the humans and agents who will write in this checkout.</div>`}`;
+}
 const RENDER = {
   home: renderHome, tasks: renderTasks, projects: renderProjects,
   library: renderLibrary, repos: renderRepos, inbox: renderInbox, factories: renderFactories,
+  settings: renderSettings,
 };
 function renderWelcome() {
   return `<div class="welcome">
     <h2>Welcome</h2>
-    <p>This install is empty. Name the first project you want to keep context for. A repo record is created with it. Spec Kit can wait.</p>
+    <p>This install is empty. Name the first project. Then choose who this copy is for. Spec Kit can wait.</p>
     <form class="stack" id="welcome">
       <input type="text" name="title" placeholder="Project title" required aria-label="Project title" autofocus>
       <input type="text" name="url" placeholder="https://github.com/owner/name (optional)" aria-label="GitHub URL">
+      <label><input type="radio" name="deployment" value="single" checked> This computer. Stays on loopback. No login.</label>
+      <label><input type="radio" name="deployment" value="multi"> Shared server. Docker, access token, several people.</label>
       <div><button class="primary" type="submit">Start</button></div>
     </form>
   </div>`;
@@ -701,6 +730,26 @@ document.body.addEventListener("click", async (event) => {
     }
     return;
   }
+  const deploy = event.target.closest("[data-deploy]");
+  if (deploy) {
+    try {
+      const result = await api("/api/settings", {method: "POST", body: JSON.stringify({deployment: deploy.dataset.deploy})});
+      state.settingsToken = result.access_token || "";
+      toast(result.deployment === "multi" ? "Shared server selected" : "This computer selected");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const rotate = event.target.closest("[data-rotate-token]");
+  if (rotate) {
+    try {
+      const result = await api("/api/settings", {method: "POST", body: JSON.stringify({rotate: true})});
+      state.settingsToken = result.access_token || "";
+      toast("Token rotated");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
   const remove = event.target.closest("[data-delete-inbox]");
   if (remove) {
     if (!confirm("Delete this inbox note? This does not touch context/.")) return;
@@ -714,7 +763,8 @@ document.body.addEventListener("click", async (event) => {
     return;
   }
   const nav = event.target.closest("[data-nav]");
-  if (nav) { state.view = nav.dataset.nav; closeReader(); render(); return; }
+  if (nav) { state.view = nav.dataset.nav; state.settingsToken = ""; closeReader(); render(); return; }
+  if (event.target.id === "welcome-continue") { await load(); return; }
   if (event.target.id === "close-reader") { closeReader(); return; }
   const open = event.target.closest("[data-open]");
   if (open && !event.target.closest("select")) openReader(open.dataset.type, open.dataset.id);
@@ -753,7 +803,7 @@ document.body.addEventListener("submit", async (event) => {
     || form.id === "add-document" || form.id === "add-meeting" || form.id === "add-repo"
     || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
     || form.id === "add-spec" || form.id === "onboard" || form.id === "welcome"
-    || form.dataset.factory || form.dataset.triage;
+    || form.id === "add-actor" || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
@@ -763,8 +813,24 @@ document.body.addEventListener("submit", async (event) => {
       await api("/api/task", {method: "POST", body: JSON.stringify(data)});
       toast("Task added");
     } else if (form.id === "welcome") {
-      await api("/api/welcome", {method: "POST", body: JSON.stringify({title: data.title, url: data.url})});
+      const result = await api("/api/welcome", {method: "POST", body: JSON.stringify({
+        title: data.title, url: data.url, deployment: data.deployment || "single",
+      })});
+      if (result.access_token) {
+        document.getElementById("main").innerHTML = `<div class="welcome">
+          <h2>Shared server</h2>
+          <p>${esc(result.next || "")}</p>
+          <p><strong>${esc(result.access_token)}</strong></p>
+          <p class="meta">Copy it now. It will not be shown again. This window stays on this computer until you start Docker.</p>
+          <button type="button" class="primary" id="welcome-continue">Continue on this computer</button>
+        </div>`;
+        return;
+      }
       toast("Project created");
+    } else if (form.id === "add-actor") {
+      await api("/api/actor", {method: "POST", body: JSON.stringify(data)});
+      toast("Actor added");
+      form.reset();
     } else if (form.id === "onboard") {
       state.onboardResult = await api("/api/onboard", {method: "POST", body: JSON.stringify({
         title: data.title, kind: data.kind, url: data.url, path: data.path,

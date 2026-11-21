@@ -24,6 +24,28 @@ from ctx import cli, db, factory, frontmatter, objects
 PKG_DIR = Path(__file__).resolve().parent
 PAGE_PATH = PKG_DIR / "cockpit.html"
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
+_GATE_PAGE = b"""<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><title>Stead</title>
+<style>
+  body { margin: 0; min-height: 100vh; display: grid; place-items: center;
+    background: #f3efe6; color: #1c1915; font: 16px/1.5 "Segoe UI", sans-serif; }
+  form { width: min(420px, 92vw); background: #fffdf9; border: 1px solid #e3d9cc;
+    border-radius: 16px; padding: 28px; }
+  h1 { font: 500 32px/1.1 Georgia, serif; margin: 0 0 8px; }
+  p { color: #6f675e; }
+  input, button { font: inherit; width: 100%; box-sizing: border-box; margin-top: 8px;
+    padding: 8px 10px; border-radius: 8px; }
+  button { background: #1f6b4a; color: white; border: 0; cursor: pointer; }
+</style></head>
+<body>
+<form method="POST" action="/api/session">
+  <h1>Stead</h1>
+  <p>This is a shared server. Enter the access token. It is not stored in git.</p>
+  <input type="password" name="token" autocomplete="current-password" required aria-label="Access token">
+  <button type="submit">Continue</button>
+</form>
+</body></html>
+"""
 MAX_BODY = 512 * 1024
 MAX_NOTE = 200_000
 EDITABLE = ("project", "task", "document", "meeting")
@@ -182,6 +204,39 @@ def _needs_welcome(root: Path) -> bool:
     return needs_welcome(root)
 
 
+def _deployment_view(root: Path) -> dict:
+    from ctx.config import ConfigError, public_view
+    try:
+        return public_view(root)
+    except ConfigError:
+        return {"deployment": "single", "bind": "127.0.0.1", "port": 8765, "token_set": False}
+
+
+def add_actor(root: Path, title: str, kind: str = "human") -> dict:
+    from ctx.config import ACTOR_KINDS
+    title = (title or "").strip()
+    if not title or len(title) > 200:
+        raise UiError("an actor needs a title")
+    if kind not in ACTOR_KINDS:
+        raise UiError(f"invalid kind {kind!r}")
+    object_id, path = _alloc_actor(root, title)
+    today = date.today().isoformat()
+    meta = {"id": object_id, "type": "actor", "title": title,
+            "created": today, "updated": today, "status": "active", "kind": kind}
+    path.write_text(frontmatter.dumps(meta, f"# {title}\n"), encoding="utf-8")
+    return {"ok": True, "id": object_id, "kind": kind}
+
+
+def _alloc_actor(root: Path, title: str) -> tuple[str, Path]:
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "actor"
+    folder = root / "context" / "actors"
+    folder.mkdir(parents=True, exist_ok=True)
+    object_id, n = f"actor-{slug}", 2
+    while (folder / f"{object_id.removeprefix('actor-')}.md").exists():
+        object_id, n = f"actor-{slug}-{n}", n + 1
+    return object_id, folder / f"{object_id.removeprefix('actor-')}.md"
+
+
 def snapshot(root: Path) -> dict:
     """Everything the page needs, except object bodies (loaded on open)."""
     tasks = _list(root, "task")
@@ -209,6 +264,8 @@ def snapshot(root: Path) -> dict:
     return {
         "today": date.today().isoformat(),
         "first_run": _needs_welcome(root),
+        "deployment": _deployment_view(root),
+        "actors": _list(root, "actor"),
         "counts": {
             "open_tasks": open_tasks,
             "attention": len(attention),
@@ -791,6 +848,22 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                 result = welcome(root, payload.get("title") or "", payload.get("url"))
             except OnboardError as exc:
                 raise UiError(str(exc)) from exc
+            mode = payload.get("deployment") or "single"
+            if mode not in ("single", "multi"):
+                raise UiError("deployment must be single or multi")
+            from ctx.config import ConfigError, choose
+            try:
+                chosen = choose(root, mode)
+            except ConfigError as exc:
+                raise UiError(str(exc)) from exc
+            result["deployment"] = chosen["deployment"]
+            if chosen.get("access_token"):
+                result["access_token"] = chosen["access_token"]
+                result["next"] = (
+                    "Shared server chosen. Start it with Docker, not by opening "
+                    "this computer to the network: set STEAD_ACCESS_TOKEN to the "
+                    "token below, then docker compose up --build"
+                )
         elif path == "/api/onboard":
             from ctx.onboard import OnboardError, onboard
             try:
@@ -821,6 +894,19 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = delete_inbox(root, payload.get("name") or "")
         elif path == "/api/sync":
             result = sync_github(root, bool(payload.get("offline")))
+        elif path == "/api/settings":
+            from ctx.config import ConfigError, choose, rotate_token
+            try:
+                if payload.get("rotate"):
+                    token = rotate_token(root)
+                    result = {"ok": True, "access_token": token}
+                else:
+                    result = choose(root, payload.get("deployment") or "single")
+                    result["ok"] = True
+            except ConfigError as exc:
+                raise UiError(str(exc)) from exc
+        elif path == "/api/actor":
+            result = add_actor(root, payload.get("title") or "", payload.get("kind") or "human")
         else:
             raise UiError("not found", 404)
         return 200, _json(result), "application/json; charset=utf-8"
@@ -839,8 +925,26 @@ class CockpitHandler(BaseHTTPRequestHandler):
         return
 
     def _host_ok(self) -> bool:
+        if getattr(self.server, "deployment", "single") == "multi":
+            return True
         host = (self.headers.get("Host") or "").split(":")[0].strip("[]")
         return host in LOOPBACK
+
+    def _access_ok(self) -> bool:
+        expected = getattr(self.server, "access_token", "") or ""
+        if getattr(self.server, "deployment", "single") != "multi":
+            return True
+        presented = self.headers.get("X-Stead-Access", "")
+        if not presented:
+            cookie = self.headers.get("Cookie", "")
+            for part in cookie.split(";"):
+                name, _, value = part.strip().partition("=")
+                if name == "stead_access":
+                    presented = value
+                    break
+        if not expected or not presented:
+            return False
+        return secrets.compare_digest(presented, expected)
 
     def _send(self, status: int, body: bytes, content_type: str) -> None:
         self.send_response(status)
@@ -882,6 +986,15 @@ class CockpitHandler(BaseHTTPRequestHandler):
             self._reject(403, "cockpit only answers on loopback")
             return
         parsed = urlparse(self.path)
+        if not self._access_ok():
+            if method == "GET" and parsed.path == "/":
+                self._send(200, _GATE_PAGE, "text/html; charset=utf-8")
+                return
+            if method == "POST" and parsed.path == "/api/session":
+                self._open_session()
+                return
+            self._reject(401, "access token required")
+            return
         token_ok = secrets.compare_digest(
             self.headers.get("X-Ctx-Token", ""), self.server.token)
         try:
@@ -894,6 +1007,41 @@ class CockpitHandler(BaseHTTPRequestHandler):
         if parsed.path == "/" and status == 200:
             body = body.replace(b"__CTX_TOKEN__", self.server.token.encode("ascii"), 1)
         self._send(status, body, content_type)
+
+    def _open_session(self) -> None:
+        expected = getattr(self.server, "access_token", "") or ""
+        length = int(self.headers.get("Content-Length") or "0")
+        raw = self.rfile.read(length) if length else b""
+        token = ""
+        ctype = self.headers.get("Content-Type", "")
+        if "application/json" in ctype:
+            try:
+                token = json.loads(raw.decode("utf-8")).get("token") or ""
+            except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+                token = ""
+        else:
+            from urllib.parse import parse_qs
+            token = (parse_qs(raw.decode("utf-8", errors="replace")).get("token") or [""])[0]
+        if not expected or not token or not secrets.compare_digest(token, expected):
+            self._reject(401, "access token required")
+            return
+        cookie = "stead_access=%s; HttpOnly; SameSite=Lax; Path=/" % token
+        if "application/json" not in ctype:
+            self.send_response(303)
+            self.send_header("Location", "/")
+            self.send_header("Set-Cookie", cookie)
+            self.send_header("Content-Length", "0")
+            self.send_header("Connection", "close")
+            self.end_headers()
+            return
+        body = b'{"ok": true}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Set-Cookie", cookie)
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
 
     def do_GET(self) -> None:
         self._handle("GET")
@@ -909,22 +1057,39 @@ class CockpitServer(ThreadingHTTPServer):
         super().__init__(address, CockpitHandler)
 
 
-def make_server(root: Path, host: str = "127.0.0.1", port: int = 8765) -> CockpitServer:
-    if host not in LOOPBACK:
+def make_server(root: Path, host: str | None = None, port: int | None = None,
+                deploy: bool = False) -> CockpitServer:
+    from ctx.config import ConfigError, effective
+    try:
+        cfg = effective(root, deploy=deploy)
+    except ConfigError as exc:
+        raise SystemExit(str(exc)) from exc
+    bind = host or cfg["bind"]
+    listen_port = port if port is not None else cfg["port"]
+    if cfg["deployment"] == "single" and bind not in LOOPBACK:
         raise SystemExit(
-            f"ctx ui only binds to loopback ({', '.join(LOOPBACK)}). "
-            "It serves private notes and will not listen on a public interface.")
+            f"single-user mode only binds to loopback ({', '.join(LOOPBACK)}). "
+            "Choose Shared server and run with --deploy, or use Docker.")
+    if cfg["deployment"] == "multi" and not cfg["access_token"]:
+        raise SystemExit("multi-user mode needs an access token")
     ensure_index(root)
-    return CockpitServer(root, (host, port), secrets.token_urlsafe(24))
+    httpd = CockpitServer(root, (bind, listen_port), secrets.token_urlsafe(24))
+    httpd.deployment = cfg["deployment"]
+    httpd.access_token = cfg["access_token"]
+    return httpd
 
 
-def serve(root: Path, host: str = "127.0.0.1", port: int = 8765,
-          open_browser: bool = True) -> int:
-    httpd = make_server(root, host, port)
-    bound = httpd.server_address[1]
-    url = f"http://127.0.0.1:{bound}/"
+def serve(root: Path, host: str | None = None, port: int | None = None,
+          open_browser: bool = True, deploy: bool = False) -> int:
+    httpd = make_server(root, host, port, deploy=deploy)
+    bound_host, bound_port = httpd.server_address[:2]
+    shown = "127.0.0.1" if bound_host in ("0.0.0.0", "::") else bound_host
+    url = f"http://{shown}:{bound_port}/"
     print(f"Stead\n  {url}")
-    print("  loopback only · markdown is the source of truth · Ctrl+C to stop")
+    if httpd.deployment == "multi":
+        print("  shared server · access token required · markdown is the source of truth · Ctrl+C to stop")
+    else:
+        print("  this computer · loopback only · markdown is the source of truth · Ctrl+C to stop")
     if open_browser:
         webbrowser.open(url)
     try:

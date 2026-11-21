@@ -1,0 +1,18 @@
+# One Stead process, one index, several browsers. Do not scale this service.
+# Set STEAD_ACCESS_TOKEN in the environment or a gitignored .env file.
+services:
+  stead:
+    build: .
+    ports:
+      - "8765:8765"
+    environment:
+      STEAD_DEPLOYMENT: multi
+      STEAD_BIND: 0.0.0.0
+      STEAD_PORT: "8765"
+      STEAD_ACCESS_TOKEN: ${STEAD_ACCESS_TOKEN:?set STEAD_ACCESS_TOKEN}
+    volumes:
+      - stead-context:/app/context
+    restart: unless-stopped
+
+volumes:
+  stead-context:
