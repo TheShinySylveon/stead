@@ -49,7 +49,8 @@ The password is printed once. `stead account list` never prints it.
 
 The published image is `ghcr.io/theshinysylveon/stead`. `main` pushes `latest`
 and the commit sha after the tests pass. Pull requests build the image and
-do not push it.
+do not push it. GitHub creates the package private. The first time, set it
+public at the package settings page. After that, a pull does not need a token.
 
 ```bash
 docker compose pull
