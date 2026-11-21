@@ -144,10 +144,11 @@ class TestSnapshot(UiTestCase):
         ui.set_run_verdict(self.root, run["run_id"], "approved", "looks right")
         conn = db.connect(self.root)
         try:
-            row = conn.execute("SELECT output FROM runs WHERE id = ?", (run["run_id"],)).fetchone()
+            row = conn.execute("SELECT output, note FROM runs WHERE id = ?", (run["run_id"],)).fetchone()
         finally:
             conn.close()
-        self.assertEqual(row["output"], "looks right")
+        self.assertEqual(row["note"], "looks right")
+        self.assertNotEqual(row["output"], "looks right")
 
     def test_offline_sync_does_not_touch_the_network(self) -> None:
         result = ui.sync_github(self.root, offline=True)

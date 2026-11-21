@@ -28,18 +28,21 @@ See [First run](first-run.md).
 
 | Page | What you can do |
 |---|---|
-| Home | What needs you, projects, recent factory runs. Approve or reject a pending run, with an optional note. |
+| Home | What needs you, projects, recent factory runs. Open a run to read its draft, prompt, and bundle. Approve or reject, with a review note that is kept apart from the draft. File an approved digest or status as a document. |
 | Tasks | Add a task, move its status. The title opens the note. |
 | Projects | Onboard a later project (repo + constitution, optional Spec Kit). Or add a project with no repo. Change a project's status. |
 | Library | Add and edit documents and meetings. Rename them. The id does not change. |
 | Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. |
 | Inbox | Drop a note, or import a local `.eml`, `.ics`, `.md`, or `.txt` file. File it as a document, meeting, or task, or delete it. |
 | Factories | Assemble a shadow run. Check Draft with model to write `output.md`. New factory, Watch now, Check evals, Promote prompt. Nothing is posted. |
-| Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add a sign-in, or reset its password. Choose who is writing. Add actors (`human` or `agent`). The weekly job. The capture webhook. Rebuild the index. |
+| Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add a sign-in, or reset its password. Sign out on a shared server. Choose who is writing. Add actors (`human` or `agent`). The weekly job. The capture webhook. Rebuild the index. |
 
 Opening a project, task, document, or meeting shows the note and an editor.
 Saving updates the body and the `updated` date. It does not change `created`
-or `id`.
+or `id`. Escape closes the reader.
+
+"Needs you" lists one row per object. An object with two reasons shows two
+chips, and counts once.
 
 A contribution opens as a **public spec**. The banner is there because that
 file can be shared. Private notes belong in Library.

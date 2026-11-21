@@ -192,6 +192,8 @@
   .chip.done, .chip.pass { background: var(--color-ok-soft); color: var(--color-ok); border-color: transparent; }
   .grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-sm); }
   .home-split { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr); gap: var(--space-lg); align-items: start; }
+  .home-split > section { min-width: 0; }
+  .row > span:first-child { min-width: 0; }
   .board { grid-template-columns: repeat(4, minmax(180px, 1fr)); align-items: start; gap: var(--space-sm); }
   .col { background: transparent; }
   .col h3 { margin: 0 0 var(--space-xs); font-size: var(--text-sm); font-weight: 500; letter-spacing: 0; text-transform: none; color: var(--color-muted); }
@@ -380,18 +382,20 @@ function renderHome() {
   const projects = s.projects.filter(match);
   const runs = (s.runs || []).filter(r => match({title: r.factory, id: r.task_ref, status: r.verdict})).slice(0, 6);
   const runRows = runs.map(r => `
-    <div class="card" style="display:block">
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
-        <div><strong>${esc(r.factory)}</strong><div class="meta">${esc(r.task_ref)} · ${esc(r.prompt_version)} · ${esc(r.mode)}</div></div>
-        ${chip(r.verdict, r.verdict === "approved" || r.verdict === "pass" ? "done" : r.verdict === "rejected" || r.verdict === "fail" ? "fail" : "doing")}
+    <div class="card" style="display:block;min-width:0">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap">
+        <div style="min-width:0"><strong>${esc(r.factory)}</strong><div class="meta">${esc(r.task_ref)} · ${esc(r.prompt_version)} · ${esc(r.mode)}</div></div>
+        <span class="chips">${chip(r.verdict, r.verdict === "approved" || r.verdict === "pass" ? "done" : r.verdict === "rejected" || r.verdict === "fail" ? "fail" : "doing")}</span>
       </div>
       <div class="meta clip" style="margin-top:6px" title="${esc(r.bundle_path || "")}">${esc(r.created)}${r.bundle_path ? " · " + esc(r.bundle_path) : ""}</div>
-      ${r.verdict === "pending" ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <input type="text" data-run-note="${esc(r.id)}" placeholder="Review note (optional)" aria-label="Review note for run ${esc(r.id)}">
+      ${r.note ? `<div class="meta">Review: ${esc(r.note)}</div>` : ""}
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <button type="button" class="quiet" data-run-open="${esc(r.id)}">Open run</button>
+        ${r.verdict === "pending" ? `<input type="text" data-run-note="${esc(r.id)}" placeholder="Review note (optional)" aria-label="Review note for run ${esc(r.id)}">
         <button type="button" class="primary" data-verdict="approved" data-run="${esc(r.id)}">Approve</button>
-        <button type="button" class="quiet" data-verdict="rejected" data-run="${esc(r.id)}">Reject</button>
-      </div>` : ""}
-      ${r.verdict === "approved" && ["weekly-contribution-digest", "weekly-project-status"].includes(r.factory) ? `<div style="margin-top:8px"><button type="button" class="quiet" data-file-run="${esc(r.id)}">File as document</button></div>` : ""}
+        <button type="button" class="quiet" data-verdict="rejected" data-run="${esc(r.id)}">Reject</button>` : ""}
+        ${r.verdict === "approved" && ["weekly-contribution-digest", "weekly-project-status"].includes(r.factory) ? `<button type="button" class="quiet" data-file-run="${esc(r.id)}">File as document</button>` : ""}
+      </div>
     </div>`).join("");
   return `
     <div class="stats">${stats.map(([n, label]) => `<div class="stat"><b>${esc(n)}</b><span>${esc(label)}</span></div>`).join("")}</div>
@@ -401,7 +405,7 @@ function renderHome() {
         ${attention.length ? `<div class="list">${attention.map(item => `
           <button type="button" class="row" data-open data-type="${esc(item.type)}" data-id="${esc(item.id)}">
             <span><strong>${esc(item.title)}</strong><br><small>${esc(item.type)} · ${esc(item.id)}</small></span>
-            ${chip(item.label, item.tone)}
+            <span class="chips">${(item.labels || [[item.label, item.tone]]).map(([label, tone]) => chip(label, tone)).join("")}</span>
           </button>`).join("")}</div>` : `<div class="empty">Nothing waiting. Capture a note, or enjoy the quiet.</div>`}
       </section>
       <section>
@@ -554,6 +558,10 @@ function renderRepos() {
           <select data-set-repo data-id="${esc(r.id)}" data-field="trigger" aria-label="Trigger for ${esc(r.title)}">${options(choices.factory_trigger, r.factory_trigger || "on-demand")}</select>
           <select data-set-repo data-id="${esc(r.id)}" data-field="reach" aria-label="Ceiling for ${esc(r.title)}">${options(choices.factory_reach, r.factory_reach || "shadow")}</select>
         </div>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+          <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="code_path" value="${esc(r.code_path || "")}" placeholder="Local code path for publish" aria-label="Code path for ${esc(r.title)}">
+          <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="default_branch" value="${esc(r.default_branch || "")}" placeholder="Default branch" aria-label="Default branch for ${esc(r.title)}" style="max-width:170px">
+        </div>
       </div>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
     <form class="stack" id="add-spec">
       <div class="section-title">Local issue or feature spec</div>
@@ -633,7 +641,7 @@ function renderFactories() {
       <div class="chips" style="margin:8px 0">${chip(prod ? prod.version + " production" : "no prompt", prod ? "done" : "")}${chip(f.evals + " evals")}</div>
       ${form}
       <form class="inline" data-promote="${esc(f.name)}" style="margin-top:8px">
-        <select name="version" aria-label="Prompt version for ${esc(f.name)}">${(f.prompts || []).map(p => `<option value="${esc(p.version)}">${esc(p.version)}</option>`).join("")}</select>
+        <select name="version" aria-label="Prompt version for ${esc(f.name)}">${(f.prompts || []).map(p => `<option value="${esc(p.version)}" ${prod && prod.version === p.version ? "selected" : ""}>${esc(p.version)}${prod && prod.version === p.version ? " (production)" : ""}</option>`).join("")}</select>
         <button class="quiet" type="submit" ${(f.prompts || []).length ? "" : "disabled"}>Promote prompt</button>
         <button type="button" class="quiet" data-evals="${esc(f.name)}">Check evals</button>
       </form>
@@ -706,11 +714,12 @@ function renderSettings() {
     </div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>${d.deployment === "multi" ? "Shared server" : "This computer"}</strong>
-      <p class="meta">Bind ${esc(d.bind)} · port ${esc(d.port)} · token ${d.token_set ? "set" : "not set"} · ${(state.snap.accounts || []).length} sign-in${(state.snap.accounts || []).length === 1 ? "" : "s"}. A normal cockpit stays on loopback. A shared server asks each person to sign in.</p>
+      <p class="meta">Bind ${esc(d.bind)} · port ${esc(d.port)} · token ${d.token_set ? "set" : "not set"} · ${(state.snap.accounts || []).length} sign-in${(state.snap.accounts || []).length === 1 ? "" : "s"}${state.snap.signed_in ? " · signed in as " + esc(state.snap.signed_in) : ""}. A normal cockpit stays on loopback. A shared server asks each person to sign in.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" class="quiet" data-deploy="single">Use this computer</button>
         <button type="button" class="primary" data-deploy="multi">Use a shared server</button>
         <button type="button" class="quiet" data-rotate-token ${d.deployment === "multi" ? "" : "disabled"}>Rotate token</button>
+        ${d.deployment === "multi" && state.snap.signed_in ? `<button type="button" class="quiet" data-signout>Sign out</button>` : ""}
       </div>
     </div>
     <form class="inline" id="add-account">
@@ -799,6 +808,9 @@ function renderMarkdown(src) {
 async function openReader(type, id) {
   const panel = document.getElementById("reader");
   panel.hidden = false;
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-label", "Note");
   panel.innerHTML = `<button type="button" class="quiet" id="close-reader">Close</button><p class="meta">Loading…</p>`;
   try {
     const data = type === "inbox"
@@ -847,8 +859,39 @@ python -m stead factory merge --contribution ${esc(data.id || id)}</code></pre>
   }
 }
 function closeReader() {
-  document.getElementById("reader").hidden = true;
+  const panel = document.getElementById("reader");
+  panel.hidden = true;
+  panel.removeAttribute("role");
+  panel.removeAttribute("aria-modal");
 }
+async function openRun(id) {
+  const panel = document.getElementById("reader");
+  panel.hidden = false;
+  panel.setAttribute("role", "dialog");
+  panel.setAttribute("aria-modal", "true");
+  panel.setAttribute("aria-label", "Factory run " + id);
+  panel.innerHTML = `<button type="button" class="quiet" id="close-reader">Close</button><p class="meta">Loading…</p>`;
+  try {
+    const r = await api("/api/run?id=" + encodeURIComponent(id));
+    const block = (label, text) => text
+      ? `<details style="margin-top:10px"><summary>${esc(label)}</summary><pre style="overflow:auto"><code>${esc(text)}</code></pre></details>`
+      : "";
+    panel.innerHTML = `
+      <button type="button" class="quiet" id="close-reader">Close</button>
+      <h3>${esc(r.factory)}</h3>
+      <div class="meta">run ${esc(r.id)} · ${esc(r.task_ref)} · ${esc(r.prompt_version)} · ${esc(r.mode)} · ${esc(r.created)}</div>
+      <div class="chips" style="margin:10px 0">${chip(r.verdict, r.verdict === "approved" || r.verdict === "pass" ? "done" : r.verdict === "rejected" || r.verdict === "fail" ? "fail" : "doing")}</div>
+      ${r.note ? `<div class="banner">Review note: ${esc(r.note)}</div>` : ""}
+      <div class="reader-body">${renderMarkdown(r.draft || "_No draft yet. Run with --generate, or paste one with run log._")}</div>
+      ${block("Prompt", r.prompt)}
+      ${block("Bundle", r.bundle)}`;
+  } catch (err) {
+    panel.innerHTML = `<button type="button" class="quiet" id="close-reader">Close</button><p>${esc(err.message)}</p>`;
+  }
+}
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeReader();
+});
 
 document.body.addEventListener("click", async (event) => {
   const verdict = event.target.closest("[data-verdict]");
@@ -909,8 +952,16 @@ document.body.addEventListener("click", async (event) => {
     }
     return;
   }
-  const fileRun = event.target.closest("[data-file-run]");
-  if (fileRun) {
+  const runOpen = event.target.closest("[data-run-open]");
+  if (runOpen) { openRun(runOpen.dataset.runOpen); return; }
+  if (event.target.closest("[data-signout]")) {
+    try {
+      await api("/api/session/end", {method: "POST", body: "{}"});
+      window.location.reload();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const fileRun = event.target.closest("[data-file-run]");  if (fileRun) {
     try {
       const result = await api("/api/run/file", {method: "POST", body: JSON.stringify({id: Number(fileRun.dataset.fileRun)})});
       toast("Filed " + result.id);
@@ -998,6 +1049,11 @@ document.body.addEventListener("change", async (event) => {
       const repo = event.target.closest("[data-set-repo]");
       await api("/api/repo", {method: "POST", body: JSON.stringify({id: repo.dataset.id, [repo.dataset.field]: repo.value})});
       toast("Repo updated");
+      await load();
+    } else if (event.target.closest("[data-set-repo-text]")) {
+      const repo = event.target.closest("[data-set-repo-text]");
+      await api("/api/repo", {method: "POST", body: JSON.stringify({id: repo.dataset.id, [repo.dataset.field]: repo.value})});
+      toast(repo.dataset.field === "code_path" ? "Code path saved" : "Default branch saved");
       await load();
     } else if (event.target.closest("[data-set-project]")) {
       const project = event.target.closest("[data-set-project]");

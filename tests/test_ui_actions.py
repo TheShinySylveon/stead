@@ -138,6 +138,28 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(len(notes), 1)
         self.assertIn("Ready.", notes[0].read_text(encoding="utf-8"))
 
+    def test_run_viewer_returns_the_draft(self) -> None:
+        path = f"http://127.0.0.1:{self.port}/api/run?id={self.run_id}"
+        req = urllib.request.Request(path)
+        req.add_header("X-Ctx-Token", self.token)
+        status, body = _read(req)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["draft"], "On track.")
+        self.assertEqual(body["factory"], "weekly-project-status")
+
+    def test_attention_lists_an_object_once(self) -> None:
+        contrib = {"id": "contribution-x", "title": "Add caching",
+                   "review": "requested", "ci": "fail"}
+        rows = ui._attention([], [contrib], [])
+        self.assertEqual(len(rows), 1)
+        self.assertEqual([label for label, _tone in rows[0]["labels"]],
+                         ["Review requested", "CI failing"])
+        self.assertEqual(rows[0]["tone"], "fail")
+
+    def test_snapshot_reports_the_served_port(self) -> None:
+        view = ui._deployment_view(self.root, 8790)
+        self.assertEqual(view["port"], 8790)
+
     def test_no_remote_write_endpoint_exists(self) -> None:
         for path in ("/api/factory/publish", "/api/factory/merge", "/api/git/push"):
             status, _body = self._post(path, {})

@@ -88,6 +88,7 @@ CREATE TABLE runs (
                    CHECK (mode IN ('shadow', 'live')),
     bundle_path    TEXT,                -- repo-relative run directory / bundle
     output         TEXT,                -- generated text, supplied by human/agent
+    note           TEXT,                -- human review note. Never replaces output.
     verdict        TEXT NOT NULL DEFAULT 'pending',  -- pending|approved|rejected|pass|fail
     created        TEXT NOT NULL        -- ISO UTC timestamp
 );

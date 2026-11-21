@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- A review note no longer replaces the draft. It is stored as `note`, and the
+  run viewer shows the draft, prompt, and bundle.
+- "Needs you" lists one row per object with every reason.
+- The cockpit shows the port it serves, signs out on a shared server, and
+  edits a repo's `code_path` and `default_branch`.
 - The cockpit covers the local commands: factory scaffold, watch, eval check,
   prompt promote, file an approved run, inbox file import, account reset,
   webhook token, index rebuild, and the weekly job. Publish and merge stay

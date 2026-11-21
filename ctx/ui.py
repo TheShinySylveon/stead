@@ -118,7 +118,8 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
         "path": _rel(root, path),
     }
     for key in ("status", "project", "repo", "kind", "url", "role", "state",
-                "ci", "review", "method", "number", "trigger", "reach"):
+                "ci", "review", "method", "number", "trigger", "reach",
+                "code_path", "default_branch"):
         if meta.get(key) not in (None, ""):
             item[key] = meta[key]
     if otype == "repo":
@@ -157,25 +158,38 @@ def list_inbox(root: Path) -> list[dict]:
 
 
 def _attention(tasks: list[dict], contribs: list[dict], inbox: list[dict]) -> list[dict]:
-    items = []
+    """One row per object. Several reasons become several labels."""
+    rows: dict[tuple[str, str], dict] = {}
+    order: list[tuple[str, str]] = []
+
+    def add(otype: str, item: dict, tone: str, label: str) -> None:
+        key = (otype, item.get("id") or item.get("name") or "")
+        if key not in rows:
+            rows[key] = {
+                "tone": tone, "label": label,
+                "title": item.get("title") or item.get("name") or "",
+                "type": otype, "id": key[1], "labels": [(label, tone)],
+            }
+            order.append(key)
+            return
+        rows[key]["labels"].append((label, tone))
+        if rows[key]["tone"] != "fail":
+            rows[key]["tone"] = tone
+            rows[key]["label"] = label
+
     for task in tasks:
         if task.get("status") == "doing":
-            items.append({"tone": "doing", "label": "In progress", "title": task["title"],
-                          "type": "task", "id": task["id"]})
+            add("task", task, "doing", "In progress")
         elif task.get("status") == "blocked":
-            items.append({"tone": "blocked", "label": "Blocked", "title": task["title"],
-                          "type": "task", "id": task["id"]})
+            add("task", task, "blocked", "Blocked")
     for contrib in contribs:
         if contrib.get("review") == "requested":
-            items.append({"tone": "review", "label": "Review requested",
-                          "title": contrib["title"], "type": "contribution", "id": contrib["id"]})
+            add("contribution", contrib, "review", "Review requested")
         if contrib.get("ci") == "fail":
-            items.append({"tone": "fail", "label": "CI failing", "title": contrib["title"],
-                          "type": "contribution", "id": contrib["id"]})
+            add("contribution", contrib, "fail", "CI failing")
     for item in inbox:
-        items.append({"tone": "inbox", "label": "Needs triage", "title": item["name"],
-                      "type": "inbox", "id": item["name"]})
-    return items
+        add("inbox", item, "inbox", "Needs triage")
+    return [rows[key] for key in order]
 
 
 def _factories(root: Path, runs: list[dict]) -> list[dict]:
@@ -219,9 +233,10 @@ def _runs(root: Path) -> list[dict]:
         return []
     conn = db.connect(root)
     try:
+        _ensure_note_column(conn)
         rows = conn.execute(
             "SELECT id, factory, task_ref, project, prompt_version, mode, verdict, "
-            "created, bundle_path FROM runs ORDER BY id DESC LIMIT 40"
+            "created, bundle_path, note FROM runs ORDER BY id DESC LIMIT 40"
         ).fetchall()
     except Exception:
         return []
@@ -237,7 +252,48 @@ def _runs(root: Path) -> list[dict]:
         "verdict": r["verdict"],
         "created": r["created"],
         "bundle_path": r["bundle_path"],
+        "note": r["note"] or "",
     } for r in rows]
+
+
+def _ensure_note_column(conn) -> None:
+    """Older state.db files lack runs.note. Add it instead of demanding init."""
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(runs)")}
+    if "note" not in columns:
+        conn.execute("ALTER TABLE runs ADD COLUMN note TEXT")
+        conn.commit()
+
+
+def run_detail(root: Path, run_id: object) -> dict:
+    """One run, with the draft and the local bundle text the page may show."""
+    if not db.db_path(root).exists():
+        raise UiError("state.db not found — run stead init first", 404)
+    try:
+        rid = int(run_id)
+    except (TypeError, ValueError) as exc:
+        raise UiError("run id must be a number") from exc
+    conn = db.connect(root)
+    try:
+        _ensure_note_column(conn)
+        row = conn.execute(
+            "SELECT id, factory, task_ref, project, prompt_version, mode, verdict, "
+            "created, bundle_path, output, note FROM runs WHERE id = ?", (rid,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise UiError(f"run not found: {rid}", 404)
+    detail = {key: row[key] for key in row.keys()}
+    folder = root / (row["bundle_path"] or "")
+    for label, name in (("bundle", "bundle.md"), ("prompt", "prompt.md"),
+                        ("draft", "output.md")):
+        path = folder / name
+        try:
+            detail[label] = path.read_text(encoding="utf-8")[:MAX_NOTE] if path.is_file() else ""
+        except OSError:
+            detail[label] = ""
+    if not detail.get("draft"):
+        detail["draft"] = row["output"] or ""
+    return detail
 
 
 def _needs_welcome(root: Path) -> bool:
@@ -282,12 +338,15 @@ def _model_view(root: Path) -> dict:
                 "key_set": False, "key_from": "", "key_env": "STEAD_MODEL_API_KEY"}
 
 
-def _deployment_view(root: Path) -> dict:
+def _deployment_view(root: Path, port: int | None = None) -> dict:
     from ctx.config import ConfigError, public_view
     try:
-        return public_view(root)
+        view = public_view(root)
     except ConfigError:
-        return {"deployment": "single", "bind": "127.0.0.1", "port": 8765, "token_set": False}
+        view = {"deployment": "single", "bind": "127.0.0.1", "port": 8765, "token_set": False}
+    if port:
+        view["port"] = port
+    return view
 
 
 def add_actor(root: Path, title: str, kind: str = "human") -> dict:
@@ -315,7 +374,7 @@ def _alloc_actor(root: Path, title: str) -> tuple[str, Path]:
     return object_id, folder / f"{object_id.removeprefix('actor-')}.md"
 
 
-def snapshot(root: Path) -> dict:
+def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> dict:
     """Everything the page needs, except object bodies (loaded on open)."""
     tasks = _list(root, "task")
     contribs = _list(root, "contribution")
@@ -342,10 +401,11 @@ def snapshot(root: Path) -> dict:
     return {
         "today": date.today().isoformat(),
         "first_run": _needs_welcome(root),
-        "deployment": _deployment_view(root),
+        "deployment": _deployment_view(root, port),
         "model": _model_view(root),
         "factory": _factory_defaults(root),
         "actor": _current_actor(root),
+        "signed_in": session_actor,
         "actors": _list(root, "actor"),
         "accounts": _accounts(root),
         "hook": {"set": _hook_set(root)},
@@ -688,6 +748,27 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
         else:
             meta.pop("url", None)
         changed = True
+    if "code_path" in payload:
+        code_path = (payload.get("code_path") or "").strip()
+        if code_path:
+            target = Path(code_path).expanduser()
+            if not target.is_dir():
+                raise UiError(f"code_path is not a directory: {code_path}")
+            if target.resolve() == root.resolve():
+                raise UiError("code_path must be the project checkout, not this Stead repo")
+            meta["code_path"] = str(target)
+        else:
+            meta.pop("code_path", None)
+        changed = True
+    if "default_branch" in payload:
+        branch = (payload.get("default_branch") or "").strip()
+        if branch:
+            if not re.match(r"^[A-Za-z0-9._/-]{1,120}$", branch):
+                raise UiError("default branch must be a plain branch name")
+            meta["default_branch"] = branch
+        else:
+            meta.pop("default_branch", None)
+        changed = True
     if not changed:
         raise UiError("nothing to set")
     today = date.today().isoformat()
@@ -966,11 +1047,13 @@ def set_run_verdict(root: Path, run_id: object, verdict: str,
         raise UiError("state.db not found — run stead init first", 404)
     conn = db.connect(root)
     try:
+        _ensure_note_column(conn)
         if note:
-            cur = conn.execute("UPDATE runs SET verdict = ?, output = ? WHERE id = ?",
+            cur = conn.execute("UPDATE runs SET verdict = ?, note = ? WHERE id = ?",
                                (verdict, note, rid))
         else:
-            cur = conn.execute("UPDATE runs SET verdict = ? WHERE id = ?", (verdict, rid))
+            cur = conn.execute("UPDATE runs SET verdict = ?, note = '' WHERE id = ?",
+                               (verdict, rid))
         conn.commit()
         if cur.rowcount != 1:
             raise UiError(f"run not found: {rid}", 404)
@@ -1016,14 +1099,19 @@ def ensure_index(root: Path) -> None:
 
 
 def dispatch(root: Path, method: str, path: str, query: dict,
-             payload: dict | None, *, token_ok: bool) -> tuple[int, bytes, str]:
+             payload: dict | None, *, token_ok: bool, port: int | None = None,
+             session_actor: str = "") -> tuple[int, bytes, str]:
     """Handle one cockpit request. Returns (status, body, content-type)."""
     try:
         if method == "GET" and path == "/":
             page = PAGE_PATH.read_text(encoding="utf-8")
             return 200, page.encode("utf-8"), "text/html; charset=utf-8"
         if method == "GET" and path == "/api/snapshot":
-            return 200, _json(snapshot(root)), "application/json; charset=utf-8"
+            return 200, _json(snapshot(root, port=port, session_actor=session_actor)), \
+                "application/json; charset=utf-8"
+        if method == "GET" and path == "/api/run":
+            return 200, _json(run_detail(root, query.get("id", ""))), \
+                "application/json; charset=utf-8"
         if method == "GET" and path == "/api/object":
             detail = object_detail(root, query.get("type", ""), query.get("id", ""))
             return 200, _json(detail), "application/json; charset=utf-8"
@@ -1298,6 +1386,9 @@ class CockpitHandler(BaseHTTPRequestHandler):
         if method == "POST" and parsed.path == "/api/inbox/import":
             self._import_upload()
             return
+        if method == "POST" and parsed.path == "/api/session/end":
+            self._end_session()
+            return
         from ctx.actors import bind, unbind
         bound = bind(self._session_actor())
         try:
@@ -1309,7 +1400,10 @@ class CockpitHandler(BaseHTTPRequestHandler):
                 self._reject(exc.status, str(exc))
                 return
             status, body, content_type = dispatch(
-                self.server.root, method, parsed.path, self._query(), payload, token_ok=token_ok)
+                self.server.root, method, parsed.path, self._query(), payload,
+                token_ok=token_ok,
+                port=self.server.server_address[1],
+                session_actor=self._session_actor())
             if parsed.path == "/" and status == 200:
                 body = body.replace(b"__CTX_TOKEN__", self.server.token.encode("ascii"), 1)
             self._send(status, body, content_type)
@@ -1346,6 +1440,22 @@ class CockpitHandler(BaseHTTPRequestHandler):
             self._reject(exc.status, str(exc))
             return
         self._send(200, _json(result), "application/json; charset=utf-8")
+
+    def _end_session(self) -> None:
+        """Forget this browser's session. Does nothing on this computer."""
+        token = self._cookie("stead_session")
+        if token:
+            with self.server.sessions_lock:
+                self.server.sessions.pop(token, None)
+        body = b'{"ok": true}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Set-Cookie",
+                         "stead_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0")
+        self.send_header("Connection", "close")
+        self.end_headers()
+        self.wfile.write(body)
 
     def _capture_hook(self) -> None:
         """Write one inbox note. Does not run a factory or edit context/."""
