@@ -87,6 +87,22 @@ class TestSnapshot(UiTestCase):
             conn.close()
         self.assertEqual(count, 0)
 
+    def test_run_verdict_updates_the_existing_row(self) -> None:
+        result = ui.shadow_run(self.root, {"factory": "weekly-project-status",
+                                            "project": "project-demo"})
+        updated = ui.set_run_verdict(self.root, result["run_id"], "approved")
+        self.assertEqual(updated["verdict"], "approved")
+        conn = db.connect(self.root)
+        try:
+            row = conn.execute("SELECT verdict FROM runs WHERE id = ?", (result["run_id"],)).fetchone()
+            count = conn.execute("SELECT COUNT(*) FROM runs").fetchone()[0]
+        finally:
+            conn.close()
+        self.assertEqual(row["verdict"], "approved")
+        self.assertEqual(count, 1)
+        with self.assertRaises(ui.UiError):
+            ui.set_run_verdict(self.root, result["run_id"], "shipped")
+
     def test_shadow_run_records_without_returning_the_prompt(self) -> None:
         result = ui.shadow_run(self.root, {"factory": "weekly-project-status",
                                             "project": "project-demo"})

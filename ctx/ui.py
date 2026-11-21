@@ -327,6 +327,30 @@ def _public_run(info: dict) -> dict:
     }
 
 
+_REVIEW_VERDICTS = ("approved", "rejected")
+
+
+def set_run_verdict(root: Path, run_id: object, verdict: str) -> dict:
+    """Record a human review on an existing run. Does not create a new row."""
+    if verdict not in _REVIEW_VERDICTS:
+        raise UiError("verdict must be approved or rejected")
+    try:
+        rid = int(run_id)
+    except (TypeError, ValueError) as exc:
+        raise UiError("run id must be a number") from exc
+    if not db.db_path(root).exists():
+        raise UiError("state.db not found — run ctx init first", 404)
+    conn = db.connect(root)
+    try:
+        cur = conn.execute("UPDATE runs SET verdict = ? WHERE id = ?", (verdict, rid))
+        conn.commit()
+        if cur.rowcount != 1:
+            raise UiError(f"run not found: {rid}", 404)
+    finally:
+        conn.close()
+    return {"ok": True, "id": rid, "verdict": verdict}
+
+
 def shadow_run(root: Path, payload: dict) -> dict:
     if payload.get("live") or payload.get("mode") == "live":
         raise UiError("the cockpit only assembles shadow runs — no remote writes")
@@ -385,6 +409,8 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = capture(root, payload.get("title", ""), payload.get("body", ""))
         elif path == "/api/factory/run":
             result = shadow_run(root, payload)
+        elif path == "/api/run/verdict":
+            result = set_run_verdict(root, payload.get("id"), payload.get("verdict") or "")
         else:
             raise UiError("not found", 404)
         return 200, _json(result), "application/json; charset=utf-8"
