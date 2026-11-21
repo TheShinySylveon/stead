@@ -12,7 +12,7 @@ specific tool, model, or vendor.
 
 ## What this system is
 
-A local, single-user **context system** plus **factories**, covering both your
+A local **context system** plus **factories**, covering both your
 own projects and the open-source projects you contribute to (one cockpit):
 
 1. **Context system** — one shared, organized, versioned place where humans and
@@ -42,6 +42,7 @@ context/
   meetings/          <- meeting notes, linked to projects
   repos/             <- one .md per repo/project (kind: own|oss)
   contributions/     <- cached GitHub issues/PRs (visibility: public)
+  actors/            <- humans and agents who write here (kind: human|agent)
 inbox/               <- unsorted capture; triage it, don't let it rot
 factories/
   weekly-contribution-digest/   <- first factory (OSS + own-project digest)

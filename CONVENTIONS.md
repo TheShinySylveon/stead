@@ -13,9 +13,11 @@ Bad context is Enemy No. 1; these rules keep context good.
 | `meeting` | `context/meetings/` | Meeting notes / transcripts | (optional, free) |
 | `repo` | `context/repos/` | A repo/project you work on — own or OSS | `active`, `paused`, `archived` |
 | `contribution` | `context/contributions/` | An issue or PR you're involved with (GitHub cache) | uses `state:` instead of `status:` |
+| `actor` | `context/actors/` | A human or agent that reads and writes here | `active`, `paused` |
 
-No `people/` database: single-user scope (locked decision). Relations are kept
-in frontmatter so the system can grow later without a rewrite.
+Actors are markdown too (`context/actors/`). Several humans and agents can
+share one checkout through git. SQLite stays a per-machine index. See
+`docs/multi-actor.md`.
 
 ## Frontmatter schema (required)
 
@@ -37,6 +39,8 @@ Optional fields:
 
 - `related:` — inline list of object ids, e.g. `related: [document-architecture-decisions]`
 - `tags:` — inline list of free labels.
+- `actor:` — id of the human or agent that last wrote the object. Optional.
+  Does not change `created` or `id`.
 
 ### Repo fields (`context/repos/`)
 

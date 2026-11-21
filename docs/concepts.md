@@ -57,8 +57,14 @@ record the verdict with `ctx run log`, or with Approve / Reject in the cockpit.
 Shadow mode is the default. It drafts locally. It does not push or open a
 pull request. See [Factories](factories.md).
 
+## Several writers
+
+Humans and agents share a checkout through git. Each machine keeps its own
+`state.db`. SQLite is not the multi-user database, and it is not being
+replaced. See [Several people and agents](multi-actor.md).
+
 ## What this is not
 
-- Not a hosted workspace. One person, one machine.
+- Not a hosted multi-user website. The cockpit is loopback-only.
 - Not a model provider. Generation is whoever reads the prompt.
 - Not an auto-merge bot. Merging is a human action.

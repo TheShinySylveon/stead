@@ -14,6 +14,7 @@ TYPE_DIRS = {
     "meeting": "meetings",
     "repo": "repos",
     "contribution": "contributions",
+    "actor": "actors",
 }
 
 

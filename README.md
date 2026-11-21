@@ -213,5 +213,5 @@ Phase 3 (current): `feature-builder` — issue → PR autonomous build, always
 spec-driven and planning-first (`method: spec-kit` by default), in strict
 shadow/draft-PR mode, with an autonomy ladder and hard safety rules.
 Next phases per `PLAN.md`: eval-driven prompt promotion, scheduled triggers,
-inbox triage factory. Frontmatter relations are already team-ready; no rewrite
-needed to add people or permissions later.
+inbox triage factory. Several humans and agents share the markdown through
+git. Each clone keeps its own SQLite index. See `docs/multi-actor.md`.
