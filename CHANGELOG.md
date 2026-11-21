@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- `stead build` gains an autonomous repair loop: `check` returns test output,
+  failed checks are fed back, and `--repair-rounds` bounds the attempts.
+  The agent can also `search` and `delete`. A per-checkout lock prevents
+  concurrent builds, `--resume` continues a failed branch, `--wait` polls PR
+  checks before merge, and every build records a plan and summary under
+  `factories/feature-builder/runs/`.
 - README, concepts, PLAN, and factories state the Notion lineage and the
   deliberate twist: factories execute, and reach is per repo.
 - `stead build --contribution ID` has the configured model plan, edit the

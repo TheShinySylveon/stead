@@ -75,11 +75,14 @@ decomposition instead of being built. `method` on the spec is `spec-kit` or
 [Spec Kit](spec-kit-workflow.md).
 
 **Build with model** (or `stead build --contribution ID`) goes one step
-further. With a model configured it asks for a plan first, lets the model read
-and write files inside the repo's `code_path`, runs the repo's `checks:`
-command, commits on an isolated branch, and stops. `--publish` opens the pull
-request. The model never chooses a shell command, cannot touch `.git`, and
-cannot leave the checkout.
+further. With a model configured it asks for a plan first, lets the model
+list, read, search, write, and delete files inside the repo's `code_path`,
+runs the repo's `checks:` command, feeds failures back for repair, commits on
+an isolated branch, and stops. `--publish` opens the pull request; `--wait`
+waits for its checks and `--merge` merges under `reach: merge`. `--resume`
+continues a failed build. The model never chooses a shell command, cannot
+touch `.git`, and cannot leave the checkout. Each build records its plan and
+summary under `factories/feature-builder/runs/`.
 
 ### context-maintenance
 

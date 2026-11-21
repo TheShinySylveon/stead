@@ -698,6 +698,13 @@ def build_parser() -> argparse.ArgumentParser:
     bld.add_argument("--merge", action="store_true",
                      help="after opening, merge when the repo says reach: merge and checks are green")
     bld.add_argument("--steps", type=int, default=24)
+    bld.add_argument("--resume", action="store_true",
+                     help="continue a failed build on its branch, keeping uncommitted edits")
+    bld.add_argument("--wait", action="store_true",
+                     help="with --publish, wait for PR checks before merging")
+    bld.add_argument("--wait-minutes", type=int, default=30)
+    bld.add_argument("--repair-rounds", type=int, default=2,
+                     help="how many failed check rounds the model may fix")
 
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
@@ -968,7 +975,10 @@ def main(argv: list[str] | None = None) -> int:
         from ctx.models import ModelError
         try:
             result = run_build(root, args.contribution, publish=args.publish,
-                               merge=args.merge, max_steps=max(1, min(args.steps, 60)))
+                               merge=args.merge, resume=args.resume, wait=args.wait,
+                               wait_minutes=max(1, args.wait_minutes),
+                               repair_rounds=max(0, args.repair_rounds),
+                               max_steps=max(1, min(args.steps, 60)))
         except (BuildError, ModelError) as exc:
             raise SystemExit(str(exc)) from exc
         print(f"plan: {result['plan']}")
@@ -987,6 +997,8 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print("not pushed. Run with --publish, or:")
             print(f"  python -m stead factory publish --contribution {args.contribution}")
+        if result.get("deleted"):
+            print(f"deleted: {', '.join(result['deleted'])}")
         return 0
     if args.command == "delete":
         from ctx.ui import UiError, delete_object

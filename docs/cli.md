@@ -156,7 +156,7 @@ digest if the cache changed, a maintenance draft, and the status of
 ```bash
 python -m stead factory publish --contribution ID
 python -m stead factory merge --contribution ID
-python -m stead build --contribution ID [--publish] [--merge] [--steps N]
+python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] [--steps N]
 ```
 
 `factory publish` pushes the checkout's current branch and opens a pull
@@ -171,13 +171,16 @@ call it.
 
 `build` is the model-driven implementation step. It needs a configured model,
 a repo `code_path`, a clean checkout on the default branch, and a buildable
-spec. The model must first write a plan, then it may read and write files
-inside that checkout. It cannot touch `.git` or leave the repo. When it
-finishes, Stead runs the repo's `checks:` command, commits on a new
-`stead/<issue>-<slug>` branch, and stops. `--publish` then pushes and opens a
-pull request when the ceiling allows it. `--merge` follows that with a merge
-only when the repo says `reach: merge` and the checks are green. It never
-pushes the default branch.
+spec. The model must first write a plan, then it may list, read, search, write,
+delete, and run the configured checks inside that checkout. It cannot touch
+`.git`, leave the repo, or choose a shell command. Failed checks are fed back
+so it can repair them (`--repair-rounds`, default 2). A lock prevents two
+builds on one checkout. Stead commits on a new `stead/<issue>-<slug>` branch
+and records the plan, summary, and actions under
+`factories/feature-builder/runs/`. `--publish` pushes and opens a pull request
+when the ceiling allows it. `--wait` polls PR checks before `--merge`, and
+`--merge` runs only when the repo says `reach: merge`. `--resume` continues a
+failed build on its existing branch, keeping its uncommitted edits.
 
 ## Runs and prompts
 

@@ -136,6 +136,63 @@ class BuildTest(unittest.TestCase):
         self.assertTrue(result["published"])
         self.assertTrue(result["merged"])
 
+    def test_failed_checks_can_be_repaired(self) -> None:
+        repo_path = self.root / "context/repos/app.md"
+        meta, _body = frontmatter.parse(repo_path.read_text(encoding="utf-8"))
+        meta["checks"] = ('python -c "import pathlib,sys; '
+                          "sys.exit(0 if 'ok' in pathlib.Path('app.py').read_text() else 1)\"")
+        repo_path.write_text(frontmatter.dumps(meta, "# App\n"), encoding="utf-8")
+        responder = self._responder([
+            {"action": "plan", "summary": "Write then fix."},
+            {"action": "write", "path": "app.py", "content": "print('bad')\n"},
+            {"action": "finish", "summary": "First try."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Second try."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder, repair_rounds=1)
+        self.assertIn("ok", (self.code / "app.py").read_text(encoding="utf-8"))
+        self.assertEqual(result["files"], ["app.py"])
+
+    def test_search_and_delete_actions(self) -> None:
+        (self.code / "old.py").write_text("obsolete\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "old file")
+        responder = self._responder([
+            {"action": "plan", "summary": "Find and remove."},
+            {"action": "search", "query": "print"},
+            {"action": "delete", "path": "old.py"},
+            {"action": "write", "path": "app.py", "content": "print('new')\n"},
+            {"action": "finish", "summary": "Removed."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertFalse((self.code / "old.py").exists())
+        self.assertEqual(result["deleted"], ["old.py"])
+
+    def test_lock_blocks_a_second_build(self) -> None:
+        from ctx.agent import _lock, _unlock
+        held = _lock(self.code)
+        try:
+            with self.assertRaises(agent.BuildError) as caught:
+                agent.build(self.root, "contribution-me-app-issue-42",
+                            responder=lambda _p: "{}")
+            self.assertIn("another build", str(caught.exception))
+        finally:
+            _unlock(held)
+
+    def test_resume_continues_the_branch(self) -> None:
+        _git(self.code, "checkout", "-b", "stead/42-add-a-name-flag")
+        (self.code / "app.py").write_text("print('partial')\n", encoding="utf-8")
+        responder = self._responder([
+            {"action": "plan", "summary": "Finish the work."},
+            {"action": "write", "path": "app.py", "content": "print('done')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder, resume=True)
+        self.assertEqual(result["branch"], "stead/42-add-a-name-flag")
+        self.assertIn("done", (self.code / "app.py").read_text(encoding="utf-8"))
+
     def test_failing_checks_stop_the_commit(self) -> None:
         repo_path = self.root / "context/repos/app.md"
         meta, _body = frontmatter.parse(repo_path.read_text(encoding="utf-8"))
@@ -148,8 +205,9 @@ class BuildTest(unittest.TestCase):
             {"action": "finish", "summary": "Done."},
         ])
         with self.assertRaises(agent.BuildError) as caught:
-            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
-        self.assertIn("checks failed", str(caught.exception))
+            agent.build(self.root, "contribution-me-app-issue-42", responder=responder,
+                        repair_rounds=0)
+        self.assertIn("checks", str(caught.exception).lower())
         self.assertEqual(_git(self.code, "rev-parse", "HEAD").strip(), head)
 
     def test_spec_without_criteria_is_refused(self) -> None:
