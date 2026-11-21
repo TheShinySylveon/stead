@@ -20,7 +20,7 @@ import re
 _KEY_ORDER = ["id", "type", "title", "created", "updated", "status", "project",
               "repo", "kind", "number", "url", "role", "state", "ci", "review",
               "method", "visibility", "actor", "default_branch", "contributing", "notes",
-              "trigger", "reach", "code_path",
+              "trigger", "reach", "code_path", "source_run",
               "related", "tags"]
 
 _LIST_ITEM = re.compile(r"^\s*-\s+(.*)$")

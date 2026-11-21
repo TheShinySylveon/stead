@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- `stead run file --run ID` files an approved digest or status into
+  `context/documents/`. It never posts, pushes, or merges.
 - `stead schedule show` / `install` wire the weekly read-only sync, the
   changed-cache digest, and the maintenance draft.
 - `stead sync github --digest` assembles only after the cache changes.

@@ -122,7 +122,8 @@ ask for more. Merge is never inherited.
   cockpit does not push or merge.
 
 `stead prompt promote` refuses until every eval case has a recorded pass for
-that version.
+that version. `stead run file --run ID` writes an approved digest or status
+into `context/documents/`. Filing is local. Nothing is posted.
 
 ---
 

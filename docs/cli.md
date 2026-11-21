@@ -123,6 +123,7 @@ python -m stead eval judge --factory F --case ID --output PATH [--prompt-version
 
 python -m stead run log --factory F --task REF --prompt-version V \
     [--output TEXT] [--verdict approved|rejected]
+python -m stead run file --run ID [--title T]
 python -m stead prompt list --factory F
 python -m stead prompt promote --factory F --version V
 ```
@@ -133,6 +134,16 @@ Nothing is posted or pushed. `--live` records the run as live. It does not
 raise the ceiling and it does not open a pull request. `--reach` is
 feature-builder only. It cannot exceed the repo ceiling. Merge is not an
 install default. See [Models](models.md).
+
+`prompt promote` marks one version production and retires the previous one.
+It refuses until every eval case has a recorded pass for that version. Judge
+with `--prompt-version` first. Old prompt files are kept.
+
+`run file` writes an approved digest or project status into
+`context/documents/` as a private document. It refuses a pending or rejected
+run, a run whose prompt version is not production, an empty draft, and a
+feature-builder run. It never posts, pushes, or merges. Filing the same run
+twice is refused.
 
 `factory new` writes `FACTORY.md`, `prompts/v1.md`, and one eval. Run
 `stead init` after that so the prompt is indexed. `inbox import` copies a
@@ -150,10 +161,6 @@ default. The repo ceiling must be `draft-pr`, `pr`, or `merge`. Set
 request must be open, and the checks must be green. It does not pass
 `--admin`, and it does not push the default branch. A factory run does not
 call it.
-
-`prompt promote` marks one version production and retires the previous one.
-It refuses if any eval case lacks a recorded pass for that version. Judge
-with `--prompt-version` first. Old prompt files are kept.
 
 ## Tests
 

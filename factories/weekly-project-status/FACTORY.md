@@ -56,8 +56,9 @@ LLM/agent the operator chooses. No network dependency in the runner.
    human approval. Default mode of `factory run`.
 2. **Low volume (next):** after 3–5 reviewed shadow runs with mostly
    `approved` verdicts, schedule one project weekly.
-3. **Consequential (later):** auto-filing approved-format updates, only after
-   evals pass and the human explicitly promotes the workflow.
+3. **Consequential (filed):** `stead run file --run ID` writes an approved
+   status update into `context/documents/`. The human approval is the gate.
+   Nothing is posted.
 
 ## Scrutiny
 

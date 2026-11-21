@@ -133,6 +133,7 @@ python -m stead schedule show                            # the Friday local jobs
 python -m stead schedule install                         # Windows current user
 
 python -m stead run log --factory F --task REF --prompt-version V [--output TEXT] [--verdict V]
+python -m stead run file --run ID [--title T]   # approved digest/status -> context/documents/
 python -m stead prompt list --factory F
 python -m stead prompt promote --factory F --version V
 python -m stead factory run --factory weekly-contribution-digest [--shadow|--live]

@@ -75,9 +75,9 @@ Generation step: any LLM/agent the operator chooses. Assembly is offline.
    or acted on. Default mode. Never auto-posts, in any mode.
 2. **Low volume (next):** after 3–5 reviewed shadow runs with mostly `approved`
    verdicts, schedule the weekly sync + digest.
-3. **Consequential (later):** auto-filing approved digests into
-   `context/documents/`, only after evals pass and the human explicitly
-   promotes the workflow. Posting to GitHub remains out of scope, permanently.
+3. **Consequential (filed):** `stead run file --run ID` writes an approved
+   digest into `context/documents/`. The human approval is the gate. Posting to
+   GitHub remains out of scope, permanently.
 
 ## Scrutiny
 

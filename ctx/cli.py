@@ -725,7 +725,9 @@ def build_parser() -> argparse.ArgumentParser:
     rl.add_argument("--verdict", default="pending")
     rl.add_argument("--project")
     rl.add_argument("--mode", default="shadow", choices=("shadow", "live"))
-
+    rf = run.add_parser("file", help="file an approved digest or status as a private document. Never posts.")
+    rf.add_argument("--run", required=True)
+    rf.add_argument("--title")
     pr = sub.add_parser("prompt", help="versioned prompts").add_subparsers(dest="sub", required=True)
     pl = pr.add_parser("list", help="list prompt versions")
     pl.add_argument("--factory", required=True)
@@ -907,6 +909,15 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "run" and args.sub == "log":
         return cmd_run_log(root, args.factory, args.task, args.prompt_version,
                            args.output, args.verdict, args.project, args.mode)
+    if args.command == "run" and args.sub == "file":
+        from ctx.deliver import DeliveryError, file_run
+        try:
+            filed = file_run(root, args.run, args.title)
+        except DeliveryError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"filed {filed['id']} -> {_rel(root, filed['path'])}")
+        print("local document only. Nothing was posted, pushed, or merged.")
+        return 0
     if args.command == "prompt":
         if args.sub == "list":
             return cmd_prompt_list(root, args.factory)
