@@ -43,9 +43,9 @@ def show(root: Path) -> str:
     )
 
 
-def install(root: Path, *, runner=None) -> str:
+def install(root: Path, *, runner=None, platform: str | None = None) -> str:
     """Create the current user's weekly task. Does not touch GitHub."""
-    if sys.platform != "win32":
+    if (platform or sys.platform) != "win32":
         raise ScheduleError("this install is for Windows Task Scheduler. Use `stead schedule show` for the cron line.")
     command = weekly_command(root)
     argv = [

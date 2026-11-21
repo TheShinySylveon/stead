@@ -108,10 +108,16 @@ class ScheduleAndSyncTest(unittest.TestCase):
         self.assertNotIn("factory publish", text)
         self.assertNotIn("factory merge", text)
         calls = []
-        install(Path("C:/notes"), runner=lambda argv: calls.append(argv) or "")
+        install(Path("C:/notes"), runner=lambda argv: calls.append(argv) or "",
+                platform="win32")
         self.assertEqual(calls[0][0], "schtasks")
         self.assertNotIn("push", calls[0])
         self.assertNotIn("merge", calls[0])
+
+    def test_install_refuses_a_non_windows_host(self) -> None:
+        from ctx.schedule import ScheduleError
+        with self.assertRaises(ScheduleError):
+            install(Path("C:/notes"), runner=lambda argv: "", platform="linux")
 
     def test_digest_flag_assembles_only_after_a_change(self) -> None:
         tmp = tempfile.TemporaryDirectory()
