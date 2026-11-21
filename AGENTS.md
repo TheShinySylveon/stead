@@ -120,7 +120,8 @@ python3 -m ctx factory run --factory weekly-project-status --project P [--shadow
 python3 -m ctx factory run --factory feature-builder --contribution ID [--shadow|--live]
 python3 -m ctx digest                        # shortcut for the digest shadow run
 python3 -m ctx onboard --title T [--kind own|oss] [--url URL] [--path DIR] [--method spec-kit|builtin] [--no-specify]
-python3 -m ctx ui                            # local cockpit in a browser (loopback only)
+python3 -m ctx welcome --title T [--url URL] # first run: one project, no Spec Kit
+python3 -m ctx ui                            # local cockpit; empty checkout shows welcome
 python3 -m unittest discover -s tests        # run the test suite
 ```
 
@@ -158,8 +159,8 @@ assets, so it works offline.
   syncs. A missing `method` is filled with `spec-kit`; sync never overrides it.
 - **READ-ONLY:** only `gh search` / `gh pr view` / `gh api user` (GET). No remote
   writes, ever. `--offline` skips the network and re-indexes cached files.
-- `gh` missing or not authenticated -> clear message; use `--offline`. Seed data
-  marked `EXAMPLE` in title/tags is demonstrative, not real.
+- `gh` missing or not authenticated -> clear message; use `--offline`. Sample
+  data marked `EXAMPLE` lives in `examples/context/`, not in a fresh `context/`.
 
 ## feature-builder (issue → PR, shadow/draft-PR only)
 

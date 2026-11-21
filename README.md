@@ -22,14 +22,18 @@ Everything is open and durable:
 ## Quick start
 
 ```bash
-cd "Shared Context"
-python3 -m ctx init                                    # build state.db (rebuildable)
-python3 -m ctx task list                               # see the seeded tasks
-python3 -m ctx status shared-context-rollout           # project rollup
-python3 -m ctx factory run --factory weekly-project-status \
-    --project shared-context-rollout --shadow          # assemble a shadow run
+git clone https://github.com/TheShinySylveon/shared-context.git
+cd shared-context
+python3 -m ctx ui
+```
+
+A fresh checkout has an empty `context/`. The cockpit asks for a project title
+and an optional GitHub URL, then stops. That is the whole first run.
+`python3 -m ctx welcome --title "My Project"` does the same without a browser.
+Spec Kit and extra repos come later, from Projects → Onboard.
+
+```bash
 python3 -m unittest discover -s tests                  # run tests
-python3 -m ctx ui                                  # local cockpit (browser, loopback only)
 ```
 
 ### Local cockpit
@@ -38,8 +42,9 @@ python3 -m ctx ui                                  # local cockpit (browser, loo
 python3 -m ctx ui
 ```
 
-Opens a browser on `127.0.0.1`. **Onboard** (Projects page, or
-`ctx onboard`) creates a project, its repo record, and the constitution.
+Opens a browser on `127.0.0.1`. An empty checkout shows a welcome: project
+title, optional GitHub URL, Start. **Onboard** (Projects page, or
+`ctx onboard`) is the later step: constitution and optional `specify init`.
 If `specify` is installed and you give a code directory, it runs
 `specify init` there; otherwise the constitution is still written locally.
 Nothing is pushed. Same other writes as the CLI — add a project,
@@ -73,8 +78,8 @@ python3 -m ctx factory run --factory weekly-contribution-digest --shadow
 - Everything works offline afterwards: files are the source of truth, and
   `ctx init` rebuilds `state.db` without gh. If gh is missing or not
   authenticated you get a clear message; use `--offline`.
-- A clearly-marked **EXAMPLE** repo + 3 example contributions are seeded so the
-  digest is demonstrable with zero network. Real repos are your choice, later.
+- A clearly-marked **EXAMPLE** repo and contributions live in `examples/context/`,
+  not in a fresh checkout. Copy one in if you want a demo. Real repos are yours.
 - **Public/private split:** GitHub-derived data (repos/contributions) is
   public; your notes and strategy (`context/documents/`) stay private and are
   never part of the digest bundle.

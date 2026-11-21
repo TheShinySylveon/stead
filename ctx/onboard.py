@@ -139,6 +139,18 @@ def _write(path: Path, meta: dict, body: str) -> None:
     path.write_text(frontmatter.dumps(meta, text), encoding="utf-8")
 
 
+def needs_welcome(root: Path) -> bool:
+    """True when this checkout has no projects yet. That is a first run."""
+    folder = root / "context" / "projects"
+    return not folder.is_dir() or not any(folder.glob("*.md"))
+
+
+def welcome(root: Path, title: str, url: str | None = None) -> dict:
+    """First-run setup: one project and its repo record. No Spec Kit, no push."""
+    return onboard(root, title, kind="own", url=url, method="builtin",
+                   run_specify_init=False)
+
+
 def onboard(root: Path, title: str, *, kind: str = "own", url: str | None = None,
             code_path: str | None = None, method: str = "spec-kit",
             integration: str = DEFAULT_INTEGRATION, run_specify_init: bool = True,

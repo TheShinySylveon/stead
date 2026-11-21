@@ -177,6 +177,11 @@ def _runs(root: Path) -> list[dict]:
     } for r in rows]
 
 
+def _needs_welcome(root: Path) -> bool:
+    from ctx.onboard import needs_welcome
+    return needs_welcome(root)
+
+
 def snapshot(root: Path) -> dict:
     """Everything the page needs, except object bodies (loaded on open)."""
     tasks = _list(root, "task")
@@ -203,6 +208,7 @@ def snapshot(root: Path) -> dict:
     pending = sum(1 for r in runs if r["verdict"] == "pending")
     return {
         "today": date.today().isoformat(),
+        "first_run": _needs_welcome(root),
         "counts": {
             "open_tasks": open_tasks,
             "attention": len(attention),
@@ -779,6 +785,12 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/run/verdict":
             result = set_run_verdict(root, payload.get("id"), payload.get("verdict") or "",
                                      payload.get("output"))
+        elif path == "/api/welcome":
+            from ctx.onboard import OnboardError, welcome
+            try:
+                result = welcome(root, payload.get("title") or "", payload.get("url"))
+            except OnboardError as exc:
+                raise UiError(str(exc)) from exc
         elif path == "/api/onboard":
             from ctx.onboard import OnboardError, onboard
             try:

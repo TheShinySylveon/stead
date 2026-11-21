@@ -78,6 +78,16 @@
     color: var(--sidebar-text);
   }
   .nav-foot { margin-top: auto; color: var(--sidebar-muted); font-size: 12px; line-height: 1.45; }
+  body.first-run aside.nav nav, body.first-run aside.nav .nav-foot, body.first-run .top { display: none; }
+  body.first-run { grid-template-columns: 1fr; }
+  body.first-run aside.nav { display: none; }
+  body.first-run main { display: grid; place-items: start center; padding-top: 12vh; }
+  .welcome {
+    width: min(560px, 100%); background: var(--card); border: 1px solid var(--line);
+    border-radius: 18px; box-shadow: var(--shadow); padding: 28px;
+  }
+  .welcome h2 { font: 500 36px/1.1 var(--serif); margin: 0 0 8px; }
+  .welcome p { color: var(--muted); margin: 0 0 18px; }
   main { min-width: 0; padding: 28px 36px 64px; }
   .top {
     display: flex; justify-content: space-between; align-items: flex-end;
@@ -561,7 +571,25 @@ const RENDER = {
   home: renderHome, tasks: renderTasks, projects: renderProjects,
   library: renderLibrary, repos: renderRepos, inbox: renderInbox, factories: renderFactories,
 };
+function renderWelcome() {
+  return `<div class="welcome">
+    <h2>Welcome</h2>
+    <p>This install is empty. Name the first project you want to keep context for. A repo record is created with it. Spec Kit can wait.</p>
+    <form class="stack" id="welcome">
+      <input type="text" name="title" placeholder="Project title" required aria-label="Project title" autofocus>
+      <input type="text" name="url" placeholder="https://github.com/owner/name (optional)" aria-label="GitHub URL">
+      <div><button class="primary" type="submit">Start</button></div>
+    </form>
+  </div>`;
+}
 function render() {
+  const first = !!(state.snap && state.snap.first_run);
+  document.body.classList.toggle("first-run", first);
+  if (first) {
+    document.getElementById("nav").innerHTML = "";
+    document.getElementById("main").innerHTML = renderWelcome();
+    return;
+  }
   renderNav();
   document.getElementById("main").innerHTML = RENDER[state.view]();
 }
@@ -724,7 +752,8 @@ document.body.addEventListener("submit", async (event) => {
   const handled = form.id === "add-task" || form.id === "capture" || form.id === "add-project"
     || form.id === "add-document" || form.id === "add-meeting" || form.id === "add-repo"
     || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
-    || form.id === "add-spec" || form.id === "onboard" || form.dataset.factory || form.dataset.triage;
+    || form.id === "add-spec" || form.id === "onboard" || form.id === "welcome"
+    || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
@@ -733,6 +762,9 @@ document.body.addEventListener("submit", async (event) => {
     if (form.id === "add-task") {
       await api("/api/task", {method: "POST", body: JSON.stringify(data)});
       toast("Task added");
+    } else if (form.id === "welcome") {
+      await api("/api/welcome", {method: "POST", body: JSON.stringify({title: data.title, url: data.url})});
+      toast("Project created");
     } else if (form.id === "onboard") {
       state.onboardResult = await api("/api/onboard", {method: "POST", body: JSON.stringify({
         title: data.title, kind: data.kind, url: data.url, path: data.path,

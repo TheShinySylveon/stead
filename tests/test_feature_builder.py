@@ -337,7 +337,7 @@ class TestShippedFactoryArtifacts(unittest.TestCase):
                                "eval-feature-spec-kit-vague"})
 
     def test_example_spec_seed_is_buildable(self) -> None:
-        path = self.ROOT / "context/contributions/example-org-example-repo-issue-201.md"
+        path = self.ROOT / "examples/context/contributions/example-org-example-repo-issue-201.md"
         meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
         self.assertEqual(meta["kind"], "issue")
         self.assertEqual(meta["role"], "author")

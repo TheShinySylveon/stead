@@ -71,6 +71,15 @@ class OnboardTest(unittest.TestCase):
         with self.assertRaises(onboard.OnboardError):
             onboard.onboard(self.root, "Nope", code_path=str(self.code / "missing"))
 
+    def test_welcome_is_the_empty_checkout_path(self) -> None:
+        self.assertTrue(onboard.needs_welcome(self.root))
+        result = onboard.welcome(self.root, "First Project")
+        self.assertFalse(onboard.needs_welcome(self.root))
+        self.assertEqual(result["method"], "builtin")
+        self.assertEqual(result["specify"], "builtin")
+        repo = objects.find(self.root, "repo", result["repo"])
+        self.assertEqual(repo[1]["project"], result["project"])
+
     def test_cli_parser_accepts_onboard(self) -> None:
         args = cli.build_parser().parse_args(
             ["onboard", "--title", "Demo", "--kind", "own", "--method", "builtin", "--no-specify"])

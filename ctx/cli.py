@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import re
+import sys
 from datetime import date
 from pathlib import Path
 
@@ -41,6 +42,11 @@ def cmd_init(root: Path) -> int:
           f"(tasks indexed: {counts['tasks']}, repos: {counts['repos']}, "
           f"contributions: {counts['contributions']}, evals loaded: {counts['evals']}, "
           f"prompt versions seeded: {counts['prompt_versions']})")
+    from ctx.onboard import needs_welcome
+    if needs_welcome(root):
+        print("No projects yet. First run:")
+        print("  python3 -m ctx ui")
+        print("  python3 -m ctx welcome --title \"My Project\"")
     return 0
 
 
@@ -618,6 +624,10 @@ def build_parser() -> argparse.ArgumentParser:
     frun.add_argument("--shadow", action="store_true", help="shadow mode (default)")
     frun.add_argument("--live", action="store_true", help="record as a live run (still no LLM call)")
 
+    welcome = sub.add_parser("welcome", help="first run: name a project and optional GitHub URL")
+    welcome.add_argument("--title", required=True)
+    welcome.add_argument("--url", help="https://github.com/owner/name")
+
     ob = sub.add_parser("onboard", help="create a project, its repo record, and the initial constitution")
     ob.add_argument("--title", required=True)
     ob.add_argument("--kind", default="own", choices=REPO_KINDS)
@@ -641,6 +651,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if not argv:
+        print("Shared Context")
+        print("  python3 -m ctx ui")
+        print("  python3 -m ctx welcome --title \"My Project\"")
+        print("  python3 -m ctx --help")
+        return 0
     args = build_parser().parse_args(argv)
     root = Path(args.root).resolve()
     if args.command == "init":
@@ -686,6 +704,16 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "factory" and args.sub == "run":
         return cmd_factory_run(root, args.factory, args.project, live=args.live,
                                contribution=args.contribution)
+    if args.command == "welcome":
+        from ctx.onboard import OnboardError, welcome as run_welcome
+        try:
+            result = run_welcome(root, args.title, url=args.url)
+        except OnboardError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"welcome {result['project']}")
+        print(f"repo: {result['repo']}")
+        print("context/ is yours now. Open the cockpit with: python3 -m ctx ui")
+        return 0
     if args.command == "onboard":
         from ctx.onboard import OnboardError, onboard
         try:
