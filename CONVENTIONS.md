@@ -81,6 +81,71 @@ visibility: public                   # GitHub-derived data is always public
 `review`, `updated`); your edits to `role`, `tags`, `related`, `created`, and the
 body are preserved across syncs.
 
+### Buildable feature specs (`feature-builder` factory)
+
+A contribution doubles as a **buildable feature spec** — the input to the
+`feature-builder` factory (issue → PR autonomous build) — when ALL of:
+
+- `kind: issue` and `role: author` (you authored the spec), linked to a `repo`
+- `tags:` includes `feature-spec` (marks it as a build target)
+- the body contains a feature description followed by a `## Acceptance
+  criteria` section with a `- [ ]` checklist — one concrete, testable
+  criterion per item
+
+```markdown
+---
+id: contribution-example-org-example-repo-issue-201
+type: contribution
+title: "EXAMPLE: Add --json output to the list command"
+created: 2026-11-21
+updated: 2026-11-21
+repo: repo-example-org-example-repo
+kind: issue
+number: 201
+url: https://github.com/example-org/example-repo/issues/201
+role: author
+state: open
+ci: none
+review: none
+visibility: public
+tags: [example, seed, feature-spec]
+---
+
+# EXAMPLE: Add --json output to the list command
+
+Description of the feature: what, why, scope, constraints. Keep it
+substantive (a one-line wish gets flagged, not built).
+
+## Acceptance criteria
+
+- [ ] `list --json` prints a single valid JSON array to stdout
+- [ ] Each object contains id, title, and status fields
+- [ ] Without the flag, output is unchanged and existing tests pass
+```
+
+Author it with `ctx contribution add --kind issue --role author ...` then edit
+the body (add the description + checklist + `feature-spec` tag), or write the
+file by hand and run `ctx init`. Optional: `related: [document-...]` links
+design notes into the build bundle.
+
+The assembler applies **deterministic quality flags** (no LLM):
+`missing-acceptance-criteria` (no checklist), `vague-spec` (description under
+25 words), `large-spec` (over 8 criteria or 400 description words). Any flag
+means **NEEDS DECOMPOSITION** — an agent must produce a decomposition /
+clarification plan, never guess and build.
+
+Build it (shadow by default — plan + proposed diff only, no remote writes):
+
+```bash
+python3 -m ctx factory run --factory feature-builder \
+    --contribution contribution-example-org-example-repo-issue-201 --shadow
+```
+
+Safety is governed by the autonomy ladder in
+`factories/feature-builder/FACTORY.md`: shadow → draft-PR (human merges) →
+trusted (never the default). Never push to the default branch; never
+auto-merge by default.
+
 ### Supported YAML subset
 
 The stdlib parser (`ctx/frontmatter.py`) intentionally supports only:

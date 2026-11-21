@@ -9,6 +9,7 @@ prompt.md and supplies the output via `ctx run log`.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -228,6 +229,220 @@ def assemble_digest(root: Path, factory: str = DIGEST_FACTORY,
             "INSERT INTO runs (factory, task_ref, project, prompt_version, mode, bundle_path, verdict, created) "
             "VALUES (?, 'contributions', NULL, ?, ?, ?, 'pending', ?)",
             (factory, version, mode, run_dir.relative_to(root).as_posix(), created),
+        )
+        conn.commit()
+        info["run_id"] = cur.lastrowid
+        info["run_dir"] = run_dir.relative_to(root).as_posix()
+        info["assembled_prompt"] = assembled_prompt
+        return info
+    finally:
+        conn.close()
+
+
+FEATURE_BUILDER_FACTORY = "feature-builder"
+
+# Deterministic spec-quality heuristics (no LLM): a buildable spec needs a
+# substantive description and an `## Acceptance criteria` checklist.
+_AC_HEADER = re.compile(r"^##\s+acceptance\s+criteria\s*$", re.IGNORECASE | re.MULTILINE)
+_CHECKLIST_ITEM = re.compile(r"^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$", re.MULTILINE)
+_NEXT_H2 = re.compile(r"^##\s+", re.MULTILINE)
+_HEADING_LINE = re.compile(r"^#+\s.*$", re.MULTILINE)
+_MIN_DESCRIPTION_WORDS = 25
+_MAX_DESCRIPTION_WORDS = 400
+_MAX_CRITERIA = 8
+
+
+def split_spec(body: str) -> tuple[str, list[tuple[bool, str]]]:
+    """Split a feature-spec body into (description, acceptance-criteria checklist).
+
+    The checklist is the `## Acceptance criteria` section's `- [ ]` / `- [x]`
+    items, as (done, text) pairs. Returns an empty list when the section is absent.
+    """
+    match = _AC_HEADER.search(body)
+    if match is None:
+        return body.strip(), []
+    description = body[:match.start()].strip()
+    section = body[match.end():]
+    nxt = _NEXT_H2.search(section)
+    if nxt:
+        section = section[:nxt.start()]
+    criteria = [(m.group(1).lower() == "x", m.group(2))
+                for m in _CHECKLIST_ITEM.finditer(section)]
+    return description, criteria
+
+
+def spec_flags(description: str, criteria: list[tuple[bool, str]]) -> list[str]:
+    """Deterministic quality flags; any flag means the spec needs decomposition
+    or clarification BEFORE an agent is allowed to build it."""
+    flags: list[str] = []
+    if not criteria:
+        flags.append("missing-acceptance-criteria")
+    words = len(_HEADING_LINE.sub("", description).split())
+    if words < _MIN_DESCRIPTION_WORDS:
+        flags.append("vague-spec")
+    if len(criteria) > _MAX_CRITERIA or words > _MAX_DESCRIPTION_WORDS:
+        flags.append("large-spec")
+    return flags
+
+
+_MODE_SAFETY = {
+    "shadow": (
+        "Mode: **SHADOW** (default). Propose a plan and a proposed diff ONLY.\n"
+        "NO remote writes of any kind: no push, no branch creation on the remote,\n"
+        "no PR/issue/comment/label creation. All output stays local for human review."
+    ),
+    "live": (
+        "Mode: **DRAFT-PR** (live). You may push an isolated feature branch and open\n"
+        "a DRAFT PR via `gh pr create --draft` with passing tests. A HUMAN reviews\n"
+        "and merges. NEVER push to the default branch, NEVER merge, NEVER mark the\n"
+        "PR ready-for-review without explicit human approval."
+    ),
+}
+
+
+def assemble_feature_build(root: Path, contribution_ref: str,
+                           mode: str = "shadow") -> dict:
+    """Deterministically assemble the feature-builder bundle for one spec.
+
+    Inputs (all local files, no network, no LLM): the spec contribution
+    (kind: issue, role: author) with its body + acceptance criteria, its repo's
+    conventions, `related:` documents, and the other cached contributions in
+    the same repo (input for the duplicate/overlap sweep). Emits bundle.md,
+    prompt.md, run.json and records a runs row. The factory itself NEVER writes
+    code and NEVER touches the network or any remote — in any mode.
+    """
+    db.require_db(root)
+    fdir = _check_factory_dir(root, FEATURE_BUILDER_FACTORY)
+    found = objects.find(root, "contribution", contribution_ref)
+    if found is None:
+        raise SystemExit(f"contribution not found: {contribution_ref!r} "
+                         "(see context/contributions/)")
+    spec_path, spec_meta, spec_body = found
+    if spec_meta.get("kind") != "issue":
+        raise SystemExit("feature-builder builds from a spec contribution with "
+                         f"kind: issue (got {spec_meta.get('kind')!r})")
+    if spec_meta.get("role") != "author":
+        raise SystemExit("feature-builder builds specs you authored: role: author "
+                         f"required (got {spec_meta.get('role')!r})")
+    repo_ref = spec_meta.get("repo")
+    repo_found = objects.find(root, "repo", repo_ref) if repo_ref else None
+    if repo_found is None:
+        raise SystemExit(f"repo not found: {repo_ref!r} — add it with `ctx repo add` first")
+    repo_path, repo_meta, repo_body = repo_found
+    repo_id = repo_meta["id"]
+
+    description, criteria = split_spec(spec_body)
+    flags = spec_flags(description, criteria)
+
+    related_refs = spec_meta.get("related") or []
+    if isinstance(related_refs, str):
+        related_refs = [related_refs]
+    docs: list = []
+    missing_refs: list[str] = []
+    for ref in related_refs:
+        doc = objects.find(root, "document", ref)
+        if doc is None:
+            missing_refs.append(ref)
+        else:
+            docs.append(doc)
+
+    # Duplicate/overlap sweep input: every OTHER cached contribution in the repo.
+    siblings = [(p, m, b) for p, m, b in objects.iter_objects(root, "contribution")
+                if m.get("repo") == repo_id and m.get("id") != spec_meta.get("id")]
+    siblings.sort(key=lambda t: (t[1].get("kind", ""), int(t[1].get("number", 0) or 0)))
+
+    conn = db.connect(root)
+    try:
+        version, prompt_text = _production_prompt(conn, root, FEATURE_BUILDER_FACTORY)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        run_dir = _run_dir(fdir, stamp, spec_path.stem)
+        created = db.utcnow()
+
+        parts = [
+            f"# Feature build bundle — {spec_meta.get('title', spec_path.stem)}",
+            f"<!-- factory: {FEATURE_BUILDER_FACTORY} | prompt: {version} "
+            f"| mode: {mode} | created: {created} -->",
+            "",
+            "## Build target (feature spec)",
+            _contribution_entry(spec_path, spec_meta, spec_body, root),
+            "## Acceptance criteria",
+        ]
+        if criteria:
+            parts.append("Map EACH criterion below to at least one test before writing code:")
+            parts.extend(f"- [{'x' if done else ' '}] {text}" for done, text in criteria)
+        else:
+            parts.append("_No `## Acceptance criteria` checklist found in the spec body._")
+        parts += ["", "## Spec quality flags"]
+        if flags:
+            parts.append("**NEEDS DECOMPOSITION — do not implement until resolved.** "
+                         "Flagged by deterministic checks:")
+            parts.extend(f"- {flag}" for flag in flags)
+            parts.append("Stop and produce a decomposition/clarification plan instead of code.")
+        else:
+            parts.append("None — spec looks buildable (description + acceptance criteria present).")
+        parts += [
+            "",
+            f"## Repo conventions — {repo_meta.get('title', repo_id)} ({repo_id})"
+            + (f" [kind: {repo_meta['kind']}]" if repo_meta.get("kind") else ""),
+        ]
+        for key in ("url", "default_branch", "contributing", "notes", "status"):
+            if repo_meta.get(key):
+                parts.append(f"- {key}: {repo_meta[key]}")
+        parts.append(f"<!-- source: {repo_path.relative_to(root).as_posix()} "
+                     f"| id: {repo_id} -->")
+        parts += ["", repo_body.strip(), ""]
+        parts.append(_section("Related documents", docs, root))
+        if missing_refs:
+            parts.append("_Related refs not found: " + ", ".join(missing_refs) + "_\n")
+        parts.append(f"## Related work in local cache ({len(siblings)})")
+        parts.append("Duplicate/overlap sweep input: other cached contributions in this repo. "
+                     "Check these (and live GitHub, read-only) for duplicate or overlapping "
+                     "work BEFORE building; surface anything that overlaps.\n")
+        if siblings:
+            for path, meta, body in siblings:
+                parts.append(_contribution_entry(path, meta, body, root))
+        else:
+            parts.append("_No other contributions cached for this repo._\n")
+        parts += [
+            "## Mode & safety (binding)",
+            _MODE_SAFETY.get(mode, _MODE_SAFETY["shadow"]),
+            "Hard rules in every mode: never push to main/the default branch directly; "
+            "never auto-merge; a human reviews before anything consequential; "
+            "vague or large specs are flagged for decomposition, never guessed.",
+        ]
+        bundle = "\n".join(parts)
+        assembled_prompt = prompt_text.rstrip() + "\n\n---\n\n" + bundle
+
+        (run_dir / "bundle.md").write_text(bundle, encoding="utf-8")
+        (run_dir / "prompt.md").write_text(assembled_prompt, encoding="utf-8")
+        info = {
+            "factory": FEATURE_BUILDER_FACTORY,
+            "contribution": spec_meta["id"],
+            "repo": repo_id,
+            "project": None,
+            "prompt_version": version,
+            "mode": mode,
+            "created": created,
+            "counts": {
+                "acceptance_criteria": len(criteria),
+                "related_documents": len(docs),
+                "related_contributions": len(siblings),
+                "spec_flags": len(flags),
+            },
+            "flags": flags,
+            "needs_decomposition": bool(flags),
+            "verdict": "pending",
+            "note": "Deterministic assembly; no LLM call, no network, no remote writes. "
+                    "Hand prompt.md to a pluggable coding agent; record output via `ctx run log`. "
+                    "Shadow = plan + diff only; live = draft PR, human merges.",
+        }
+        (run_dir / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
+
+        cur = conn.execute(
+            "INSERT INTO runs (factory, task_ref, project, prompt_version, mode, bundle_path, verdict, created) "
+            "VALUES (?, ?, NULL, ?, ?, ?, 'pending', ?)",
+            (FEATURE_BUILDER_FACTORY, spec_meta["id"], version, mode,
+             run_dir.relative_to(root).as_posix(), created),
         )
         conn.commit()
         info["run_id"] = cur.lastrowid

@@ -78,6 +78,53 @@ python3 -m ctx run log --factory weekly-contribution-digest \
     --output "..." --verdict approved
 ```
 
+### Feature builder: issue → PR autonomous build (shadow / draft-PR)
+
+The third factory, `feature-builder`, turns a feature spec you author into a
+build context bundle + prompt that a pluggable coding agent (Hermes, Claude
+Code, Codex — anything that reads `prompt.md`) implements under a strict
+issue-to-PR discipline. The factory itself is deterministic and LLM-free: it
+writes no code, calls no LLM, uses no network, and performs **no remote
+writes in any mode**.
+
+A buildable spec is a contribution with `kind: issue`, `role: author`, tagged
+`feature-spec`, whose body has a description + a `## Acceptance criteria`
+checklist (see CONVENTIONS.md). A clearly-marked EXAMPLE spec is seeded.
+
+```bash
+python3 -m ctx factory run --factory feature-builder \
+    --contribution contribution-example-org-example-repo-issue-201 --shadow
+# bundle: spec + acceptance criteria + repo conventions + related docs
+#         + other cached contributions (duplicate/overlap sweep input)
+# hand factories/feature-builder/runs/<run-id>/prompt.md to a coding agent,
+# review its plan/diff, then record:
+python3 -m ctx run log --factory feature-builder \
+    --task contribution-example-org-example-repo-issue-201 \
+    --prompt-version v1 --output "..." --verdict approved
+```
+
+The prompt encodes the delivery discipline: read the issue + all comments →
+sweep for duplicate/overlapping PRs and issues → validate the premise against
+current code → map EACH acceptance criterion to a test → TDD red-green on an
+isolated branch → sabotage-test the regression → run the repo's quality gates
+→ shadow plan/diff or a DRAFT PR linking the issue → report CI honestly.
+Vague or large specs are deterministically flagged **NEEDS DECOMPOSITION**
+(no checklist / thin description / excessive scope) — flagged specs get a
+decomposition plan, never guessed code.
+
+**Autonomy ladder** (full rules in `factories/feature-builder/FACTORY.md`):
+
+1. **SHADOW (default):** plan + proposed diff only. No push, no PR, no remote
+   writes. A human reviews locally.
+2. **DRAFT-PR:** agent pushes an isolated feature branch and opens a DRAFT PR
+   with passing tests; a **human reviews and merges**.
+3. **TRUSTED (never the default):** auto-merge only after a proven record +
+   adversarial review + server-side branch protection, explicitly enabled.
+
+Hard safety rules in every mode: never push to main/the default branch
+directly; never auto-merge by default; human review gate before anything
+consequential; vague/large specs are flagged for decomposition, not guessed.
+
 ## Structure
 
 | Path | Purpose |
@@ -111,9 +158,11 @@ python3 -m ctx factory run --factory weekly-contribution-digest --shadow
 
 ## Growing it
 
-Phase 1: context skeleton + factory scaffolds, shadow-first. Phase 2 (current):
+Phase 1: context skeleton + factory scaffolds, shadow-first. Phase 2:
 `weekly-contribution-digest` as the first factory — read-only GitHub cache,
 offline-capable, EXAMPLE seeds; specific real repos are deferred (see PLAN.md).
+Phase 3 (current): `feature-builder` — issue → PR autonomous build in strict
+shadow/draft-PR mode, with an autonomy ladder and hard safety rules.
 Next phases per `PLAN.md`: eval-driven prompt promotion, scheduled triggers,
 inbox triage factory. Frontmatter relations are already team-ready; no rewrite
 needed to add people or permissions later.

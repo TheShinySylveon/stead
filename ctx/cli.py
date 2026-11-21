@@ -457,8 +457,41 @@ def cmd_prompt_promote(root: Path, factory_name: str, version: str) -> int:
 
 # --- factory run --------------------------------------------------------------
 
-def cmd_factory_run(root: Path, factory_name: str, project: str | None, live: bool = False) -> int:
+def cmd_feature_build(root: Path, contribution: str, live: bool = False) -> int:
     mode = "live" if live else "shadow"
+    info = factory.assemble_feature_build(root, contribution, mode=mode)
+    c = info["counts"]
+    print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
+          f"prompt {info['prompt_version']} for {info['contribution']}")
+    print(f"bundle: {c['acceptance_criteria']} acceptance criteria, "
+          f"{c['related_documents']} related documents, "
+          f"{c['related_contributions']} related cached contributions (duplicate sweep)")
+    if info["flags"]:
+        print(f"spec flags: {', '.join(info['flags'])} — NEEDS DECOMPOSITION; "
+              "resolve before any agent builds this spec")
+    else:
+        print("spec flags: none — spec looks buildable")
+    print(f"run dir: {info['run_dir']}/ (bundle.md, prompt.md, run.json)")
+    print("no LLM call made, no network, no remote writes — hand prompt.md to a coding "
+          "agent (Hermes/Claude Code/Codex), then record:")
+    print(f"  python3 -m ctx run log --factory {info['factory']} --task {info['contribution']} "
+          f"--prompt-version {info['prompt_version']} --output TEXT --verdict approved|rejected")
+    print("\n--- assembled prompt ---\n")
+    print(info["assembled_prompt"])
+    return 0
+
+
+def cmd_factory_run(root: Path, factory_name: str, project: str | None,
+                    live: bool = False, contribution: str | None = None) -> int:
+    mode = "live" if live else "shadow"
+    if contribution is not None and factory_name != factory.FEATURE_BUILDER_FACTORY:
+        raise SystemExit("--contribution is only valid for --factory feature-builder")
+    if factory_name == factory.FEATURE_BUILDER_FACTORY:
+        if contribution is None:
+            raise SystemExit("--contribution is required for factory 'feature-builder' "
+                             "(a spec contribution: kind issue, role author, "
+                             "with a ## Acceptance criteria checklist)")
+        return cmd_feature_build(root, contribution, live=live)
     if factory_name == factory.DIGEST_FACTORY or project is None:
         if factory_name != factory.DIGEST_FACTORY and project is None:
             raise SystemExit(f"--project is required for factory {factory_name!r}")
@@ -569,6 +602,7 @@ def build_parser() -> argparse.ArgumentParser:
     frun = fr.add_parser("run", help="assemble context bundle + prompt, record a run")
     frun.add_argument("--factory", required=True)
     frun.add_argument("--project", help="project id (not needed for weekly-contribution-digest)")
+    frun.add_argument("--contribution", help="spec contribution id (required for feature-builder)")
     frun.add_argument("--shadow", action="store_true", help="shadow mode (default)")
     frun.add_argument("--live", action="store_true", help="record as a live run (still no LLM call)")
 
@@ -618,5 +652,6 @@ def main(argv: list[str] | None = None) -> int:
         if args.sub == "promote":
             return cmd_prompt_promote(root, args.factory, args.version)
     if args.command == "factory" and args.sub == "run":
-        return cmd_factory_run(root, args.factory, args.project, live=args.live)
+        return cmd_factory_run(root, args.factory, args.project, live=args.live,
+                               contribution=args.contribution)
     raise SystemExit(f"unhandled command: {args.command}")
