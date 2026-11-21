@@ -668,11 +668,13 @@ def _stale_flag(path: Path, meta: dict, today, stale: list[str]) -> None:
         stale.append(f"- {meta.get('id') or path.name}: updated {updated[:10]} ({age} days)")
 
 
-def watch_specs(root: Path) -> dict:
-    """Assemble every open authored feature spec whose repo trigger is watch.
+def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
+                merge: bool = False) -> dict:
+    """Assemble or build every open authored spec whose repo trigger is watch.
 
     Flagged specs are skipped, not guessed. On-demand repos are skipped.
-    Nothing is pushed. A reach above shadow is recorded and not performed.
+    With build=True the configured model plans, edits, and commits; publish
+    and merge follow the repo ceiling.
     """
     from ctx.autonomy import effective
     ran: list[dict] = []
@@ -695,6 +697,40 @@ def watch_specs(root: Path) -> dict:
         flags = spec_flags(description, criteria)
         if flags:
             skipped.append({"id": meta.get("id"), "reason": ", ".join(flags)})
+            continue
+        if build:
+            code = Path(repo[1].get("code_path") or "")
+            from ctx.agent import branch_for
+            branch = branch_for(meta)
+            if code.is_dir() and (code / ".git").exists():
+                from subprocess import run as spawn
+                try:
+                    exists = spawn(["git", "branch", "--list", branch], cwd=code,
+                                   capture_output=True, text=True)
+                except OSError as exc:
+                    skipped.append({"id": meta.get("id"), "reason": f"git missing: {exc}"})
+                    continue
+                if exists.stdout.strip():
+                    skipped.append({"id": meta.get("id"), "reason": "already built"})
+                    continue
+            from ctx.agent import BuildError, build as build_spec
+            from ctx.models import ModelError
+            try:
+                result = build_spec(root, meta["id"], publish=publish, merge=merge)
+            except (BuildError, ModelError) as exc:
+                skipped.append({"id": meta.get("id"), "reason": str(exc)})
+                continue
+            ran.append({
+                "id": meta.get("id"),
+                "run_id": None,
+                "run_dir": "",
+                "reach": policy["ceiling"],
+                "ceiling": policy["ceiling"],
+                "remote": "built",
+                "branch": result.get("branch"),
+                "published": result.get("published"),
+                "merged": result.get("merged"),
+            })
             continue
         try:
             info = assemble_feature_build(root, meta["id"], reach=policy["ceiling"])

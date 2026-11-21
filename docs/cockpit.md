@@ -34,7 +34,7 @@ See [First run](first-run.md).
 | Library | Add and edit documents and meetings. Rename them. The id does not change. |
 | Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. |
 | Inbox | Drop a note, or import a local `.eml`, `.ics`, `.md`, or `.txt` file. File it as a document, meeting, or task, or delete it. |
-| Factories | Assemble a shadow run. Check Draft with model to write `output.md`. New factory, Watch now, per-case eval results, Judge with the model, Promote prompt. Nothing is posted. |
+| Factories | Assemble a shadow run. Check Draft with model to write `output.md`. Watch now assembles; Watch and build plans, edits, checks, commits, and publishes. Build with model has Publish and Merge-if-allowed options. New factory, per-case eval results, Judge, Promote prompt. |
 | Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add a sign-in, or reset its password. Sign out on a shared server. Choose who is writing. Add actors (`human` or `agent`). The weekly job. The capture webhook. Rebuild the index. |
 
 Opening a project, task, document, or meeting shows the note and an editor.

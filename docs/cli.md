@@ -112,7 +112,7 @@ python -m stead factory run --factory context-maintenance [--shadow|--live] [--g
 python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live] [--generate] [--reach REACH]
 python -m stead digest [--generate]
 python -m stead factory new --name NAME --title "What it drafts"
-python -m stead factory watch
+python -m stead factory watch [--build] [--publish] [--merge]
 python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr]
 python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge] [--path DIR]
 
@@ -135,8 +135,8 @@ install default. See [Models](models.md).
 python -m stead inbox import PATH
 python -m stead hook set
 python -m stead hook show
-python -m stead schedule show [--project P]
-python -m stead schedule install [--project P]
+python -m stead schedule show [--project P] [--watch] [--merge]
+python -m stead schedule install [--project P] [--watch] [--merge]
 ```
 
 `inbox import` copies a local `.eml`, `.ics`, `.md`, or `.txt` file into
@@ -156,6 +156,7 @@ digest if the cache changed, a maintenance draft, and the status of
 ```bash
 python -m stead factory publish --contribution ID
 python -m stead factory merge --contribution ID
+python -m stead build --contribution ID [--publish] [--merge] [--steps N]
 ```
 
 `factory publish` pushes the checkout's current branch and opens a pull
@@ -167,6 +168,16 @@ default. Set `code_path` with `repo set --path` first. The ceiling must be
 request must be open, and the checks must be green. It does not pass
 `--admin`, and it does not push the default branch. A factory run does not
 call it.
+
+`build` is the model-driven implementation step. It needs a configured model,
+a repo `code_path`, a clean checkout on the default branch, and a buildable
+spec. The model must first write a plan, then it may read and write files
+inside that checkout. It cannot touch `.git` or leave the repo. When it
+finishes, Stead runs the repo's `checks:` command, commits on a new
+`stead/<issue>-<slug>` branch, and stops. `--publish` then pushes and opens a
+pull request when the ceiling allows it. `--merge` follows that with a merge
+only when the repo says `reach: merge` and the checks are green. It never
+pushes the default branch.
 
 ## Runs and prompts
 

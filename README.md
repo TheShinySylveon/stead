@@ -32,6 +32,8 @@ A fresh checkout shows Welcome instead.
 - A local cockpit in the browser, or the same actions from the CLI.
 - Four factories that assemble a prompt. `--generate` drafts with the model
   you configure. The default still calls nothing.
+- A model-driven build: `stead build` plans, edits the repo, runs its checks,
+  commits, and can publish or merge under that repo's reach.
 - A weekly local job that syncs read-only and drafts, plus `stead run file` to
   keep an approved draft as a private document.
 - A first-run choice: this computer, or a shared Docker server where each person signs in.
@@ -79,11 +81,12 @@ its own index. [docs/multi-actor.md](docs/multi-actor.md).
 
 ## Factories
 
-A factory is specific, shared, and scrutinized. Stead ships four. Each run
-writes `bundle.md`, `prompt.md`, and `run.json` under `factories/<name>/runs/`
-(gitignored). Add `--generate` to also write `output.md` from your model.
-Hand `prompt.md` to any agent if you would rather not. Record the verdict
-yourself.
+A factory is a repeatable pipeline: plan, build, verify, and deliver. Stead
+ships four. Assembly writes `bundle.md`, `prompt.md`, and `run.json` under
+`factories/<name>/runs/` (gitignored). `--generate` writes `output.md` from
+your model. With a model configured, `stead build` goes further: it plans,
+edits the repo checkout, runs the repo's checks, commits, and can open or
+merge a pull request under that repo's reach.
 
 | Factory | What it drafts |
 |---|---|

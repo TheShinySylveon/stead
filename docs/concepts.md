@@ -49,11 +49,13 @@ Ids are stable. Renaming a note in the cockpit changes the title, not the id.
 
 ## Factories
 
-A factory is a folder under `factories/<name>/`: a definition, versioned
-prompts, evals, and run logs. `stead factory run` assembles a bundle and a
-prompt. It does not generate the answer. You hand `prompt.md` to an agent and
-record the verdict with `stead run log`, or with Approve / Reject in the cockpit.
-An approved digest or status can then be filed with `stead run file --run ID`.
+A factory is a repeatable pipeline: plan, build, verify, deliver. Each lives
+under `factories/<name>/` as a definition, versioned prompts, evals, and run
+logs. `stead factory run` assembles a bundle and a prompt. With a model
+configured, `stead build` plans, edits the repo checkout, runs the repo's
+`checks:`, and commits on an isolated branch; `--publish` opens the pull
+request and `--merge` merges when the repo says `reach: merge`. An approved
+digest or status can be filed with `stead run file --run ID`.
 
 Shadow mode is the default. It drafts locally. It does not push or open a
 pull request. See [Factories](factories.md).

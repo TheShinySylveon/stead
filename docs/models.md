@@ -53,6 +53,10 @@ text. Stead does not run it, post it, push it, or open a pull request.
 `--live` only changes the run label. A person still approves or rejects it.
 An approved digest or status can be filed with `stead run file --run ID`.
 
+`stead build` uses the same configured model as an implementation agent: it
+plans first, then edits files in the repo's `code_path`, runs the repo's
+`checks:` command, and commits locally. `--publish` opens the pull request.
+
 In the cockpit, check **Draft with model** on the Factories page.
 
 ## Judge

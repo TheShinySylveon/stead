@@ -21,8 +21,9 @@ own projects and the open-source projects you contribute to (one cockpit):
    agents read and write knowledge. Objects: projects, tasks, documents,
    meetings, repos, contributions. Relations live in frontmatter. Everything
    has one logical home.
-2. **Factories** — specific, shared, scrutinized AI workflows under
-   `factories/<name>/`. Each has versioned prompts, evals, and run logs.
+2. **Factories** — named pipelines that take an input through plan, build,
+   verify, and delivery under a per-repo reach ceiling. Each lives under
+   `factories/<name>/` with versioned prompts, evals, and run logs.
    `weekly-contribution-digest` covers OSS and own-project PRs.
    `weekly-project-status` drafts one project's status. `feature-builder` turns
    an authored feature spec into a planning-first issue→PR build.
@@ -118,6 +119,7 @@ python -m stead factory new --name NAME --title T
 python -m stead inbox import PATH             # local .eml .ics .md .txt into inbox/
 python -m stead hook set                      # webhook token, printed once
 python -m stead factory publish --contribution ID  # isolated branch + pull request. Never merges.
+python -m stead build --contribution ID [--publish]  # model plans, edits, runs checks, commits
 python -m stead factory merge --contribution ID    # green checks only. Repo must say reach: merge.
 python -m stead account add --name NAME --actor ACTOR  # shared-server sign-in. Hash only.
 python -m stead init                          # rebuild state.db from schema.sql + files
@@ -232,23 +234,32 @@ rules: `docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`
 `watch`. `reach` is the ceiling: `shadow` (default), `draft-pr`, `pr`, or
 `merge`. A run may ask for less. It may not ask for more. Merge is never
 inherited from the install default. `stead factory publish` may push an
-isolated branch and open a pull request. It does not merge, and it refuses
-the default branch. `stead factory merge` is separate. It runs only when the
-repo file says `reach: merge`, the checks are green, and GitHub accepts it.
-It does not pass `--admin`, and it does not push the default branch.
+isolated branch and open a pull request. `stead build --publish` also runs the
+model build first. `stead factory merge` runs only when the repo file says
+`reach: merge`, the checks are green, and GitHub accepts it. `stead build
+--publish --merge` chains that after a successful build. It does not pass
+`--admin`, and it does not push the default branch.
+
+**Autonomous pipeline.** A factory is not only an assembly step. With a model
+configured, `stead build` plans, edits the repo checkout, runs the repo's
+`checks:`, commits on an isolated branch, and can publish and merge. The
+`trigger: watch` repo plus `stead factory watch --build --publish [--merge]`
+turns that into issue-to-delivery without a person in the loop. Shadow and
+draft-PR remain the safe defaults.
 
 **Autonomy ladder (a repo may sit on any rung):**
 1. **SHADOW (default):** plan + proposed diff only; zero remote writes.
 2. **DRAFT-PR:** isolated branch + `gh pr create --draft`; a HUMAN merges.
    `stead factory publish` does this when the ceiling allows it.
-3. **TRUSTED (never the install default):** `stead factory merge` only when
-   the repo file says `reach: merge`, checks are green, and GitHub accepts
-   the merge. No `--admin`. No push of the default branch.
+3. **TRUSTED (never the install default):** build, publish, and merge only
+   when the repo file says `reach: merge`, checks are green, and GitHub
+   accepts the merge. No `--admin`. No push of the default branch.
 
-**Hard rules (every mode):** never push to main/default branch; never auto-merge
-by default; human review gate before anything consequential; vague/large specs
-are flagged, never guessed; report CI honestly. Assembly itself does no
-LLM/network/subprocess/remote writes.
+**Hard rules (every mode):** never push to main/default branch; merge only
+when the repo says `reach: merge` and checks are green; no `--admin`; vague or
+large specs are flagged, never guessed; report CI honestly. Assembly alone
+does no LLM/network/subprocess/remote writes. `stead build` is a separate,
+explicit step.
 
 ## Factory protocol (incremental risk)
 

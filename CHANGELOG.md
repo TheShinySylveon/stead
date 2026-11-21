@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased
+
+- `stead build --contribution ID` has the configured model plan, edit the
+  repo checkout, run the repo's `checks:`, and commit on an isolated branch.
+  `--publish` opens the pull request; `--merge` merges when the repo says
+  `reach: merge`. `factory watch --build --publish [--merge]` does the same
+  for every watched spec, and `schedule --watch [--merge]` runs it weekly.
+  The model cannot choose shell commands and cannot leave the checkout.
+
 ## 0.1.0 — 2026-11-21
 
 The cockpit catches up with the CLI, a shared server has per-person sign-in,

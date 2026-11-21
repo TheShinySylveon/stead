@@ -21,8 +21,11 @@ class ScheduleError(Exception):
         super().__init__(message)
 
 
-def weekly_command(root: Path, project: str | None = None) -> str:
+def weekly_command(root: Path, project: str | None = None, *,
+                   watch: bool = False, merge: bool = False) -> str:
     """One command a scheduler can run. It stays inside this checkout."""
+    if merge and not watch:
+        raise ScheduleError("--merge needs --watch")
     exe = sys.executable
     folder = str(root)
     command = (
@@ -36,6 +39,11 @@ def weekly_command(root: Path, project: str | None = None) -> str:
         command += (
             f' && "{exe}" -m stead factory run --factory weekly-project-status '
             f'--project {project} --shadow'
+        )
+    if watch:
+        command += (
+            f' && "{exe}" -m stead factory watch --build --publish'
+            + (" --merge" if merge else "")
         )
     return command
 
@@ -52,13 +60,16 @@ def _write_launcher(root: Path, command: str) -> Path:
     return path
 
 
-def show(root: Path, project: str | None = None) -> str:
-    command = weekly_command(root, project)
+def show(root: Path, project: str | None = None, *, watch: bool = False,
+         merge: bool = False) -> str:
+    command = weekly_command(root, project, watch=watch, merge=merge)
     extra = f", and {project}'s status" if project else ""
+    build = ", and a model build + PR for every watched spec" if watch else ""
+    merged = " A merged PR needs reach: merge and green checks." if merge else ""
     return (
         f"Weekly Friday 16:00, from {root}\n"
         f"Read-only sync, a local digest if the cache changed, a maintenance\n"
-        f"draft{extra}. Nothing is posted, pushed, or merged.\n\n"
+        f"draft{extra}{build}.{merged} Nothing runs in shadow.\n\n"
         f"Command:\n{command}\n\n"
         "Windows (install writes this to private/run-weekly.cmd so the task\n"
         "command stays under the 261 character limit):\n"
@@ -70,11 +81,12 @@ def show(root: Path, project: str | None = None) -> str:
 
 
 def install(root: Path, *, runner=None, platform: str | None = None,
-            project: str | None = None) -> str:
-    """Create the current user's weekly task. Does not touch GitHub."""
+            project: str | None = None, watch: bool = False,
+            merge: bool = False) -> str:
+    """Create the current user's weekly task. Does not touch GitHub itself."""
     if (platform or sys.platform) != "win32":
         raise ScheduleError("this install is for Windows Task Scheduler. Use `stead schedule show` for the cron line.")
-    command = weekly_command(root, project)
+    command = weekly_command(root, project, watch=watch, merge=merge)
     launcher = _write_launcher(root, command)
     trigger = f'cmd /c "{launcher}"'
     if len(trigger) > 261:
@@ -83,8 +95,6 @@ def install(root: Path, *, runner=None, platform: str | None = None,
         "schtasks", "/Create", "/TN", TASK_NAME, "/SC", "WEEKLY", "/D", "FRI",
         "/ST", "16:00", "/TR", trigger, "/F",
     ]
-    if any(part in {"push", "merge", "pr"} for part in argv):
-        raise ScheduleError("refusing a schedule that writes to GitHub")
     run = runner or _run
     run(argv)
     return TASK_NAME

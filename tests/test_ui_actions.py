@@ -169,6 +169,15 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(body["rollup"]["counts"]["to-do"], 0)
         self.assertEqual(body["rollup"]["runs"][0]["factory"], "weekly-project-status")
 
+    def test_build_endpoint_wires_to_the_agent(self) -> None:
+        import unittest.mock as mock
+        from ctx import agent
+        with mock.patch.object(agent, "build", lambda root, contribution, **kw: {
+                "ok": True, "files": ["app.py"], "branch": "stead/1-x", "checks": ""}):
+            status, body = self._post("/api/build", {"contribution": "contribution-x"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["branch"], "stead/1-x")
+
     def test_eval_judge_uses_the_latest_draft(self) -> None:
         import unittest.mock as mock
         from ctx import models

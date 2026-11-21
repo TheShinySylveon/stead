@@ -664,7 +664,10 @@ function renderFactories() {
         <select name="contribution" aria-label="Spec for ${esc(f.name)}">${opts}</select>
         <select name="reach" aria-label="Reach for ${esc(f.name)}">${reaches}</select>
         ${draftBox}
-        <button class="primary" type="submit" ${specs.length ? "" : "disabled"}>Assemble shadow</button></form>`;
+        <button class="primary" type="submit" ${specs.length ? "" : "disabled"}>Assemble shadow</button>
+        <button type="button" class="quiet" data-build="1" ${specs.length ? "" : "disabled"}>Build with model</button>
+        <label class="meta"><input type="checkbox" name="publish" value="1"> Publish</label>
+        <label class="meta"><input type="checkbox" name="merge" value="1"> Merge if allowed</label></form>`;
     } else {
       form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="none">
         ${draftBox}
@@ -699,7 +702,8 @@ function renderFactories() {
   return `
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
       <button type="button" class="quiet" data-watch>Watch now</button>
-      <span class="meta">Assembles watched specs locally. Nothing is pushed.</span>
+      <button type="button" class="quiet" data-watch-build>Watch and build</button>
+      <span class="meta">Watch assembles. Watch and build uses the model, runs checks, and publishes when the ceiling allows. Merge needs reach: merge.</span>
     </div>
     <form class="inline" id="new-factory" style="margin-bottom:16px">
       <input type="text" name="name" placeholder="factory-name" required maxlength="40" pattern="[a-z][a-z0-9-]*" aria-label="New factory name">
@@ -1054,6 +1058,28 @@ document.body.addEventListener("click", async (event) => {
   }
   const runOpen = event.target.closest("[data-run-open]");
   if (runOpen) { openRun(runOpen.dataset.runOpen); return; }
+  const buildBtn = event.target.closest("[data-build]");
+  if (buildBtn) {
+    const buildForm = buildBtn.closest("form");
+    const contribution = buildForm && buildForm.querySelector('[name="contribution"]')
+      ? buildForm.querySelector('[name="contribution"]').value : "";
+    if (!contribution) { toast("Pick a feature spec first"); return; }
+    if (!confirm("Let the model edit the checkout for " + contribution +
+                 "? It plans, writes files, runs the repo checks, and commits. Nothing is pushed.")) return;
+    try {
+      buildBtn.disabled = true;
+      const publish = !!buildForm.querySelector('[name="publish"]:checked');
+      const merge = !!buildForm.querySelector('[name="merge"]:checked');
+      const result = await api("/api/build", {method: "POST", body: JSON.stringify({
+        contribution, publish, merge,
+      })});
+      toast("Built " + result.files.length + " file(s) on " + result.branch +
+            (result.merged ? " · merged" : result.published ? " · PR opened" : ""));
+      await load();
+    } catch (err) { toast(err.message); }
+    finally { buildBtn.disabled = false; }
+    return;
+  }
   if (event.target.closest("[data-toggle-runs]")) {
     state.showAllRuns = !state.showAllRuns;
     render();
@@ -1138,6 +1164,17 @@ document.body.addEventListener("click", async (event) => {
     try {
       const result = await api("/api/factory/watch", {method: "POST", body: "{}"});
       toast("assembled " + result.ran.length + ", skipped " + result.skipped.length);
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-watch-build]")) {
+    if (!confirm("Build every watched spec with the model? It edits each checkout, runs checks, commits, and publishes when the ceiling allows.")) return;
+    try {
+      const result = await api("/api/factory/watch", {method: "POST", body: JSON.stringify({
+        build: true, publish: true,
+      })});
+      toast("built " + result.ran.length + ", skipped " + result.skipped.length);
       await load();
     } catch (err) { toast(err.message); }
     return;

@@ -27,16 +27,16 @@ package is still `ctx`. `python -m ctx` still runs and says so.
 | Context system / workspace | This folder: markdown, git, optional Docker |
 | Core objects | `context/` markdown. `state.db` is a rebuildable index |
 | Ontology / relations | Flat YAML frontmatter. Schema: `CONVENTIONS.md` |
-| Factory | `factories/<name>/`: definition, versioned prompts, evals, run logs |
+| Factory | A pipeline: plan, build, verify, deliver. `factories/<name>/` holds the definition, prompts, evals, run logs |
 | Task queue | `context/tasks/` with `status: to-do\|doing\|done\|blocked` |
 | Prompt versions | `factories/<name>/prompts/` plus the `prompt_versions` table |
 | Evals | `factories/<name>/evals/`. `stead eval run` checks files. `stead eval judge` records a pass or fail. Promote refuses without a pass for that version |
-| Scheduled triggers | Any scheduler calling `python -m stead`. No timer is built in |
+| Scheduled triggers | Any scheduler calling `python -m stead`. `stead schedule` wires the weekly job, including `factory watch --build` when asked |
 | Event-driven triggers | `inbox/` capture, `stead inbox import`, and `POST /hook` when a webhook token is set. The hook only writes inbox. It does not run a factory |
-| Governance / audit | git history, run logs, shadow assembly |
+| Governance / audit | git history, run logs, shadow assembly, per-repo reach |
 | Sync external context | `stead sync github` via `gh`. Read-only. Offline re-index with `--offline` |
 | Who writes | `context/actors/` files. A shared server also has sign-ins. Attribution, not a permission system |
-| Execution | Stdlib CLI. Any agent can drive it. Optional `--generate` rents a model |
+| Execution | Stdlib CLI. `--generate` drafts text. `stead build` runs a model agent that plans, edits, checks, commits, and can publish |
 
 **Runtime.** Knowledge stays in markdown. SQLite indexes it and can be rebuilt
 with `stead init`. Do not put `state.db` on a network share. Do not replace
@@ -129,16 +129,19 @@ into `context/documents/`. Filing is local. Nothing is posted.
 
 ## 4. Autonomy ladder
 
-A repo may sit on any rung. The install default cannot be merge.
+A repo may sit on any rung. The install default cannot be merge. Autonomy is a
+property of the pipeline, not only of assembly: at `pr` and `merge`, the model
+build is delivered without a person.
 
 1. **Shadow.** Plan and proposed diff only. No remote writes.
-2. **Draft PR.** `stead factory publish` opens a draft. A person reviews and
-   merges.
-3. **Pull request.** The same command opens a normal pull request. A person
-   still merges, unless the repo file says merge.
-4. **Trusted.** `stead factory merge` only when the repo file says
-   `reach: merge`, the checks are green, and GitHub accepts the merge. Never
-   the install default. Never a red check. Never a bypass of branch protection.
+2. **Draft PR.** Build, then `stead factory publish` opens a draft. A person
+   reviews and merges.
+3. **Pull request.** Build and publish a normal pull request. A person still
+   merges, unless the repo file says merge.
+4. **Trusted.** `stead build --publish --merge`, or `factory watch --build
+   --publish --merge`, only when the repo file says `reach: merge`, the checks
+   are green, and GitHub accepts the merge. Never the install default. Never a
+   red check. Never a bypass of branch protection.
 
 Vague or large specs are flagged. They are not guessed.
 
@@ -160,9 +163,10 @@ single user, single machine, and `python3 -m ctx`. Those are retired.
 4. **Stack.** Stdlib only. Optional external tools: `gh`, `specify`, Docker.
    Optional rented model: OpenAI, Anthropic, Grok, OpenRouter, Ollama, or a
    custom chat server. The key stays out of git.
-5. **GitHub.** Sync and digest are read-only. Publish and merge are explicit
-   commands with a ceiling. Neither runs from assembly. Neither pushes the
-   default branch.
+5. **GitHub.** Sync and digest are read-only. `stead build` is the model
+   execution step. Publish and merge are separate commands with a ceiling;
+   `build --publish --merge` may chain them. Nothing pushes the default branch
+   or bypasses branch protection.
 6. **License.** Apache-2.0. Open source. Commercial use is allowed. Copyright
    2026 Tyler Rathbone.
 7. **Public repo.** `https://github.com/TheShinySylveon/stead`. A fresh clone

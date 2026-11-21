@@ -1,6 +1,7 @@
 # Factories
 
-A factory is a shared, named workflow. Each one lives in `factories/<name>/`:
+A factory is a repeatable pipeline: plan, build, verify, and deliver. Each one
+lives in `factories/<name>/`:
 
 - `FACTORY.md` — what it is, what it may do, and what it must not do.
 - `prompts/vN.md` — versioned instructions. The highest version is production
@@ -72,6 +73,13 @@ decomposition instead of being built. `method` on the spec is `spec-kit` or
 `builtin`. Both plan before code. Only the tooling changes. See
 [Spec Kit](spec-kit-workflow.md).
 
+**Build with model** (or `stead build --contribution ID`) goes one step
+further. With a model configured it asks for a plan first, lets the model read
+and write files inside the repo's `code_path`, runs the repo's `checks:`
+command, commits on an isolated branch, and stops. `--publish` opens the pull
+request. The model never chooses a shell command, cannot touch `.git`, and
+cannot leave the checkout.
+
 ### context-maintenance
 
 A triage note for one checkout: inbox notes waiting, relations that point at a
@@ -107,7 +115,10 @@ python -m stead factory new --name NAME --title "What it drafts"
 ```
 
 `stead factory watch` assembles open authored `feature-spec` issues on repos
-set to watch, and skips flagged specs. It does not push.
+set to watch, and skips flagged specs. With `--build` it also runs the model
+build on each one; `--publish` opens the pull request and `--merge` merges when
+the repo says `reach: merge` and the checks are green. A spec whose branch
+already exists is skipped.
 
 `stead factory publish` pushes an isolated branch and opens a pull request
 when the ceiling is `draft-pr`, `pr`, or `merge`. The branch must not be the
@@ -131,8 +142,9 @@ python -m stead schedule install              # Windows, current user
 ```
 
 The job runs a read-only GitHub sync, the digest only if the cache changed, the
-maintenance draft, and the status of `--project` when you pass one. Nothing is
-posted, pushed, or merged.
+maintenance draft, and the status of `--project` when you pass one. With
+`--watch` it also builds and publishes watched specs; add `--merge` to merge
+those a repo allows. Nothing is posted, pushed, or merged outside that reach.
 
 For any other scheduler, use the same shape:
 

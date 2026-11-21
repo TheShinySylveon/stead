@@ -64,6 +64,7 @@ trigger: on-demand                   # optional: on-demand | watch. Default on-d
 code_path: /path/to/the/checkout   # optional local git checkout for publish
 reach: shadow                        # optional ceiling: shadow | draft-pr | pr | merge.
                                      # merge is never inherited from the install default.
+checks: python -m pytest -q          # optional command `stead build` runs before it commits
 ---
 ```
 

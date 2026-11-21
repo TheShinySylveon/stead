@@ -128,11 +128,56 @@ class ScheduleAndSyncTest(unittest.TestCase):
             install(Path("C:/notes"), runner=lambda argv: "", platform="linux")
 
     def test_project_status_can_join_the_weekly_job(self) -> None:
-        text = show(Path("C:/notes"), "project-demo")
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        text = show(root, "project-demo")
         self.assertIn("weekly-project-status --project project-demo", text)
         from ctx.schedule import ScheduleError
         with self.assertRaises(ScheduleError):
-            show(Path("C:/notes"), "demo && rmdir /s /q C:\\")
+            show(root, "demo && rmdir /s /q C:\\")
+
+    def test_watch_can_join_the_weekly_job(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        text = show(root, watch=True, merge=True)
+        self.assertIn("factory watch --build --publish --merge", text)
+        from ctx.schedule import ScheduleError
+        with self.assertRaises(ScheduleError):
+            show(root, merge=True)
+
+    def test_watch_can_build_and_publish(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "context/repos").mkdir(parents=True)
+        (root / "context/contributions").mkdir()
+        code = root / "code"
+        code.mkdir()
+        repo = {"id": "repo-me-app", "type": "repo", "title": "App",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "active", "kind": "own", "default_branch": "main",
+                "code_path": str(code), "trigger": "watch", "reach": "draft-pr"}
+        (root / "context/repos/app.md").write_text(
+            frontmatter.dumps(repo, "# App\n"), encoding="utf-8")
+        body = ("The greeting script should accept a name option so callers can "
+                "address a person without editing source. Keep the default output "
+                "stable and cover the new path with a test.\n\n"
+                "## Acceptance criteria\n\n- [ ] greeting uses the flag\n")
+        spec = {"id": "contribution-me-app-issue-7", "type": "contribution",
+                "title": "Name flag", "created": "2026-11-21",
+                "updated": "2026-11-21", "repo": "repo-me-app", "kind": "issue",
+                "number": 7, "role": "author", "state": "open", "ci": "none",
+                "review": "none", "method": "builtin", "visibility": "public",
+                "tags": ["feature-spec"]}
+        (root / "context/contributions/issue-7.md").write_text(
+            frontmatter.dumps(spec, body), encoding="utf-8")
+        with unittest.mock.patch("ctx.agent.build", lambda *a, **k: {
+                "branch": "stead/7-name-flag", "published": True, "merged": False}):
+            report = factory.watch_specs(root, build=True, publish=True)
+        self.assertEqual(report["ran"][0]["remote"], "built")
+        self.assertTrue(report["ran"][0]["published"])
 
     def test_digest_flag_assembles_only_after_a_change(self) -> None:
         tmp = tempfile.TemporaryDirectory()

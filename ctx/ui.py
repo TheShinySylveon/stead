@@ -954,9 +954,20 @@ def new_factory(root: Path, name: str, title: str) -> dict:
     return {"ok": True, "name": folder.name, "path": _rel(root, folder)}
 
 
-def watch_now(root: Path) -> dict:
-    report = factory.watch_specs(root)
+def watch_now(root: Path, build: bool = False, publish: bool = False,
+              merge: bool = False) -> dict:
+    report = factory.watch_specs(root, build=build, publish=publish, merge=merge)
     return {"ok": True, **report}
+
+
+def build_with_model(root: Path, contribution: str, publish: bool = False,
+                     merge: bool = False) -> dict:
+    from ctx.agent import BuildError, build
+    from ctx.models import ModelError
+    try:
+        return build(root, contribution, publish=publish, merge=merge)
+    except (BuildError, ModelError) as exc:
+        raise UiError(str(exc)) from exc
 
 
 def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -> dict:
@@ -1352,13 +1363,18 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/factory/new":
             result = new_factory(root, payload.get("name") or "", payload.get("title") or "")
         elif path == "/api/factory/watch":
-            result = watch_now(root)
+            result = watch_now(root, bool(payload.get("build")),
+                               bool(payload.get("publish")), bool(payload.get("merge")))
         elif path == "/api/eval/run":
             result = check_evals(root, payload.get("factory") or "")
         elif path == "/api/eval/status":
             from ctx.models import eval_status
             result = eval_status(root, payload.get("factory") or "",
                                  payload.get("version") or "")
+        elif path == "/api/build":
+            result = build_with_model(root, payload.get("contribution") or "",
+                                      bool(payload.get("publish")),
+                                      bool(payload.get("merge")))
         elif path == "/api/eval/judge":
             result = judge_eval(root, payload.get("factory") or "",
                                 payload.get("case") or "", payload.get("version") or "")

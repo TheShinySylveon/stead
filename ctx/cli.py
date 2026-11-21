@@ -675,8 +675,12 @@ def build_parser() -> argparse.ArgumentParser:
     sched = sub.add_parser("schedule", help="the weekly local jobs").add_subparsers(dest="sub", required=True)
     sshow = sched.add_parser("show", help="print the Friday command. Does not install it.")
     sshow.add_argument("--project", help="also assemble this project's status")
+    sshow.add_argument("--watch", action="store_true", help="also build and publish watched specs")
+    sshow.add_argument("--merge", action="store_true", help="with --watch, merge when reach: merge")
     sinst = sched.add_parser("install", help="Windows only. Current user, Friday 16:00. No remote writes.")
     sinst.add_argument("--project", help="also assemble this project's status")
+    sinst.add_argument("--watch", action="store_true", help="also build and publish watched specs")
+    sinst.add_argument("--merge", action="store_true", help="with --watch, merge when reach: merge")
     hook = sub.add_parser("hook", help="loopback or shared-server capture webhook").add_subparsers(dest="sub", required=True)
     hook.add_parser("set", help="create a webhook token. Printed once. Stored in stead.json.")
     hook.add_parser("show", help="say whether a webhook token is set. Never prints it.")
@@ -686,6 +690,14 @@ def build_parser() -> argparse.ArgumentParser:
     dele.add_argument("id")
     dele.add_argument("--force", action="store_true",
                       help="delete a project or repo that still has linked objects")
+
+    bld = sub.add_parser("build", help="model-driven build: plan, edit, run checks, commit. Optional PR.")
+    bld.add_argument("--contribution", required=True)
+    bld.add_argument("--publish", action="store_true",
+                     help="push the branch and open a pull request when the ceiling allows")
+    bld.add_argument("--merge", action="store_true",
+                     help="after opening, merge when the repo says reach: merge and checks are green")
+    bld.add_argument("--steps", type=int, default=24)
 
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
@@ -756,6 +768,12 @@ def build_parser() -> argparse.ArgumentParser:
                       help="feature-builder only. Cannot exceed the repo ceiling. "
                            "Does not push. Merge is never inherited.")
     fwatch = fr.add_parser("watch", help="assemble open feature specs on repos set to watch")
+    fwatch.add_argument("--build", action="store_true",
+                        help="run the model build after assembly. Needs a configured model.")
+    fwatch.add_argument("--publish", action="store_true",
+                        help="with --build, open a pull request when the ceiling allows")
+    fwatch.add_argument("--merge", action="store_true",
+                        help="with --publish, merge when the repo says reach: merge and checks are green")
     fnew = fr.add_parser("new", help="scaffold a factory folder. Does not call a model.")
     fnew.add_argument("--name", required=True)
     fnew.add_argument("--title", required=True)
@@ -945,6 +963,31 @@ def main(argv: list[str] | None = None) -> int:
             print(f"inbox {item['name']}")
         print("triage into context/. Nothing was posted.")
         return 0
+    if args.command == "build":
+        from ctx.agent import BuildError, build as run_build
+        from ctx.models import ModelError
+        try:
+            result = run_build(root, args.contribution, publish=args.publish,
+                               merge=args.merge, max_steps=max(1, min(args.steps, 60)))
+        except (BuildError, ModelError) as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"plan: {result['plan']}")
+        print(f"files: {', '.join(result['files'])}")
+        print(f"branch: {result['branch']}  commit: {result['commit'][:12]}")
+        if result["checks"]:
+            print(f"checks: passed ({result['checks']})")
+        else:
+            print("checks: none configured on the repo")
+        if result["published"]:
+            print(f"opened {result['pr_url']}")
+            if result.get("merged"):
+                print(f"merged {result['merged_url']}")
+            elif args.merge:
+                print("merge did not run. The checks may be pending or the repo moved.")
+        else:
+            print("not pushed. Run with --publish, or:")
+            print(f"  python -m stead factory publish --contribution {args.contribution}")
+        return 0
     if args.command == "delete":
         from ctx.ui import UiError, delete_object
         try:
@@ -957,10 +1000,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "schedule":
         from ctx.schedule import ScheduleError, install, show
         if args.sub == "show":
-            print(show(root, args.project))
+            print(show(root, args.project, watch=args.watch, merge=args.merge))
             return 0
         try:
-            name = install(root, project=args.project)
+            name = install(root, project=args.project, watch=args.watch,
+                           merge=args.merge)
         except ScheduleError as exc:
             raise SystemExit(str(exc)) from exc
         print(f"installed {name}")
@@ -1028,12 +1072,17 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{item['name']}  {item['actor']}")
         return 0
     if args.command == "factory" and args.sub == "watch":
-        report = factory.watch_specs(root)
+        report = factory.watch_specs(root, build=args.build,
+                                     publish=args.publish, merge=args.merge)
         if not report["ran"] and not report["skipped"]:
             print("no watched feature specs. Set a repo to --trigger watch,")
             print("and tag an open authored issue feature-spec.")
             return 0
         for item in report["ran"]:
+            if item.get("remote") == "built":
+                state = "merged" if item.get("merged") else ("published" if item.get("published") else "committed")
+                print(f"built {item['id']} on {item.get('branch')} [{state}]")
+                continue
             print(f"assembled {item['id']} reach {item['reach']} -> {item['run_dir']}")
             if item.get("remote") == "not-implemented":
                 print("  assembled only. To open a pull request from an isolated branch:")
