@@ -18,6 +18,8 @@ import re
 
 # Key order used when writing, so files are deterministic and diff-friendly.
 _KEY_ORDER = ["id", "type", "title", "created", "updated", "status", "project",
+              "repo", "kind", "number", "url", "role", "state", "ci", "review",
+              "visibility", "default_branch", "contributing", "notes",
               "related", "tags"]
 
 _LIST_ITEM = re.compile(r"^\s*-\s+(.*)$")

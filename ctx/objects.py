@@ -12,6 +12,8 @@ TYPE_DIRS = {
     "task": "tasks",
     "document": "documents",
     "meeting": "meetings",
+    "repo": "repos",
+    "contribution": "contributions",
 }
 
 

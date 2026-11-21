@@ -1,0 +1,14 @@
+{
+  "factory": "weekly-project-status",
+  "project": "project-shared-context-rollout",
+  "prompt_version": "v1",
+  "mode": "shadow",
+  "created": "2026-11-21T06:57:43Z",
+  "counts": {
+    "tasks": 5,
+    "documents": 1,
+    "meetings": 1
+  },
+  "verdict": "pending",
+  "note": "Deterministic assembly; no LLM call. Supply output via `ctx run log`."
+}

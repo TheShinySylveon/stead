@@ -11,6 +11,8 @@ Bad context is Enemy No. 1; these rules keep context good.
 | `task` | `context/tasks/` | A unit of work belonging to a project | `to-do`, `doing`, `done`, `blocked` |
 | `document` | `context/documents/` | Notes, decisions, specs, research | (optional, free) |
 | `meeting` | `context/meetings/` | Meeting notes / transcripts | (optional, free) |
+| `repo` | `context/repos/` | A repo/project you work on — own or OSS | `active`, `paused`, `archived` |
+| `contribution` | `context/contributions/` | An issue or PR you're involved with (GitHub cache) | uses `state:` instead of `status:` |
 
 No `people/` database: single-user scope (locked decision). Relations are kept
 in frontmatter so the system can grow later without a rewrite.
@@ -36,6 +38,49 @@ Optional fields:
 - `related:` — inline list of object ids, e.g. `related: [document-architecture-decisions]`
 - `tags:` — inline list of free labels.
 
+### Repo fields (`context/repos/`)
+
+```yaml
+---
+id: repo-example-org-example-repo    # repo-<owner>-<name> slug
+type: repo
+title: EXAMPLE example-org/example-repo (not a real repo)
+created: 2026-11-21
+updated: 2026-11-21
+status: active                       # active | paused | archived
+kind: oss                            # own | oss
+url: https://github.com/example-org/example-repo
+default_branch: main                 # optional
+contributing: https://github.com/example-org/example-repo/blob/main/CONTRIBUTING.md  # optional, url or path
+notes: ...                           # optional, short scalar
+---
+```
+
+### Contribution fields (`context/contributions/`)
+
+```yaml
+---
+id: contribution-example-org-example-repo-pr-101   # contribution-<repo-slug>-<kind>-<number>
+type: contribution
+title: "EXAMPLE: Add caching layer to the parser"
+created: 2026-11-21
+updated: 2026-11-21
+repo: repo-example-org-example-repo  # required relation to a repo id
+kind: pr                             # issue | pr
+number: 101                          # GitHub issue/PR number
+url: https://github.com/example-org/example-repo/pull/101
+role: author                         # author | assignee | reviewer
+state: open                          # open | closed | merged
+ci: pass                             # pending | pass | fail | none
+review: requested                    # requested | approved | changes | none
+visibility: public                   # GitHub-derived data is always public
+---
+```
+
+`ctx sync github` owns the GitHub-derived fields (`title`, `url`, `state`, `ci`,
+`review`, `updated`); your edits to `role`, `tags`, `related`, `created`, and the
+body are preserved across syncs.
+
 ### Supported YAML subset
 
 The stdlib parser (`ctx/frontmatter.py`) intentionally supports only:
@@ -51,11 +96,35 @@ is a feature, not a limitation: any tool can parse it.
 ## Relations
 
 - A task/document/meeting points at its project with `project: <project-id>`.
+- A contribution points at its repo with `repo: <repo-id>`.
 - Relations reference **ids**, never filenames or titles.
 - One primary project per object. Cross-links go in `related:`.
 - Every object has exactly one logical home. Unclassified capture goes to
   `inbox/` and must be triaged (filed into `context/` with full frontmatter),
   not left to rot.
+
+## Public / private split (locked rule)
+
+- **Public:** everything GitHub-derived — `context/repos/` metadata and
+  `context/contributions/` (always `visibility: public`). These files mirror
+  public GitHub state and may appear in digests shared with others.
+- **Private:** your notes, strategy, and decisions — `context/documents/`,
+  `context/meetings/`, project/task bodies. Never copy private strategy into a
+  contribution file or a digest draft.
+- The digest factory reads only the public layer; private context stays local.
+
+## GitHub sync (read-only, offline-capable)
+
+- `python3 -m ctx sync github [--author @me] [--limit N]` shells out to the
+  open-source `gh` CLI (stdlib `subprocess`) and caches your open PRs (author),
+  review-requested PRs, and assigned issues as contribution markdown files.
+- **READ-ONLY:** only `gh search`, `gh pr view`, `gh api user` (GET). The system
+  never creates issues/PRs/comments/labels and never pushes. No remote writes.
+- Sync is explicit/on-demand. `--offline` skips the network entirely and just
+  re-indexes the cached files. `ctx init` also rebuilds the index from files
+  without gh — the cache is fully offline-capable.
+- `gh` missing or not authenticated → clear error message; use `--offline`.
+- Seed data marked `EXAMPLE` in title/tags is demonstrative, not real.
 
 ## Naming
 
@@ -74,10 +143,11 @@ factual and concise; agents read these verbatim into context bundles.
 ## How agents write safely
 
 1. Read this file and `AGENTS.md` before writing anything.
-2. Prefer the CLI for tasks: `python3 -m ctx task add|set` keeps markdown and
-   the SQLite index in sync and enforces the schema.
-3. Creating documents/meetings/projects by hand is fine — use the exact schema
-   above, then run `python3 -m ctx init` to re-index.
+2. Prefer the CLI: `python3 -m ctx task add|set`, `repo add|list`,
+   `contribution add|list|set` keep markdown and the SQLite index in sync and
+   enforce the schema.
+3. Creating documents/meetings/projects/repos/contributions by hand is fine —
+   use the exact schema above, then run `python3 -m ctx init` to re-index.
 4. Bump `updated:` on every edit. Never edit `created:` or `id:`.
 5. Do not edit `PLAN.md` (human-owned). Do not delete or rewrite files under
    `factories/*/runs/` (append-only audit trail).
@@ -88,6 +158,9 @@ factual and concise; agents read these verbatim into context bundles.
 `state.db` is a **rebuildable index**, never the source of truth:
 
 - `tasks` — mirror of `context/tasks/` frontmatter (rebuilt by `ctx init`)
+- `repos` — mirror of `context/repos/` frontmatter (rebuilt by `ctx init`)
+- `contributions` — mirror of `context/contributions/` frontmatter (rebuilt by
+  `ctx init`; upserted by `ctx sync github`)
 - `prompt_versions` — testing / production / retired per factory
 - `runs` — one row per factory run or manually logged run
 - `evals` — loaded from `factories/*/evals/*.json`

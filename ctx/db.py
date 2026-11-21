@@ -14,7 +14,8 @@ from pathlib import Path
 from ctx import objects
 
 PKG_DIR = Path(__file__).resolve().parent
-FIRST_FACTORY = "weekly-project-status"
+FIRST_FACTORY = "weekly-contribution-digest"
+LEGACY_FACTORY = "weekly-project-status"
 
 
 def db_path(root: Path) -> Path:
@@ -37,6 +38,50 @@ def utcnow() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def index_repo(conn: sqlite3.Connection, root: Path, path: Path, meta: dict,
+               today: str) -> None:
+    """Upsert one context/repos/ file into the repos index."""
+    conn.execute(
+        "INSERT OR REPLACE INTO repos "
+        "(id, title, kind, url, default_branch, status, contributing, notes, path, created, updated) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (meta["id"], meta["title"], meta.get("kind", "oss"), meta.get("url"),
+         meta.get("default_branch"), meta.get("status", "active"),
+         meta.get("contributing"), meta.get("notes"),
+         path.relative_to(root).as_posix(),
+         meta.get("created", today), meta.get("updated", today)),
+    )
+
+
+def index_contribution(conn: sqlite3.Connection, root: Path, path: Path, meta: dict,
+                       today: str) -> None:
+    """Upsert one context/contributions/ file into the contributions index."""
+    conn.execute(
+        "INSERT OR REPLACE INTO contributions "
+        "(id, title, repo, kind, number, url, role, state, ci, review, visibility, path, created, updated) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (meta["id"], meta["title"], meta.get("repo", ""), meta.get("kind", "issue"),
+         int(meta.get("number", 0)), meta.get("url"), meta.get("role", "author"),
+         meta.get("state", "open"), meta.get("ci", "none"), meta.get("review", "none"),
+         meta.get("visibility", "public"),
+         path.relative_to(root).as_posix(),
+         meta.get("created", today), meta.get("updated", today)),
+    )
+
+
+def reindex_github(conn: sqlite3.Connection, root: Path) -> dict[str, int]:
+    """Re-index repos + contributions from markdown (source of truth)."""
+    today = date.today().isoformat()
+    n_repos = n_contribs = 0
+    for path, meta, _body in objects.iter_objects(root, "repo"):
+        index_repo(conn, root, path, meta, today)
+        n_repos += 1
+    for path, meta, _body in objects.iter_objects(root, "contribution"):
+        index_contribution(conn, root, path, meta, today)
+        n_contribs += 1
+    return {"repos": n_repos, "contributions": n_contribs}
+
+
 def init_db(root: Path) -> dict[str, int]:
     """Idempotent rebuild of state.db from schema.sql + source files."""
     conn = connect(root)
@@ -44,12 +89,20 @@ def init_db(root: Path) -> dict[str, int]:
         conn.executescript((PKG_DIR / "schema.sql").read_text(encoding="utf-8"))
         today = date.today().isoformat()
 
-        # Seed the first factory's production prompt (v1).
-        conn.execute(
-            "INSERT INTO prompt_versions (factory, version, status, path, created) "
-            "VALUES (?, 'v1', 'production', ?, ?)",
-            (FIRST_FACTORY, f"factories/{FIRST_FACTORY}/prompts/v1.md", today),
-        )
+        # Seed v1 = production for every factory that ships prompts/v1.md
+        # (weekly-contribution-digest is the first factory; weekly-project-status
+        # remains valid for own projects).
+        n_prompts = 0
+        fdirs = sorted((root / "factories").iterdir()) if (root / "factories").is_dir() else []
+        for fdir in fdirs:
+            v1 = fdir / "prompts" / "v1.md"
+            if fdir.is_dir() and v1.exists():
+                conn.execute(
+                    "INSERT INTO prompt_versions (factory, version, status, path, created) "
+                    "VALUES (?, 'v1', 'production', ?, ?)",
+                    (fdir.name, v1.relative_to(root).as_posix(), today),
+                )
+                n_prompts += 1
 
         # Re-index tasks from markdown (source of truth).
         n_tasks = 0
@@ -63,6 +116,9 @@ def init_db(root: Path) -> dict[str, int]:
                  meta.get("created", today), meta.get("updated", today)),
             )
             n_tasks += 1
+
+        # Re-index repos + contributions from markdown (GitHub cache layer).
+        gh_counts = reindex_github(conn, root)
 
         # Load eval cases from factories/*/evals/*.json.
         n_evals = 0
@@ -78,6 +134,7 @@ def init_db(root: Path) -> dict[str, int]:
             n_evals += 1
 
         conn.commit()
-        return {"tasks": n_tasks, "evals": n_evals, "prompt_versions": 1}
+        return {"tasks": n_tasks, "evals": n_evals, "prompt_versions": n_prompts,
+                "repos": gh_counts["repos"], "contributions": gh_counts["contributions"]}
     finally:
         conn.close()

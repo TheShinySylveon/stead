@@ -4,6 +4,8 @@
 -- Knowledge lives in context/*.md; this database is an index + run ledger.
 
 DROP TABLE IF EXISTS tasks;
+DROP TABLE IF EXISTS repos;
+DROP TABLE IF EXISTS contributions;
 DROP TABLE IF EXISTS prompt_versions;
 DROP TABLE IF EXISTS runs;
 DROP TABLE IF EXISTS evals;
@@ -18,6 +20,48 @@ CREATE TABLE tasks (
     path     TEXT NOT NULL,             -- repo-relative markdown path
     created  TEXT NOT NULL,             -- ISO date
     updated  TEXT NOT NULL              -- ISO date
+);
+
+-- Mirror of context/repos/ frontmatter (own projects + OSS repos).
+-- Files are the source of truth; `ctx sync github` upserts these rows.
+CREATE TABLE repos (
+    id             TEXT PRIMARY KEY,      -- e.g. repo-example-org-example-repo
+    title          TEXT NOT NULL,
+    kind           TEXT NOT NULL DEFAULT 'oss'
+                   CHECK (kind IN ('own', 'oss')),
+    url            TEXT,                  -- https://github.com/<owner>/<name>
+    default_branch TEXT,
+    status         TEXT NOT NULL DEFAULT 'active'
+                   CHECK (status IN ('active', 'paused', 'archived')),
+    contributing   TEXT,                  -- CONTRIBUTING url or path
+    notes          TEXT,
+    path           TEXT NOT NULL,         -- repo-relative markdown path
+    created        TEXT NOT NULL,         -- ISO date
+    updated        TEXT NOT NULL          -- ISO date
+);
+
+-- Mirror of context/contributions/ frontmatter: issues/PRs the user is
+-- involved with. GitHub-derived data is PUBLIC; private strategy/notes live
+-- in context/documents/ instead. Rebuilt from markdown by `ctx init`.
+CREATE TABLE contributions (
+    id         TEXT PRIMARY KEY,          -- contribution-<owner>-<repo>-<kind>-<number>
+    title      TEXT NOT NULL,
+    repo       TEXT NOT NULL,             -- repo id (frontmatter relation)
+    kind       TEXT NOT NULL CHECK (kind IN ('issue', 'pr')),
+    number     INTEGER NOT NULL,          -- GitHub issue/PR number
+    url        TEXT,
+    role       TEXT NOT NULL DEFAULT 'author'
+               CHECK (role IN ('author', 'assignee', 'reviewer')),
+    state      TEXT NOT NULL DEFAULT 'open'
+               CHECK (state IN ('open', 'closed', 'merged')),
+    ci         TEXT NOT NULL DEFAULT 'none'
+               CHECK (ci IN ('pending', 'pass', 'fail', 'none')),
+    review     TEXT NOT NULL DEFAULT 'none'
+               CHECK (review IN ('requested', 'approved', 'changes', 'none')),
+    visibility TEXT NOT NULL DEFAULT 'public',
+    path       TEXT NOT NULL,             -- repo-relative markdown path
+    created    TEXT NOT NULL,             -- ISO date
+    updated    TEXT NOT NULL              -- ISO date
 );
 
 -- Versioned factory prompts: testing -> production -> retired.

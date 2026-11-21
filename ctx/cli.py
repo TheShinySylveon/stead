@@ -11,9 +11,16 @@ import re
 from datetime import date
 from pathlib import Path
 
-from ctx import db, factory, frontmatter, objects
+from ctx import db, factory, frontmatter, objects, sync
 
 TASK_STATUSES = ("to-do", "doing", "done", "blocked")
+REPO_KINDS = ("own", "oss")
+REPO_STATUSES = ("active", "paused", "archived")
+CONTRIB_KINDS = ("issue", "pr")
+CONTRIB_ROLES = ("author", "assignee", "reviewer")
+CONTRIB_STATES = ("open", "closed", "merged")
+CONTRIB_CI = ("pending", "pass", "fail", "none")
+CONTRIB_REVIEW = ("requested", "approved", "changes", "none")
 
 
 def _slugify(text: str) -> str:
@@ -30,7 +37,8 @@ def _rel(root: Path, path: Path) -> str:
 def cmd_init(root: Path) -> int:
     counts = db.init_db(root)
     print(f"state.db rebuilt from ctx/schema.sql "
-          f"(tasks indexed: {counts['tasks']}, evals loaded: {counts['evals']}, "
+          f"(tasks indexed: {counts['tasks']}, repos: {counts['repos']}, "
+          f"contributions: {counts['contributions']}, evals loaded: {counts['evals']}, "
           f"prompt versions seeded: {counts['prompt_versions']})")
     return 0
 
@@ -122,6 +130,221 @@ def cmd_task_set(root: Path, task_id: str, status: str) -> int:
     finally:
         conn.close()
     print(f"{meta['id']} -> {status} (file + index updated)")
+    return 0
+
+
+# --- repo -------------------------------------------------------------------
+
+def _repo_slug(title: str, url: str | None) -> str:
+    if url:
+        m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$", url)
+        if m:
+            return _slugify(m.group(1).replace("/", "-"))
+    return _slugify(title)
+
+
+def cmd_repo_add(root: Path, title: str, url: str | None = None, kind: str = "oss",
+                 status: str = "active", default_branch: str | None = None,
+                 contributing: str | None = None, notes: str | None = None) -> int:
+    db.require_db(root)
+    if kind not in REPO_KINDS:
+        raise SystemExit(f"invalid kind {kind!r}; choose from {REPO_KINDS}")
+    if status not in REPO_STATUSES:
+        raise SystemExit(f"invalid status {status!r}; choose from {REPO_STATUSES}")
+    slug = _repo_slug(title, url)
+    n = 2
+    while (root / "context" / "repos" / f"{slug}.md").exists():
+        slug, n = f"{_repo_slug(title, url)}-{n}", n + 1
+    repo_id = f"repo-{slug}"
+    today = date.today().isoformat()
+    meta = {"id": repo_id, "type": "repo", "title": title,
+            "created": today, "updated": today, "status": status, "kind": kind}
+    for key, value in (("url", url), ("default_branch", default_branch),
+                       ("contributing", contributing), ("notes", notes)):
+        if value:
+            meta[key] = value
+    path = root / "context" / "repos" / f"{slug}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(frontmatter.dumps(meta, f"# {title}\n"), encoding="utf-8")
+
+    conn = db.connect(root)
+    try:
+        db.index_repo(conn, root, path, meta, today)
+        conn.commit()
+    finally:
+        conn.close()
+    print(f"added {repo_id} [{kind}] -> {_rel(root, path)}")
+    return 0
+
+
+def cmd_repo_list(root: Path, kind: str | None = None) -> int:
+    db.require_db(root)
+    query = "SELECT id, kind, status, title FROM repos"
+    params: list = []
+    if kind:
+        query += " WHERE kind = ?"
+        params.append(kind)
+    query += " ORDER BY id"
+    conn = db.connect(root)
+    try:
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        print("no repos match")
+        return 0
+    width = max(len(r["id"]) for r in rows)
+    for r in rows:
+        print(f"{r['id']:<{width}}  {r['kind']:<4}  {r['status']:<8}  {r['title']}")
+    print(f"({len(rows)} repo{'s' if len(rows) != 1 else ''})")
+    return 0
+
+
+# --- contribution -------------------------------------------------------------
+
+def cmd_contribution_add(root: Path, title: str, repo: str, kind: str, number: int,
+                         url: str | None = None, role: str = "author",
+                         state: str = "open", ci: str = "none",
+                         review: str = "none") -> int:
+    db.require_db(root)
+    for label, value, allowed in (("kind", kind, CONTRIB_KINDS),
+                                  ("role", role, CONTRIB_ROLES),
+                                  ("state", state, CONTRIB_STATES),
+                                  ("ci", ci, CONTRIB_CI),
+                                  ("review", review, CONTRIB_REVIEW)):
+        if value not in allowed:
+            raise SystemExit(f"invalid {label} {value!r}; choose from {allowed}")
+    found = objects.find(root, "repo", repo)
+    if found is None:
+        raise SystemExit(f"repo not found: {repo!r} — add it with `ctx repo add` first")
+    _rpath, rmeta, _rbody = found
+    repo_id = rmeta["id"]
+    stem = f"{repo_id.removeprefix('repo-')}-{kind}-{number}"
+    path = root / "context" / "contributions" / f"{stem}.md"
+    if path.exists():
+        raise SystemExit(f"contribution already exists: contribution-{stem} "
+                         "— use `ctx contribution set` to update it")
+    if not url and rmeta.get("url"):
+        url = f"{rmeta['url'].rstrip('/')}/{'pull' if kind == 'pr' else 'issues'}/{number}"
+    today = date.today().isoformat()
+    meta = {"id": f"contribution-{stem}", "type": "contribution", "title": title,
+            "created": today, "updated": today, "repo": repo_id, "kind": kind,
+            "number": number, "role": role, "state": state, "ci": ci,
+            "review": review, "visibility": "public"}
+    if url:
+        meta["url"] = url
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(frontmatter.dumps(meta, f"# {title}\n"), encoding="utf-8")
+
+    conn = db.connect(root)
+    try:
+        db.index_contribution(conn, root, path, meta, today)
+        conn.commit()
+    finally:
+        conn.close()
+    print(f"added contribution-{stem} [{kind} #{number}, {role}] -> {_rel(root, path)}")
+    return 0
+
+
+def cmd_contribution_list(root: Path, repo: str | None = None, kind: str | None = None,
+                          role: str | None = None, state: str | None = None) -> int:
+    db.require_db(root)
+    query = "SELECT id, repo, kind, number, role, state, ci, title FROM contributions"
+    clauses, params = [], []
+    if repo:
+        found = objects.find(root, "repo", repo)
+        clauses.append("repo = ?")
+        params.append(found[1]["id"] if found else repo)
+    for column, value in (("kind", kind), ("role", role), ("state", state)):
+        if value:
+            clauses.append(f"{column} = ?")
+            params.append(value)
+    if clauses:
+        query += " WHERE " + " AND ".join(clauses)
+    query += " ORDER BY repo, kind, number"
+    conn = db.connect(root)
+    try:
+        rows = conn.execute(query, params).fetchall()
+    finally:
+        conn.close()
+    if not rows:
+        print("no contributions match")
+        return 0
+    width = max(len(r["id"]) for r in rows)
+    for r in rows:
+        print(f"{r['id']:<{width}}  {r['kind']}#{r['number']:<5}  {r['role']:<9}  "
+              f"{r['state']:<7}  ci:{r['ci']:<8}  {r['title']}")
+    print(f"({len(rows)} contribution{'s' if len(rows) != 1 else ''})")
+    return 0
+
+
+def cmd_contribution_set(root: Path, contrib_id: str, state: str | None = None,
+                         ci: str | None = None, review: str | None = None,
+                         role: str | None = None) -> int:
+    db.require_db(root)
+    updates = {}
+    for label, value, allowed in (("state", state, CONTRIB_STATES),
+                                  ("ci", ci, CONTRIB_CI),
+                                  ("review", review, CONTRIB_REVIEW),
+                                  ("role", role, CONTRIB_ROLES)):
+        if value is not None:
+            if value not in allowed:
+                raise SystemExit(f"invalid {label} {value!r}; choose from {allowed}")
+            updates[label] = value
+    if not updates:
+        raise SystemExit("nothing to set — pass at least one of --state/--ci/--review/--role")
+    found = objects.find(root, "contribution", contrib_id)
+    if found is None:
+        raise SystemExit(f"contribution not found: {contrib_id!r}")
+    path, meta, body = found
+    meta.update(updates)
+    meta["updated"] = date.today().isoformat()
+    path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+
+    conn = db.connect(root)
+    try:
+        db.index_contribution(conn, root, path, meta, meta["updated"])
+        conn.commit()
+    finally:
+        conn.close()
+    changed = ", ".join(f"{k}={v}" for k, v in updates.items())
+    print(f"{meta['id']} -> {changed} (file + index updated)")
+    return 0
+
+
+# --- sync github ----------------------------------------------------------------
+
+def cmd_sync_github(root: Path, author: str = "@me", limit: int = 30,
+                    offline: bool = False) -> int:
+    result = sync.sync_github(root, author=author, limit=limit, offline=offline)
+    if result["offline"]:
+        print(f"sync github --offline: no network used; re-indexed local cache "
+              f"({result['repos']} repos, {result['contributions']} contributions)")
+    else:
+        print(f"sync github: fetched {result['fetched']} items via gh (read-only); "
+              f"{result['new']} new, {result['updated']} updated contribution files")
+        print(f"index now: {result['repos']} repos, {result['contributions']} contributions")
+    print("next: python3 -m ctx factory run --factory weekly-contribution-digest --shadow")
+    return 0
+
+
+# --- digest -----------------------------------------------------------------------
+
+def cmd_digest(root: Path, live: bool = False) -> int:
+    mode = "live" if live else "shadow"
+    info = factory.assemble_digest(root, mode=mode)
+    c = info["counts"]
+    print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
+          f"prompt {info['prompt_version']}")
+    print(f"bundle: {c['contributions']} contributions across {c['repos']} repos "
+          f"(PRs in flight: {c['prs_in_flight']}, reviews awaiting: {c['reviews_awaiting']}, "
+          f"claimed issues: {c['claimed_issues']}, CI flags: {c['ci_flags']})")
+    print(f"run dir: {info['run_dir']}/ (bundle.md, prompt.md, run.json)")
+    print("no LLM call made, nothing posted — hand prompt.md to any agent/human, then record:")
+    print(f"  python3 -m ctx run log --factory {info['factory']} --task contributions "
+          f"--prompt-version {info['prompt_version']} --output TEXT --verdict approved|rejected")
+    print("\n--- assembled prompt ---\n")
+    print(info["assembled_prompt"])
     return 0
 
 
@@ -234,8 +457,12 @@ def cmd_prompt_promote(root: Path, factory_name: str, version: str) -> int:
 
 # --- factory run --------------------------------------------------------------
 
-def cmd_factory_run(root: Path, factory_name: str, project: str, live: bool = False) -> int:
+def cmd_factory_run(root: Path, factory_name: str, project: str | None, live: bool = False) -> int:
     mode = "live" if live else "shadow"
+    if factory_name == factory.DIGEST_FACTORY or project is None:
+        if factory_name != factory.DIGEST_FACTORY and project is None:
+            raise SystemExit(f"--project is required for factory {factory_name!r}")
+        return cmd_digest(root, live=live)
     info = factory.assemble(root, factory_name, project, mode=mode)
     print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
           f"prompt {info['prompt_version']} for {info['project']}")
@@ -272,6 +499,52 @@ def build_parser() -> argparse.ArgumentParser:
     ts.add_argument("id")
     ts.add_argument("--status", required=True, choices=TASK_STATUSES)
 
+    repo = sub.add_parser("repo", help="manage repos (own projects + OSS)").add_subparsers(dest="sub", required=True)
+    ra = repo.add_parser("add", help="add a repo (writes markdown + index)")
+    ra.add_argument("--title", required=True)
+    ra.add_argument("--url", help="https://github.com/<owner>/<name>")
+    ra.add_argument("--kind", default="oss", choices=REPO_KINDS)
+    ra.add_argument("--status", default="active", choices=REPO_STATUSES)
+    ra.add_argument("--default-branch")
+    ra.add_argument("--contributing", help="CONTRIBUTING url or path")
+    ra.add_argument("--notes")
+    rlist = repo.add_parser("list", help="list repos")
+    rlist.add_argument("--kind", choices=REPO_KINDS)
+
+    contrib = sub.add_parser("contribution", help="manage issues/PRs you're involved with").add_subparsers(dest="sub", required=True)
+    ca = contrib.add_parser("add", help="add a contribution (writes markdown + index)")
+    ca.add_argument("--title", required=True)
+    ca.add_argument("--repo", required=True, help="repo id or slug")
+    ca.add_argument("--kind", required=True, choices=CONTRIB_KINDS)
+    ca.add_argument("--number", required=True, type=int)
+    ca.add_argument("--url")
+    ca.add_argument("--role", default="author", choices=CONTRIB_ROLES)
+    ca.add_argument("--state", default="open", choices=CONTRIB_STATES)
+    ca.add_argument("--ci", default="none", choices=CONTRIB_CI)
+    ca.add_argument("--review", default="none", choices=CONTRIB_REVIEW)
+    cl = contrib.add_parser("list", help="list contributions")
+    cl.add_argument("--repo")
+    cl.add_argument("--kind", choices=CONTRIB_KINDS)
+    cl.add_argument("--role", choices=CONTRIB_ROLES)
+    cl.add_argument("--state", choices=CONTRIB_STATES)
+    cs = contrib.add_parser("set", help="update contribution fields (file + index)")
+    cs.add_argument("id")
+    cs.add_argument("--state", choices=CONTRIB_STATES)
+    cs.add_argument("--ci", choices=CONTRIB_CI)
+    cs.add_argument("--review", choices=CONTRIB_REVIEW)
+    cs.add_argument("--role", choices=CONTRIB_ROLES)
+
+    sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
+    sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
+    sg.add_argument("--author", default="@me")
+    sg.add_argument("--limit", type=int, default=30)
+    sg.add_argument("--offline", action="store_true",
+                    help="skip network; re-index existing contribution files")
+
+    dg = sub.add_parser("digest", help="assemble the weekly contribution digest (no LLM)")
+    dg.add_argument("--shadow", action="store_true", help="shadow mode (default)")
+    dg.add_argument("--live", action="store_true", help="record as a live run (still no LLM call)")
+
     st = sub.add_parser("status", help="project rollup: task counts + recent runs")
     st.add_argument("project")
 
@@ -295,7 +568,7 @@ def build_parser() -> argparse.ArgumentParser:
     fr = sub.add_parser("factory", help="factory runner (deterministic, no LLM)").add_subparsers(dest="sub", required=True)
     frun = fr.add_parser("run", help="assemble context bundle + prompt, record a run")
     frun.add_argument("--factory", required=True)
-    frun.add_argument("--project", required=True)
+    frun.add_argument("--project", help="project id (not needed for weekly-contribution-digest)")
     frun.add_argument("--shadow", action="store_true", help="shadow mode (default)")
     frun.add_argument("--live", action="store_true", help="record as a live run (still no LLM call)")
 
@@ -314,6 +587,26 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_task_list(root, args.project, args.status)
         if args.sub == "set":
             return cmd_task_set(root, args.id, args.status)
+    if args.command == "repo":
+        if args.sub == "add":
+            return cmd_repo_add(root, args.title, args.url, args.kind, args.status,
+                                args.default_branch, args.contributing, args.notes)
+        if args.sub == "list":
+            return cmd_repo_list(root, args.kind)
+    if args.command == "contribution":
+        if args.sub == "add":
+            return cmd_contribution_add(root, args.title, args.repo, args.kind,
+                                        args.number, args.url, args.role,
+                                        args.state, args.ci, args.review)
+        if args.sub == "list":
+            return cmd_contribution_list(root, args.repo, args.kind, args.role, args.state)
+        if args.sub == "set":
+            return cmd_contribution_set(root, args.id, args.state, args.ci,
+                                        args.review, args.role)
+    if args.command == "sync" and args.sub == "github":
+        return cmd_sync_github(root, args.author, args.limit, args.offline)
+    if args.command == "digest":
+        return cmd_digest(root, live=args.live)
     if args.command == "status":
         return cmd_status(root, args.project)
     if args.command == "run" and args.sub == "log":
