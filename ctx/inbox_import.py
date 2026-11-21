@@ -25,14 +25,20 @@ def import_file(root: Path, source: str) -> list[dict]:
     path = Path(source)
     if not path.is_file():
         raise InboxImportError(f"file not found: {source}")
-    suffix = path.suffix.lower()
+    return import_bytes(root, path.name, path.read_bytes())
+
+
+def import_bytes(root: Path, filename: str, data: bytes) -> list[dict]:
+    """Same import, from bytes the cockpit received."""
+    suffix = Path(filename or "").suffix.lower()
     if suffix == ".eml":
-        title, body = _email(path)
+        title, body = _email_bytes(filename, data)
         notes = [(title, body)]
     elif suffix == ".ics":
-        notes = _calendar(path)
+        notes = _calendar_bytes(data)
     elif suffix in {".md", ".txt"}:
-        notes = [(_transcript_title(path), path.read_text(encoding="utf-8"))]
+        text = data.decode("utf-8", errors="replace")
+        notes = [(_transcript_title_text(filename, text), text)]
     else:
         raise InboxImportError("import a .eml, .ics, .md, or .txt file")
     written = []
@@ -41,9 +47,9 @@ def import_file(root: Path, source: str) -> list[dict]:
     return written
 
 
-def _email(path: Path) -> tuple[str, str]:
-    message = email.message_from_bytes(path.read_bytes(), policy=policy.default)
-    title = (message.get("subject") or path.stem).strip() or path.stem
+def _email_bytes(filename: str, data: bytes) -> tuple[str, str]:
+    message = email.message_from_bytes(data, policy=policy.default)
+    title = (message.get("subject") or Path(filename).stem).strip() or Path(filename).stem
     body = message.get_body(preferencelist=("plain", "html"))
     text = ""
     if body is not None:
@@ -57,8 +63,8 @@ def _email(path: Path) -> tuple[str, str]:
     return title[:200], (header + "\n\n" + str(text)).strip()
 
 
-def _calendar(path: Path) -> list[tuple[str, str]]:
-    text = _ICS_UNFOLD.sub("", path.read_text(encoding="utf-8", errors="replace"))
+def _calendar_bytes(data: bytes) -> list[tuple[str, str]]:
+    text = _ICS_UNFOLD.sub("", data.decode("utf-8", errors="replace"))
     events = []
     current: dict[str, str] = {}
     in_event = False
@@ -84,11 +90,15 @@ def _calendar(path: Path) -> list[tuple[str, str]]:
     return events[:20]
 
 
-def _transcript_title(path: Path) -> str:
-    for line in path.read_text(encoding="utf-8").splitlines():
+def _transcript_title_text(filename: str, text: str) -> str:
+    for line in text.splitlines():
         stripped = line.strip()
         if stripped.startswith("# "):
             return stripped[2:].strip()[:200]
         if stripped:
             return stripped[:200]
-    return path.stem
+    return Path(filename or "import").stem
+
+
+def _transcript_title(path: Path) -> str:
+    return _transcript_title_text(path.name, path.read_text(encoding="utf-8"))

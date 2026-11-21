@@ -33,9 +33,9 @@ See [First run](first-run.md).
 | Projects | Onboard a later project (repo + constitution, optional Spec Kit). Or add a project with no repo. Change a project's status. |
 | Library | Add and edit documents and meetings. Rename them. The id does not change. |
 | Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. |
-| Inbox | Drop a note. File it as a document, meeting, or task, or delete it. |
-| Factories | Assemble a shadow run. Check Draft with model to write `output.md`. Nothing is posted. |
-| Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add a sign-in. Choose who is writing. Add actors (`human` or `agent`). |
+| Inbox | Drop a note, or import a local `.eml`, `.ics`, `.md`, or `.txt` file. File it as a document, meeting, or task, or delete it. |
+| Factories | Assemble a shadow run. Check Draft with model to write `output.md`. New factory, Watch now, Check evals, Promote prompt. Nothing is posted. |
+| Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add a sign-in, or reset its password. Choose who is writing. Add actors (`human` or `agent`). The weekly job. The capture webhook. Rebuild the index. |
 
 Opening a project, task, document, or meeting shows the note and an editor.
 Saving updates the body and the `updated` date. It does not change `created`
@@ -59,10 +59,10 @@ to any agent. Come back and approve or reject the run on Home.
 Draft pull requests are not a button. `stead factory publish` opens one
 from an isolated branch. `stead factory merge` is a separate command, and
 only when that repo says `reach: merge`. The cockpit does not push or merge.
+A contribution shows both commands, ready to copy.
 
-An approved digest or status can be filed as a private document with
-`stead run file --run ID`. That is a CLI step on purpose. The cockpit has no
-file button.
+An approved digest or status can be filed as a private document with the
+**File as document** button on Home, or `stead run file --run ID`.
 
 ## Stopping it
 

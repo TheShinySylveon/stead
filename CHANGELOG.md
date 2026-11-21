@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- The cockpit covers the local commands: factory scaffold, watch, eval check,
+  prompt promote, file an approved run, inbox file import, account reset,
+  webhook token, index rebuild, and the weekly job. Publish and merge stay
+  CLI-only, with the commands shown on the contribution.
 - `stead run file --run ID` files an approved digest or status into
   `context/documents/`. It never posts, pushes, or merges.
 - `stead schedule show` / `install` wire the weekly read-only sync, the

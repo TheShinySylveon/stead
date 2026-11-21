@@ -269,7 +269,7 @@
     </div>
   </div>
   <nav id="nav" aria-label="Sections"></nav>
-  <p class="nav-foot">Loopback only. Files are the source of truth. Nothing here calls a model or writes to GitHub.</p>
+  <p class="nav-foot">Loopback by default. Files are the source of truth. Nothing here writes to GitHub.</p>
 </aside>
 <main>
   <div class="top">
@@ -305,7 +305,8 @@ const TITLES = {
   factories: ["Factories", "Assemble a shadow bundle. A person or an agent still has to write the output."],
   settings: ["Settings", "This computer, a shared server, the model, and how far the software factory may go."],
 };
-const state = { snap: null, view: "home", q: "", onboardResult: null };
+const state = { snap: null, view: "home", q: "", onboardResult: null,
+  scheduleText: "", scheduleProject: "", hookToken: "" };
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -390,6 +391,7 @@ function renderHome() {
         <button type="button" class="primary" data-verdict="approved" data-run="${esc(r.id)}">Approve</button>
         <button type="button" class="quiet" data-verdict="rejected" data-run="${esc(r.id)}">Reject</button>
       </div>` : ""}
+      ${r.verdict === "approved" && ["weekly-contribution-digest", "weekly-project-status"].includes(r.factory) ? `<div style="margin-top:8px"><button type="button" class="quiet" data-file-run="${esc(r.id)}">File as document</button></div>` : ""}
     </div>`).join("");
   return `
     <div class="stats">${stats.map(([n, label]) => `<div class="stat"><b>${esc(n)}</b><span>${esc(label)}</span></div>`).join("")}</div>
@@ -578,6 +580,11 @@ function renderInbox() {
       <textarea name="body" placeholder="Optional detail. This lands in inbox/ for triage — not in a contribution file." aria-label="Capture body"></textarea>
       <div><button class="primary" type="submit">Drop in inbox</button></div>
     </form>
+    <form class="inline" id="import-inbox" style="margin-bottom:12px">
+      <input type="file" name="file" accept=".eml,.ics,.md,.txt" required aria-label="Import a file">
+      <button class="quiet" type="submit">Import to inbox</button>
+      <span class="meta">.eml, .ics, .md, or .txt. Local only.</span>
+    </form>
     ${items.length ? `<div class="list">${items.map(item => `
       <div class="card" style="display:block">
         <button type="button" class="linkish" data-open data-type="inbox" data-id="${esc(item.name)}">${esc(item.name)}</button>
@@ -594,7 +601,7 @@ function renderInbox() {
 }
 function renderFactories() {
   const factories = state.snap.factories.filter(f => match({title: f.name, id: f.name}));
-  return factories.map(f => {
+  const panels = factories.map(f => {
     const prod = (f.prompts || []).find(p => p.status === "production");
     const draftBox = `<label class="meta"><input type="checkbox" name="generate" value="1"> Draft with model</label>`;
     let form = `<p class="meta">Assembles a local shadow bundle. Check Draft with model to write output.md. Nothing is posted or pushed.</p>`;
@@ -625,9 +632,25 @@ function renderFactories() {
       <strong>${esc(f.name)}</strong>
       <div class="chips" style="margin:8px 0">${chip(prod ? prod.version + " production" : "no prompt", prod ? "done" : "")}${chip(f.evals + " evals")}</div>
       ${form}
+      <form class="inline" data-promote="${esc(f.name)}" style="margin-top:8px">
+        <select name="version" aria-label="Prompt version for ${esc(f.name)}">${(f.prompts || []).map(p => `<option value="${esc(p.version)}">${esc(p.version)}</option>`).join("")}</select>
+        <button class="quiet" type="submit" ${(f.prompts || []).length ? "" : "disabled"}>Promote prompt</button>
+        <button type="button" class="quiet" data-evals="${esc(f.name)}">Check evals</button>
+      </form>
       ${runs || `<div class="meta">No runs yet.</div>`}
     </div>`;
   }).join("") || `<div class="empty">No factories.</div>`;
+  return `
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+      <button type="button" class="quiet" data-watch>Watch now</button>
+      <span class="meta">Assembles watched specs locally. Nothing is pushed.</span>
+    </div>
+    <form class="inline" id="new-factory" style="margin-bottom:16px">
+      <input type="text" name="name" placeholder="factory-name" required aria-label="New factory name">
+      <input type="text" name="title" placeholder="What it drafts" required aria-label="New factory title">
+      <button class="primary" type="submit">New factory</button>
+    </form>
+    ${panels}`;
 }
 
 function renderSettings() {
@@ -661,6 +684,27 @@ function renderSettings() {
       </form>
     </div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
+      <strong>Weekly job</strong>
+      <p class="meta">Read-only sync, a digest if the cache changed, a maintenance draft${state.scheduleProject ? ", and " + esc(state.scheduleProject) + "'s status" : ""}. Nothing is pushed.</p>
+      <div class="inline" style="margin:0">
+        <select id="schedule-project" aria-label="Status project"><option value="">No status project</option>${state.snap.projects.map(p => `<option value="${esc(p.id)}" ${state.scheduleProject === p.id ? "selected" : ""}>${esc(p.title)}</option>`).join("")}</select>
+        <button type="button" class="quiet" data-schedule="show">Show command</button>
+        <button type="button" class="quiet" data-schedule="install" ${(state.snap.schedule || {}).platform === "windows" ? "" : "disabled"}>Install on Windows</button>
+      </div>
+      ${state.scheduleText ? `<pre style="overflow:auto;margin-top:8px"><code>${esc(state.scheduleText)}</code></pre>` : ""}
+    </div>
+    <div class="panel" style="padding:14px 16px;margin-bottom:16px">
+      <strong>Capture webhook</strong>
+      <p class="meta">${(state.snap.hook || {}).set ? "A webhook token is set. POST /hook with X-Stead-Hook writes one inbox note." : "No webhook token. Enable it to let a scheduler drop notes into inbox/."} It never runs a factory.</p>
+      <button type="button" class="quiet" data-hook>${(state.snap.hook || {}).set ? "Rotate webhook token" : "Enable webhook"}</button>
+      ${state.hookToken ? `<div class="banner">Webhook token, shown once: ${esc(state.hookToken)}</div>` : ""}
+    </div>
+    <div class="panel" style="padding:14px 16px;margin-bottom:16px">
+      <strong>Index</strong>
+      <p class="meta">state.db is an index. Rebuilding it reads context/ again and changes no notes.</p>
+      <button type="button" class="quiet" data-init>Rebuild index</button>
+    </div>
+    <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>${d.deployment === "multi" ? "Shared server" : "This computer"}</strong>
       <p class="meta">Bind ${esc(d.bind)} · port ${esc(d.port)} · token ${d.token_set ? "set" : "not set"} · ${(state.snap.accounts || []).length} sign-in${(state.snap.accounts || []).length === 1 ? "" : "s"}. A normal cockpit stays on loopback. A shared server asks each person to sign in.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -674,7 +718,7 @@ function renderSettings() {
       <select name="actor" aria-label="Actor for this sign-in">${(state.snap.actors || []).map(a => `<option value="${esc(a.id)}">${esc(a.title)}</option>`).join("")}</select>
       <button class="primary" type="submit" ${(state.snap.actors || []).length ? "" : "disabled"}>Add sign-in</button>
     </form>
-    ${(state.snap.accounts || []).length ? `<div class="list">${state.snap.accounts.map(a => `<div class="row"><span><strong>${esc(a.name)}</strong><br><small>${esc(a.actor)}</small></span>${chip("sign-in")}</div>`).join("")}</div>` : ""}
+    ${(state.snap.accounts || []).length ? `<div class="list">${state.snap.accounts.map(a => `<div class="row"><span><strong>${esc(a.name)}</strong><br><small>${esc(a.actor)}</small></span><span>${chip("sign-in")}<button type="button" class="quiet" data-account-reset="${esc(a.name)}">Reset password</button></span></div>`).join("")}</div>` : ""}
     <form class="inline" id="use-actor">
       <select name="id" aria-label="Current actor">${(state.snap.actors || []).map(a => `<option value="${esc(a.id)}" ${state.snap.actor === a.id ? "selected" : ""}>${esc(a.title)}</option>`).join("")}</select>
       <button class="quiet" type="submit" ${(state.snap.actors || []).length ? "" : "disabled"}>Write as this actor</button>
@@ -782,7 +826,14 @@ async function openReader(type, id) {
         <div class="section-title">Public spec</div>
         <textarea name="body" aria-label="Public spec body">${esc(data.body || "")}</textarea>
         <div><button class="primary" type="submit">Save public spec</button></div>
-      </form>` : "";
+      </form>
+      <div class="panel" style="padding:12px 14px;margin-top:12px">
+        <strong>Remote step</strong>
+        <p class="meta">The cockpit does not write to GitHub. Run one of these in this checkout:</p>
+        <pre style="overflow:auto"><code>python -m stead factory publish --contribution ${esc(data.id || id)}
+python -m stead factory merge --contribution ${esc(data.id || id)}</code></pre>
+        <p class="meta">Publish opens a pull request only when the repo ceiling allows it. Merge needs <code>reach: merge</code> and green checks.</p>
+      </div>` : "";
     const path = data.path ? `<div class="meta">${esc(data.path)}</div>` : "";
     panel.innerHTML = `
       <button type="button" class="quiet" id="close-reader">Close</button>
@@ -858,6 +909,76 @@ document.body.addEventListener("click", async (event) => {
     }
     return;
   }
+  const fileRun = event.target.closest("[data-file-run]");
+  if (fileRun) {
+    try {
+      const result = await api("/api/run/file", {method: "POST", body: JSON.stringify({id: Number(fileRun.dataset.fileRun)})});
+      toast("Filed " + result.id);
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const evals = event.target.closest("[data-evals]");
+  if (evals) {
+    try {
+      const result = await api("/api/eval/run", {method: "POST", body: JSON.stringify({factory: evals.dataset.evals})});
+      toast(result.ok ? "Eval files ok (" + result.cases + " cases)" : result.problems.join("; "));
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-watch]")) {
+    try {
+      const result = await api("/api/factory/watch", {method: "POST", body: "{}"});
+      toast("assembled " + result.ran.length + ", skipped " + result.skipped.length);
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-init]")) {
+    try {
+      await api("/api/init", {method: "POST", body: "{}"});
+      toast("Index rebuilt");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-hook]")) {
+    try {
+      const result = await api("/api/hook", {method: "POST", body: JSON.stringify({create: true})});
+      state.hookToken = result.token;
+      toast("Copy the webhook token now");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const sched = event.target.closest("[data-schedule]");
+  if (sched) {
+    const picker = document.getElementById("schedule-project");
+    const project = picker ? picker.value : "";
+    try {
+      if (sched.dataset.schedule === "install") {
+        await api("/api/schedule", {method: "POST", body: JSON.stringify({install: true, project})});
+        toast("Weekly task installed");
+      } else {
+        const result = await api("/api/schedule", {method: "POST", body: JSON.stringify({project})});
+        state.scheduleText = result.text;
+        state.scheduleProject = project;
+        render();
+      }
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const reset = event.target.closest("[data-account-reset]");
+  if (reset) {
+    try {
+      const result = await api("/api/account/reset", {method: "POST", body: JSON.stringify({name: reset.dataset.accountReset})});
+      state.accountPassword = result.password;
+      state.accountName = result.name;
+      toast("Password reset. Copy it now.");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
   const nav = event.target.closest("[data-nav]");
   if (nav) { state.view = nav.dataset.nav; state.settingsToken = ""; closeReader(); render(); return; }
   if (event.target.id === "welcome-continue") { await load(); return; }
@@ -900,6 +1021,7 @@ document.body.addEventListener("submit", async (event) => {
     || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
     || form.id === "add-spec" || form.id === "onboard" || form.id === "welcome"
     || form.id === "add-actor" || form.id === "use-actor" || form.id === "add-account" || form.id === "set-model" || form.id === "set-factory"
+    || form.id === "new-factory" || form.id === "import-inbox" || form.dataset.promote
     || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
@@ -947,6 +1069,30 @@ document.body.addEventListener("submit", async (event) => {
       await api("/api/actor", {method: "POST", body: JSON.stringify(data)});
       toast("Actor added");
       form.reset();
+    } else if (form.id === "new-factory") {
+      const result = await api("/api/factory/new", {method: "POST", body: JSON.stringify({name: data.name, title: data.title})});
+      toast("Created " + result.name + ". Check evals before promoting.");
+      form.reset();
+      await load();
+    } else if (form.id === "import-inbox") {
+      const file = form.querySelector('input[type="file"]');
+      if (!file || !file.files.length) { toast("Choose a file first"); return; }
+      const body = new FormData();
+      body.append("file", file.files[0]);
+      const res = await fetch("/api/inbox/import", {
+        method: "POST", headers: {"X-Ctx-Token": TOKEN}, body,
+      });
+      const result = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(result.error || res.statusText);
+      toast("Imported " + result.imported.length + " note(s)");
+      form.reset();
+      await load();
+    } else if (form.dataset.promote) {
+      const result = await api("/api/prompt/promote", {method: "POST", body: JSON.stringify({
+        factory: form.dataset.promote, version: data.version,
+      })});
+      toast(result.version + " is production");
+      await load();
     } else if (form.id === "onboard") {
       state.onboardResult = await api("/api/onboard", {method: "POST", body: JSON.stringify({
         title: data.title, kind: data.kind, url: data.url, path: data.path,

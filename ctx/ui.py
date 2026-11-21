@@ -9,12 +9,15 @@ shadow-only.
 from __future__ import annotations
 
 import contextlib
+import email
 import io
 import json
 import re
 import secrets
+import sys
 import threading
 import webbrowser
+from email import policy
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -247,6 +250,11 @@ def _model_providers() -> list[dict]:
     return [{"id": key, "label": PROVIDER_LABELS[key]} for key in PROVIDERS]
 
 
+def _hook_set(root: Path) -> bool:
+    from ctx.config import hook_token
+    return bool(hook_token(root))
+
+
 def _accounts(root: Path) -> list[dict]:
     from ctx.accounts import AccountError, public_list
     try:
@@ -340,6 +348,8 @@ def snapshot(root: Path) -> dict:
         "actor": _current_actor(root),
         "actors": _list(root, "actor"),
         "accounts": _accounts(root),
+        "hook": {"set": _hook_set(root)},
+        "schedule": {"project": "", "platform": "windows" if sys.platform == "win32" else sys.platform},
         "counts": {
             "open_tasks": open_tasks,
             "attention": len(attention),
@@ -772,6 +782,94 @@ def sync_github(root: Path, offline: bool = False) -> dict:
     return {"ok": True, "offline": bool(offline)}
 
 
+def file_run(root: Path, run_id: object, title: str | None = None) -> dict:
+    from ctx.deliver import DeliveryError, file_run as deliver
+    try:
+        filed = deliver(root, run_id, title)
+    except DeliveryError as exc:
+        raise UiError(str(exc)) from exc
+    return {"ok": True, "id": filed["id"], "path": _rel(root, filed["path"])}
+
+
+def new_factory(root: Path, name: str, title: str) -> dict:
+    from ctx.scaffold import ScaffoldError, scaffold
+    try:
+        folder = scaffold(root, name, title)
+    except ScaffoldError as exc:
+        raise UiError(str(exc)) from exc
+    ensure_index(root)
+    db.init_db(root)
+    return {"ok": True, "name": folder.name, "path": _rel(root, folder)}
+
+
+def watch_now(root: Path) -> dict:
+    report = factory.watch_specs(root)
+    return {"ok": True, **report}
+
+
+def check_evals(root: Path, factory_name: str) -> dict:
+    from ctx.models import check_eval_files
+    return check_eval_files(root, factory_name)
+
+
+def promote_prompt(root: Path, factory_name: str, version: str) -> dict:
+    _call(cli.cmd_prompt_promote, root, factory_name, version)
+    return {"ok": True, "factory": factory_name, "version": version}
+
+
+def import_inbox_upload(root: Path, filename: str, data: bytes) -> dict:
+    from ctx.inbox_import import InboxImportError, import_bytes
+    try:
+        written = import_bytes(root, filename, data)
+    except InboxImportError as exc:
+        raise UiError(str(exc)) from exc
+    return {"ok": True, "imported": written}
+
+
+def rebuild_index(root: Path) -> dict:
+    counts = db.init_db(root)
+    return {"ok": True, **counts}
+
+
+def hook_view(root: Path) -> dict:
+    from ctx.config import hook_token
+    return {"ok": True, "set": bool(hook_token(root))}
+
+
+def hook_new(root: Path) -> dict:
+    from ctx.config import set_hook_token
+    return {"ok": True, "token": set_hook_token(root)}
+
+
+def schedule_view(root: Path, project: str | None = None) -> dict:
+    from ctx.schedule import ScheduleError, show, weekly_command
+    try:
+        text = show(root, project)
+        command = weekly_command(root, project)
+    except ScheduleError as exc:
+        raise UiError(str(exc)) from exc
+    return {"ok": True, "text": text, "command": command,
+            "platform": "windows" if sys.platform == "win32" else sys.platform}
+
+
+def schedule_install(root: Path, project: str | None = None) -> dict:
+    from ctx.schedule import ScheduleError, install
+    try:
+        name = install(root, project=project)
+    except ScheduleError as exc:
+        raise UiError(str(exc)) from exc
+    return {"ok": True, "task": name}
+
+
+def reset_account(root: Path, name: str) -> dict:
+    from ctx.accounts import AccountError, reset
+    try:
+        shown = reset(root, name)
+    except AccountError as exc:
+        raise UiError(str(exc)) from exc
+    return {"ok": True, "name": (name or "").strip().lower(), "password": shown}
+
+
 def capture(root: Path, title: str, body: str, source: str = "the local cockpit") -> dict:
     title = (title or "").strip()
     body = (body or "").strip()
@@ -1066,6 +1164,28 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                       "password": shown}
         elif path == "/api/actor":
             result = add_actor(root, payload.get("title") or "", payload.get("kind") or "human")
+        elif path == "/api/run/file":
+            result = file_run(root, payload.get("id"), payload.get("title"))
+        elif path == "/api/factory/new":
+            result = new_factory(root, payload.get("name") or "", payload.get("title") or "")
+        elif path == "/api/factory/watch":
+            result = watch_now(root)
+        elif path == "/api/eval/run":
+            result = check_evals(root, payload.get("factory") or "")
+        elif path == "/api/prompt/promote":
+            result = promote_prompt(root, payload.get("factory") or "",
+                                    payload.get("version") or "")
+        elif path == "/api/init":
+            result = rebuild_index(root)
+        elif path == "/api/hook":
+            result = hook_new(root) if payload.get("create") else hook_view(root)
+        elif path == "/api/schedule":
+            if payload.get("install"):
+                result = schedule_install(root, payload.get("project") or None)
+            else:
+                result = schedule_view(root, payload.get("project") or None)
+        elif path == "/api/account/reset":
+            result = reset_account(root, payload.get("name") or "")
         else:
             raise UiError("not found", 404)
         return 200, _json(result), "application/json; charset=utf-8"
@@ -1175,6 +1295,9 @@ class CockpitHandler(BaseHTTPRequestHandler):
                 return
             self._reject(401, "sign in required")
             return
+        if method == "POST" and parsed.path == "/api/inbox/import":
+            self._import_upload()
+            return
         from ctx.actors import bind, unbind
         bound = bind(self._session_actor())
         try:
@@ -1192,6 +1315,37 @@ class CockpitHandler(BaseHTTPRequestHandler):
             self._send(status, body, content_type)
         finally:
             unbind(bound)
+
+    def _import_upload(self) -> None:
+        """Accept one .eml/.ics/.md/.txt file and put it in the inbox."""
+        if not secrets.compare_digest(
+                self.headers.get("X-Ctx-Token", ""), self.server.token):
+            self._reject(403, "missing or invalid token")
+            return
+        length = int(self.headers.get("Content-Length") or "0")
+        if length > MAX_BODY:
+            self._reject(413, "file is too large")
+            return
+        raw = self.rfile.read(length) if length else b""
+        ctype = self.headers.get("Content-Type", "")
+        if "multipart/form-data" not in ctype:
+            self._reject(400, "expected a file upload")
+            return
+        message = email.message_from_bytes(
+            f"Content-Type: {ctype}\r\nMIME-Version: 1.0\r\n\r\n".encode() + raw,
+            policy=policy.default)
+        part = next((item for item in message.iter_parts() if item.get_filename()), None)
+        if part is None:
+            self._reject(400, "no file in the upload")
+            return
+        try:
+            result = import_inbox_upload(
+                self.server.root, part.get_filename() or "",
+                part.get_payload(decode=True) or b"")
+        except UiError as exc:
+            self._reject(exc.status, str(exc))
+            return
+        self._send(200, _json(result), "application/json; charset=utf-8")
 
     def _capture_hook(self) -> None:
         """Write one inbox note. Does not run a factory or edit context/."""

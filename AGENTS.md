@@ -175,10 +175,14 @@ binds `0.0.0.0` and will not start unless an account exists, or
 
 The page reads the same markdown and writes through the same handlers as the
 CLI: projects, tasks, documents, meetings, repos, and actors; note edits;
-contribution fields (including role, CI, review, and method); inbox capture
-and triage; local issues and feature specs (public files); a read-only GitHub
-sync; and shadow factory assembly. It never calls an LLM and never performs a
-remote write. A contribution body is a public spec, not a private note.
+contribution fields (including role, CI, review, and method); inbox capture,
+file import, and triage; local issues and feature specs (public files); a
+read-only GitHub sync; shadow factory assembly; factory scaffolding; eval
+checks and prompt promotion; filing an approved digest or status as a
+document; sign-ins, webhook token, index rebuild, and the weekly job. It calls
+a model only when Draft with model is checked. It never performs a remote
+write: publish and merge are CLI-only, and the page shows the exact commands.
+A contribution body is a public spec, not a private note.
 Factory runs from the cockpit are shadow-only — no draft PR. The page has no
 external assets, so it works offline.
 
