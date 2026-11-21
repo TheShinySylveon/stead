@@ -114,6 +114,8 @@ def set_repo(root: Path, repo_id: str, *, trigger: str | None = None,
     if trigger is None and reach is None and code_path is None:
         raise AutonomyError("nothing to set")
     from datetime import date
+    from ctx.actors import stamp
     meta["updated"] = date.today().isoformat()
+    stamp(root, meta)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
     return effective(root, meta)

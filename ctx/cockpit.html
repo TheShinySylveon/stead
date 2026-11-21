@@ -667,6 +667,11 @@ function renderSettings() {
         <button type="button" class="quiet" data-rotate-token ${d.deployment === "multi" ? "" : "disabled"}>Rotate token</button>
       </div>
     </div>
+    <form class="inline" id="use-actor">
+      <select name="id" aria-label="Current actor">${(state.snap.actors || []).map(a => `<option value="${esc(a.id)}" ${state.snap.actor === a.id ? "selected" : ""}>${esc(a.title)}</option>`).join("")}</select>
+      <button class="quiet" type="submit" ${(state.snap.actors || []).length ? "" : "disabled"}>Write as this actor</button>
+      <span class="meta">${state.snap.actor ? "Stamping " + esc(state.snap.actor) : "No actor selected. Writes are unstamped."}</span>
+    </form>
     <form class="inline" id="add-actor">
       <input type="text" name="title" placeholder="Person or agent name" required aria-label="Actor name">
       <select name="kind" aria-label="Actor kind"><option value="human">human</option><option value="agent">agent</option></select>
@@ -886,7 +891,7 @@ document.body.addEventListener("submit", async (event) => {
     || form.id === "add-document" || form.id === "add-meeting" || form.id === "add-repo"
     || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
     || form.id === "add-spec" || form.id === "onboard" || form.id === "welcome"
-    || form.id === "add-actor" || form.id === "set-model" || form.id === "set-factory"
+    || form.id === "add-actor" || form.id === "use-actor" || form.id === "set-model" || form.id === "set-factory"
     || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
@@ -921,6 +926,9 @@ document.body.addEventListener("submit", async (event) => {
       if (data.api_key) body.api_key = data.api_key;
       await api("/api/model", {method: "POST", body: JSON.stringify(body)});
       toast("Model saved");
+    } else if (form.id === "use-actor") {
+      await api("/api/actor/use", {method: "POST", body: JSON.stringify({id: data.id})});
+      toast("Writing as " + data.id);
     } else if (form.id === "add-actor") {
       await api("/api/actor", {method: "POST", body: JSON.stringify(data)});
       toast("Actor added");

@@ -134,8 +134,7 @@ then builds the Docker image. It does not push the image.
 - No per-person passwords. A shared server has one access token.
 - A normal `stead ui` stays on loopback. `--deploy` and Docker are the only
   public binds, and they require the token.
-- `actor:` is not stamped automatically. Add actors in Settings or with
-  `stead actor add`. Attribution is a file, not a login.
+- `actor:` is stamped only after you select who is writing. It is not a login.
 - A factory calls a model only when you pass `--generate` or check Draft
   with model. The endpoint is yours: OpenAI, Anthropic, Grok, or another
   chat server. The draft is a file. Nothing is posted, pushed, or merged.
@@ -148,9 +147,7 @@ then builds the Docker image. It does not push the image.
 
 - Merge. `stead factory publish` can open a draft or a normal pull request
   from an isolated branch. It will not merge.
-- Automatic `actor:` on each write.
 - Per-person sign-in, instead of one shared token.
-- Promote refuses until the eval cases for that prompt have recorded passes.
 - A published container image. CI only builds it today.
 
 ## Contributing

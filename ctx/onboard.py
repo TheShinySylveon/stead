@@ -132,9 +132,11 @@ The first feature still needs its own spec: an issue you author, tagged `feature
 """
 
 
-def _write(path: Path, meta: dict, body: str) -> None:
+def _write(root: Path, path: Path, meta: dict, body: str) -> None:
     from ctx import frontmatter
+    from ctx.actors import stamp
     path.parent.mkdir(parents=True, exist_ok=True)
+    stamp(root, meta)
     text = body if body.endswith("\n") else body + "\n"
     path.write_text(frontmatter.dumps(meta, text), encoding="utf-8")
 
@@ -233,11 +235,11 @@ def onboard(root: Path, title: str, *, kind: str = "own", url: str | None = None
         f"- Spec Kit: {specify_result['status']}. {specify_result['detail']}\n\n"
         f"{place}\n"
     )
-    _write(project_path, {
+    _write(root, project_path, {
         "id": project_id, "type": "project", "title": title,
         "created": today, "updated": today, "status": "active",
     }, project_body)
-    _write(doc_path, {
+    _write(root, doc_path, {
         "id": doc_id, "type": "document", "title": f"Constitution — {title}",
         "created": today, "updated": today, "project": project_id,
         "tags": ["constitution", method],
@@ -253,7 +255,7 @@ def onboard(root: Path, title: str, *, kind: str = "own", url: str | None = None
     }
     if url:
         repo_meta["url"] = url
-    _write(repo_path, repo_meta, f"# {title}\n")
+    _write(root, repo_path, repo_meta, f"# {title}\n")
     conn = db.connect(root)
     try:
         db.index_repo(conn, root, repo_path, repo_meta, today)

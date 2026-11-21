@@ -73,11 +73,22 @@ def save(root: Path, data: dict) -> None:
         "port": int(data.get("port") or 8765),
         "access_token": token,
     }
-    for key in ("model", "factory"):
+    for key in ("model", "factory", "actor"):
         value = data[key] if key in data else current.get(key)
         if isinstance(value, dict) and value:
             payload[key] = value
     config_path(root).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def save_actor(root: Path, actor_id: str) -> None:
+    """Remember who is writing. Does not drop deployment or model settings."""
+    current = read_raw(root)
+    current["actor"] = actor_id
+    current.setdefault("deployment", "single")
+    current.setdefault("bind", "127.0.0.1")
+    current.setdefault("port", 8765)
+    current.setdefault("access_token", "")
+    config_path(root).write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
 
 
 def save_factory(root: Path, factory: dict) -> None:

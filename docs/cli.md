@@ -70,6 +70,7 @@ Omitted, it is `spec-kit`.
 ```bash
 python -m stead actor add --title "Ada" --kind human|agent
 python -m stead actor list
+python -m stead actor use actor-ada
 
 python -m stead status PROJECT
 python -m stead sync github [--author @me] [--limit N]

@@ -70,6 +70,8 @@ def cmd_task_add(root: Path, title: str, project: str, status: str = "to-do") ->
     today = date.today().isoformat()
     meta = {"id": task_id, "type": "task", "title": title,
             "created": today, "updated": today, "status": status, "project": project_id}
+    from ctx.actors import stamp
+    stamp(root, meta)
     path = root / "context" / "tasks" / f"{stem}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(frontmatter.dumps(meta, f"# {title}\n"), encoding="utf-8")
@@ -127,6 +129,8 @@ def cmd_task_set(root: Path, task_id: str, status: str) -> int:
     path, meta, body = found
     meta["status"] = status
     meta["updated"] = date.today().isoformat()
+    from ctx.actors import stamp
+    stamp(root, meta)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
 
     conn = db.connect(root)
@@ -170,6 +174,8 @@ def cmd_repo_add(root: Path, title: str, url: str | None = None, kind: str = "os
                        ("contributing", contributing), ("notes", notes)):
         if value:
             meta[key] = value
+    from ctx.actors import stamp
+    stamp(root, meta)
     path = root / "context" / "repos" / f"{slug}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(frontmatter.dumps(meta, f"# {title}\n"), encoding="utf-8")
@@ -241,6 +247,8 @@ def cmd_contribution_add(root: Path, title: str, repo: str, kind: str, number: i
             "review": review, "method": method, "visibility": "public"}
     if url:
         meta["url"] = url
+    from ctx.actors import stamp
+    stamp(root, meta)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(frontmatter.dumps(meta, f"# {title}\n"), encoding="utf-8")
 
@@ -309,6 +317,8 @@ def cmd_contribution_set(root: Path, contrib_id: str, state: str | None = None,
     path, meta, body = found
     meta.update(updates)
     meta["updated"] = date.today().isoformat()
+    from ctx.actors import stamp
+    stamp(root, meta)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
 
     conn = db.connect(root)
@@ -444,6 +454,12 @@ def cmd_prompt_promote(root: Path, factory_name: str, version: str) -> int:
     prompt_path = root / "factories" / factory_name / "prompts" / f"{version}.md"
     if not prompt_path.exists():
         raise SystemExit(f"prompt file missing: {_rel(root, prompt_path)} — write it before promoting")
+    from ctx.models import promotion_blockers
+    blocked = promotion_blockers(root, factory_name, version)
+    if blocked:
+        raise SystemExit(
+            "refusing to promote. These evals have no pass for "
+            f"{version}: {', '.join(blocked)}")
     conn = db.connect(root)
     try:
         conn.execute(
@@ -623,6 +639,8 @@ def build_parser() -> argparse.ArgumentParser:
     aa.add_argument("--title", required=True)
     aa.add_argument("--kind", default="human", choices=("human", "agent"))
     actor.add_parser("list", help="list actors")
+    au = actor.add_parser("use", help="remember who is writing. Stamped on later writes.")
+    au.add_argument("id")
 
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
@@ -648,6 +666,7 @@ def build_parser() -> argparse.ArgumentParser:
     ej.add_argument("--factory", required=True)
     ej.add_argument("--case", required=True)
     ej.add_argument("--output", required=True, help="path to the draft markdown")
+    ej.add_argument("--prompt-version", default="", help="version this pass is for. Defaults to production.")
 
     dg = sub.add_parser("digest", help="assemble the weekly contribution digest")
     dg.add_argument("--shadow", action="store_true", help="shadow mode (default)")
@@ -787,6 +806,14 @@ def main(argv: list[str] | None = None) -> int:
                 raise SystemExit(str(exc)) from exc
             print(f"added {added['id']} [{added['kind']}]")
             return 0
+        if args.sub == "use":
+            from ctx.actors import ActorError, use
+            try:
+                chosen = use(root, args.id)
+            except ActorError as exc:
+                raise SystemExit(str(exc)) from exc
+            print(f"writing as {chosen}")
+            return 0
         for _path, meta, _body in objects.iter_objects(root, "actor"):
             print(f"{meta.get('id')}  {meta.get('kind', 'human')}  {meta.get('title')}")
         return 0
@@ -822,7 +849,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"eval files ok ({checked['cases']} cases)")
             return 0
         try:
-            judged = models.judge(root, args.factory, args.case, args.output)
+            judged = models.judge(root, args.factory, args.case, args.output,
+                                  prompt_version=args.prompt_version)
         except (models.ModelError, OSError) as exc:
             raise SystemExit(str(exc)) from exc
         print(f"{judged['verdict']}: {judged['reason']}")

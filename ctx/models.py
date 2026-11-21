@@ -162,7 +162,7 @@ def check_eval_files(root: Path, factory_name: str | None = None) -> dict:
 
 
 def judge(root: Path, factory_name: str, case_id: str, output_path: str,
-          *, transport=None, timeout: float = 120) -> dict:
+          *, transport=None, timeout: float = 120, prompt_version: str = "") -> dict:
     """Ask the configured model whether one draft meets one case. Local file only."""
     case = _load_case(root, factory_name, case_id)
     draft_text = Path(output_path).read_text(encoding="utf-8")
@@ -192,6 +192,7 @@ def judge(root: Path, factory_name: str, case_id: str, output_path: str,
         "verdict": verdict,
         "reason": reason[:500],
         "model": settings["name"],
+        "prompt_version": prompt_version or _production_version(root, factory_name),
         "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
     dest = root / "factories" / factory_name / "evals" / "results" / f"{case_id}.json"
@@ -199,6 +200,50 @@ def judge(root: Path, factory_name: str, case_id: str, output_path: str,
     dest.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     result["path"] = dest.relative_to(root).as_posix()
     return result
+
+
+def promotion_blockers(root: Path, factory_name: str, version: str) -> list[str]:
+    """Eval cases that do not have a recorded pass for this prompt version."""
+    folder = root / "factories" / factory_name / "evals"
+    if not folder.is_dir():
+        return []
+    missing = []
+    for path in sorted(folder.glob("*.json")):
+        try:
+            case = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            missing.append(path.stem)
+            continue
+        case_id = case.get("id") or path.stem
+        recorded = folder / "results" / f"{case_id}.json"
+        if not recorded.is_file():
+            missing.append(case_id)
+            continue
+        try:
+            result = json.loads(recorded.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            missing.append(case_id)
+            continue
+        if result.get("verdict") != "pass" or result.get("prompt_version") != version:
+            missing.append(case_id)
+    return missing
+
+
+def _production_version(root: Path, factory_name: str) -> str:
+    from ctx import db
+    if db.db_path(root).exists():
+        conn = db.connect(root)
+        try:
+            row = conn.execute(
+                "SELECT version FROM prompt_versions WHERE factory = ? AND status = 'production'",
+                (factory_name,),
+            ).fetchone()
+        finally:
+            conn.close()
+        if row:
+            return row["version"]
+    prompts = sorted((root / "factories" / factory_name / "prompts").glob("v*.md"))
+    return prompts[-1].stem if prompts else ""
 
 
 def parse_verdict(text: str) -> tuple[str, str]:

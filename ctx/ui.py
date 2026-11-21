@@ -228,6 +228,11 @@ def _model_providers() -> list[dict]:
     return [{"id": key, "label": PROVIDER_LABELS[key]} for key in PROVIDERS]
 
 
+def _current_actor(root: Path) -> str:
+    from ctx.actors import current
+    return current(root)
+
+
 def _factory_defaults(root: Path) -> dict:
     from ctx.autonomy import factory_defaults
     return factory_defaults(root)
@@ -305,6 +310,7 @@ def snapshot(root: Path) -> dict:
         "deployment": _deployment_view(root),
         "model": _model_view(root),
         "factory": _factory_defaults(root),
+        "actor": _current_actor(root),
         "actors": _list(root, "actor"),
         "counts": {
             "open_tasks": open_tasks,
@@ -443,6 +449,8 @@ def create_object(root: Path, payload: dict) -> dict:
         meta["status"] = status
     if project_id:
         meta["project"] = project_id
+    from ctx.actors import stamp
+    stamp(root, meta)
     path.write_text(frontmatter.dumps(meta, _note_body(title, payload.get("body") or "")),
                     encoding="utf-8")
     return {"ok": True, "id": object_id, "type": otype}
@@ -463,6 +471,8 @@ def save_body(root: Path, otype: str, ref: str, body: str) -> dict:
         raise UiError(f"{otype} not found: {ref}", 404)
     path, meta, _old = found
     meta["updated"] = date.today().isoformat()
+    from ctx.actors import stamp
+    stamp(root, meta)
     text = body if body.endswith("\n") or body == "" else body + "\n"
     path.write_text(frontmatter.dumps(meta, text), encoding="utf-8")
     if otype == "task" and db.db_path(root).exists():
@@ -489,6 +499,8 @@ def set_title(root: Path, otype: str, ref: str, title: str) -> dict:
     path, meta, body = found
     meta["title"] = title
     meta["updated"] = date.today().isoformat()
+    from ctx.actors import stamp
+    stamp(root, meta)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
     if otype == "task" and db.db_path(root).exists():
         conn = db.connect(root)
@@ -553,6 +565,8 @@ def create_contribution(root: Path, payload: dict) -> dict:
                 tags.append("feature-spec")
             meta["tags"] = tags
         meta["updated"] = date.today().isoformat()
+        from ctx.actors import stamp
+        stamp(root, meta)
         path.write_text(frontmatter.dumps(meta, _spec_body(title, description, criteria)),
                         encoding="utf-8")
         if db.db_path(root).exists():
@@ -578,6 +592,8 @@ def save_public_body(root: Path, ref: str, body: str) -> dict:
         raise UiError(f"contribution not found: {ref}", 404)
     path, meta, _old = found
     meta["updated"] = date.today().isoformat()
+    from ctx.actors import stamp
+    stamp(root, meta)
     text = body if body.endswith("\n") or body == "" else body + "\n"
     path.write_text(frontmatter.dumps(meta, text), encoding="utf-8")
     if db.db_path(root).exists():
@@ -638,6 +654,8 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
         raise UiError("nothing to set")
     today = date.today().isoformat()
     meta["updated"] = today
+    from ctx.actors import stamp
+    stamp(root, meta)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
     if db.db_path(root).exists():
         conn = db.connect(root)
@@ -658,6 +676,8 @@ def set_project_status(root: Path, project_id: str, status: str) -> dict:
     path, meta, body = found
     meta["status"] = status
     meta["updated"] = date.today().isoformat()
+    from ctx.actors import stamp
+    stamp(root, meta)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
     return {"ok": True, "id": meta["id"], "status": status}
 
@@ -707,6 +727,8 @@ def triage_inbox(root: Path, name: str, otype: str, project: str | None,
             raise UiError("task was added but could not be found to attach the note")
         path, meta = max(matches, key=lambda item: item[0].stat().st_mtime)
         meta["updated"] = date.today().isoformat()
+        from ctx.actors import stamp
+        stamp(root, meta)
         path.write_text(frontmatter.dumps(meta, _note_body(filed_title, body)), encoding="utf-8")
         result = {"ok": True, "id": meta["id"], "type": "task"}
     else:
@@ -997,6 +1019,12 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     result = choose(root, payload.get("deployment") or "single")
                     result["ok"] = True
             except ConfigError as exc:
+                raise UiError(str(exc)) from exc
+        elif path == "/api/actor/use":
+            from ctx.actors import ActorError, use
+            try:
+                result = {"ok": True, "actor": use(root, payload.get("id") or "")}
+            except ActorError as exc:
                 raise UiError(str(exc)) from exc
         elif path == "/api/actor":
             result = add_actor(root, payload.get("title") or "", payload.get("kind") or "human")

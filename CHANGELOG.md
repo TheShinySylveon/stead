@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Writes stamp `actor:` when `stead actor use` or `STEAD_ACTOR` names an actor file.
+- `stead prompt promote` refuses until every eval case has a recorded pass for that version.
 - `stead factory publish` pushes an isolated branch and opens a pull request
   when the repo ceiling allows it. It refuses the default branch and does not merge.
 - The command is `python -m stead`. `python -m ctx` still runs and says so.

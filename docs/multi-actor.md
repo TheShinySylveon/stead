@@ -75,7 +75,8 @@ container, started with `STEAD_ACCESS_TOKEN` set.
 - No accounts, passwords, or sessions.
 - No per-object permission checks in the CLI. If you can write the file, you
   can write the object. Repository access is the permission.
-- `actor:` is not yet stamped automatically on every cockpit save.
+- `actor:` is stamped when someone is selected (`stead actor use` or Settings).
+  It is not a login.
 - Agents are not registered for you. Add an actor file when a new agent
   starts writing.
 
