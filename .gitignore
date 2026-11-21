@@ -1,0 +1,14 @@
+# Rebuildable operational state (source of truth = markdown files + schema.sql)
+state.db
+state.db-wal
+state.db-shm
+
+# Python artifacts
+__pycache__/
+*.pyc
+*.pyo
+
+# OS noise
+.DS_Store
+Thumbs.db
+desktop.ini
