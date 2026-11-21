@@ -77,12 +77,20 @@ python -m stead account list
 python -m stead account reset --name ada
 
 python -m stead status PROJECT
-python -m stead sync github [--author @me] [--limit N]
+python -m stead sync github [--author @me] [--limit N] [--digest]
 python -m stead sync github --offline
+python -m stead schedule show
+python -m stead schedule install
 ```
 
 `sync github` is read-only. It uses `gh`. `--offline` only re-indexes files
-already on disk.
+already on disk. `--digest` assembles the digest only when the cache changed.
+It still does not post.
+
+`schedule show` prints the Friday command for cron or Task Scheduler.
+`schedule install` creates the current user's Windows task. It runs a
+read-only sync, a local digest if the cache changed, and a maintenance draft.
+It does not push or merge. On other systems, use `show`.
 
 `actor use` remembers who is writing on this computer. Later writes stamp
 `actor:` when that file exists. `account add` is a shared-server sign-in for

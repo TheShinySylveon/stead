@@ -20,6 +20,7 @@ Local files only. No network.
 - objects whose `project:` or `repo:` does not resolve
 - objects whose `updated` date is older than 30 days, unless status is `done`
   or `archived`
+- objects of one type that share a title (a duplicate sweep)
 
 Private notes may appear in the bundle. The draft stays on disk.
 
@@ -33,4 +34,4 @@ Private notes may appear in the bundle. The draft stays on disk.
 
 - Edit `context/` or `inbox/` during assembly.
 - Create an issue, comment, label, or pull request.
-- Guess a missing relation.
+- Guess a missing relation, or silently merge two duplicates.

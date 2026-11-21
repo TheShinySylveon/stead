@@ -561,11 +561,20 @@ def assemble_maintenance(root: Path, factory: str = MAINTENANCE_FACTORY,
     inbox = _inbox_notes(root)
     broken = []
     stale = []
+    seen: dict[tuple[str, str], list[str]] = {}
     for otype in ("project", "task", "document", "meeting", "repo", "contribution"):
         for path, meta, _body in objects.iter_objects(root, otype):
             _relation_flags(root, path, meta, broken)
             _stale_flag(path, meta, today, stale)
-    counts = {"inbox": len(inbox), "broken": len(broken), "stale": len(stale)}
+            title = (meta.get("title") or "").strip().lower()
+            if title:
+                seen.setdefault((otype, title), []).append(meta.get("id") or path.name)
+    duplicates = [
+        f"- {otype} {title!r}: {', '.join(ids)}"
+        for (otype, title), ids in sorted(seen.items()) if len(ids) > 1
+    ]
+    counts = {"inbox": len(inbox), "broken": len(broken), "stale": len(stale),
+              "duplicates": len(duplicates)}
     conn = db.connect(root)
     try:
         version, prompt_text = _production_prompt(conn, root, factory)
@@ -580,6 +589,7 @@ def assemble_maintenance(root: Path, factory: str = MAINTENANCE_FACTORY,
             f"- inbox notes: {counts['inbox']}",
             f"- broken relations: {counts['broken']}",
             f"- stale objects: {counts['stale']}",
+            f"- duplicate titles: {counts['duplicates']}",
             "",
             "Assembly did not edit these files. It did not post, push, or merge.",
             "",
@@ -590,6 +600,8 @@ def assemble_maintenance(root: Path, factory: str = MAINTENANCE_FACTORY,
         parts.extend(broken or ["_None._"])
         parts.extend(["", "## Stale"])
         parts.extend(stale or ["_None._"])
+        parts.extend(["", "## Duplicates"])
+        parts.extend(duplicates or ["_None._"])
         bundle = "\n".join(parts) + "\n"
         assembled_prompt = prompt_text.rstrip() + "\n\n---\n\n" + bundle
         (run_dir / "bundle.md").write_text(bundle, encoding="utf-8")

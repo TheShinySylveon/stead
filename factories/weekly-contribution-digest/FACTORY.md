@@ -17,8 +17,9 @@ prompts, evals, run logs, human verdicts).
   Scheduler / Hermes cron job invokes:
   `python -m stead factory run --factory weekly-contribution-digest --shadow`
   (equivalently: `python -m stead digest`).
-- **Event-driven (later):** after a sync that changed contribution state.
-- **Now:** manual invocation only; works fully offline from the cached files.
+- **Event-driven:** `stead sync github --digest` assembles the digest only
+  when the cache changed. It still does not post.
+- **Manual:** `stead digest` works fully offline from the cached files.
 
 ## Inputs
 

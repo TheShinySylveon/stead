@@ -6,12 +6,14 @@ import json
 import tempfile
 import threading
 import unittest
+import unittest.mock
 import urllib.error
 import urllib.request
 from datetime import date, timedelta
 from pathlib import Path
 
-from ctx import config, db, factory, frontmatter, ui
+from ctx import cli, config, db, factory, frontmatter, ui
+from ctx.schedule import install, show
 from ctx.inbox_import import import_file
 from ctx.scaffold import ScaffoldError, scaffold
 
@@ -39,13 +41,37 @@ class MaintenanceTest(unittest.TestCase):
         before = path.read_text(encoding="utf-8")
         db.init_db(root)
         info = factory.assemble_maintenance(root)
-        self.assertEqual(info["counts"], {"inbox": 1, "broken": 1, "stale": 1})
+        self.assertEqual(info["counts"], {"inbox": 1, "broken": 1, "stale": 1, "duplicates": 0})
         bundle = (root / info["run_dir"] / "bundle.md").read_text(encoding="utf-8")
         self.assertIn("project-missing", bundle)
         self.assertIn("waiting.md", bundle)
         self.assertEqual(path.read_text(encoding="utf-8"), before)
         self.assertTrue(note.is_file())
         self.assertIn("did not edit", bundle)
+        self.assertIn("## Duplicates", bundle)
+
+
+    def test_two_titles_are_flagged_as_duplicates(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        prompt = root / "factories/context-maintenance/prompts"
+        prompt.mkdir(parents=True)
+        (root / "factories/context-maintenance/FACTORY.md").write_text("# F\n", encoding="utf-8")
+        (prompt / "v1.md").write_text("Draft.\n", encoding="utf-8")
+        folder = root / "context/tasks"
+        folder.mkdir(parents=True)
+        for name, task_id in (("one", "task-dup"), ("two", "task-dup-2")):
+            meta = {"id": task_id, "type": "task", "title": "Same title",
+                    "created": "2026-11-21", "updated": "2026-11-21", "status": "to-do"}
+            (folder / f"{name}.md").write_text(
+                frontmatter.dumps(meta, "# Same title\n"), encoding="utf-8")
+        db.init_db(root)
+        info = factory.assemble_maintenance(root)
+        self.assertEqual(info["counts"]["duplicates"], 1)
+        bundle = (root / info["run_dir"] / "bundle.md").read_text(encoding="utf-8")
+        self.assertIn("task-dup", bundle)
+        self.assertIn("task-dup-2", bundle)
 
 
 class ScaffoldAndImportTest(unittest.TestCase):
@@ -72,6 +98,36 @@ class ScaffoldAndImportTest(unittest.TestCase):
         self.assertIn("Ship notes", text)
         self.assertIn("The notes are ready.", text)
         self.assertFalse((root / "context/contributions").exists())
+
+
+class ScheduleAndSyncTest(unittest.TestCase):
+    def test_weekly_command_does_not_push_or_merge(self) -> None:
+        text = show(Path("C:/notes"))
+        self.assertIn("sync github --limit 30 --digest", text)
+        self.assertIn("context-maintenance", text)
+        self.assertNotIn("factory publish", text)
+        self.assertNotIn("factory merge", text)
+        calls = []
+        install(Path("C:/notes"), runner=lambda argv: calls.append(argv) or "")
+        self.assertEqual(calls[0][0], "schtasks")
+        self.assertNotIn("push", calls[0])
+        self.assertNotIn("merge", calls[0])
+
+    def test_digest_flag_assembles_only_after_a_change(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        unchanged = {"offline": False, "fetched": 0, "new": 0, "updated": 0,
+                     "repos": 0, "contributions": 0}
+        with unittest.mock.patch("ctx.sync.sync_github", return_value=unchanged), \
+             unittest.mock.patch("ctx.cli.cmd_digest") as digest:
+            self.assertEqual(cli.cmd_sync_github(root, digest=True), 0)
+            digest.assert_not_called()
+        changed = dict(unchanged, new=1)
+        with unittest.mock.patch("ctx.sync.sync_github", return_value=changed), \
+             unittest.mock.patch("ctx.cli.cmd_digest", return_value=0) as digest:
+            self.assertEqual(cli.cmd_sync_github(root, digest=True), 0)
+            digest.assert_called_once()
 
 
 class HookTest(unittest.TestCase):

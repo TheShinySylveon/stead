@@ -128,6 +128,9 @@ python -m stead contribution set ID [--state S] [--ci C] [--review R] [--role R]
 
 python -m stead sync github [--author @me] [--limit N]   # READ-ONLY refresh via gh
 python -m stead sync github --offline                    # no network: re-index cache
+python -m stead sync github --digest                     # assemble only if the cache changed
+python -m stead schedule show                            # the Friday local jobs
+python -m stead schedule install                         # Windows current user
 
 python -m stead run log --factory F --task REF --prompt-version V [--output TEXT] [--verdict V]
 python -m stead prompt list --factory F

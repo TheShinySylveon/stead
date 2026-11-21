@@ -93,13 +93,15 @@ never go in `context/`.
 
 ### Factories
 
-Three factories assemble a prompt and stop. `--generate` may draft
+Four factories assemble a prompt and stop. `--generate` may draft
 `output.md`. Assembly does not post, push, or merge.
 
 - `weekly-contribution-digest` — PRs, reviews, claimed issues, CI. Never posts.
 - `weekly-project-status` — one project's tasks, documents, and meetings.
 - `feature-builder` — planning-first, always. `method` selects tooling only:
   `spec-kit` (default, optional `specify` CLI) or `builtin` markdown.
+- `context-maintenance` — inbox, broken relations, stale objects, duplicate
+  titles. Drafts a triage note. Does not edit the files.
 
 feature-builder has two knobs, per repo. A run may ask for less. It may not
 ask for more. Merge is never inherited.
@@ -180,7 +182,11 @@ Built:
 - `stead inbox import` copies a local `.eml`, `.ics`, `.md`, or `.txt` file
   into `inbox/`. No network. A person still triages it.
 - `stead hook set` creates a token. `POST /hook` writes one inbox note. It
-  does not run a factory. A scheduler is still whatever calls the CLI.
+  does not run a factory.
+- `stead schedule show` / `install` wire the weekly read-only sync, the
+  digest when the cache changed, and the maintenance draft.
+- `stead sync github --digest` is the event-driven path. It assembles only
+  after a change, and it does not post.
 
 Decided against:
 

@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- `stead schedule show` / `install` wire the weekly read-only sync, the
+  changed-cache digest, and the maintenance draft.
+- `stead sync github --digest` assembles only after the cache changes.
+- `context-maintenance` also sweeps duplicate titles.
 - The container package `ghcr.io/theshinysylveon/stead` is public.
 - `context-maintenance` drafts a triage note and does not edit the files.
   `stead factory new` scaffolds a factory. `stead inbox import` and `POST /hook`

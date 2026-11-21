@@ -30,7 +30,7 @@ A fresh checkout shows Welcome instead.
 - Markdown files with flat YAML frontmatter. That is the source of truth.
 - A SQLite index (`state.db`) that `stead init` can rebuild. It is not shared.
 - A local cockpit in the browser, or the same actions from the CLI.
-- Three factories that assemble a prompt. `--generate` drafts with the model
+- Four factories that assemble a prompt. `--generate` drafts with the model
   you configure. The default still calls nothing.
 - A first-run choice: this computer, or a shared Docker server where each person signs in.
 
@@ -77,7 +77,7 @@ its own index. [docs/multi-actor.md](docs/multi-actor.md).
 
 ## Factories
 
-A factory is specific, shared, and scrutinized. Stead ships three. Each run
+A factory is specific, shared, and scrutinized. Stead ships four. Each run
 writes `bundle.md`, `prompt.md`, and `run.json` under `factories/<name>/runs/`
 (gitignored). Add `--generate` to also write `output.md` from your model.
 Hand `prompt.md` to any agent if you would rather not. Record the verdict
@@ -88,6 +88,7 @@ yourself.
 | `weekly-contribution-digest` | PRs in flight, reviews waiting, claimed issues, CI |
 | `weekly-project-status` | A status note from one project's tasks, docs, and meetings |
 | `feature-builder` | A plan and proposed diff from a feature spec you authored |
+| `context-maintenance` | Inbox, broken relations, stale objects, duplicate titles |
 
 `feature-builder` is planning-first on every run. `method: spec-kit` (the
 default) uses the optional `specify` CLI when you onboard a code directory.
@@ -101,7 +102,9 @@ and only when the repo file says `reach: merge` and the checks are green.
 
 ```bash
 python -m stead sync github --limit 30    # read-only, needs gh
+python -m stead sync github --digest      # assemble only if the cache changed
 python -m stead digest                    # shadow digest
+python -m stead schedule show             # the Friday local jobs
 ```
 
 More: [docs/factories.md](docs/factories.md) and

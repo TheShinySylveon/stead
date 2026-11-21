@@ -335,7 +335,7 @@ def cmd_contribution_set(root: Path, contrib_id: str, state: str | None = None,
 # --- sync github ----------------------------------------------------------------
 
 def cmd_sync_github(root: Path, author: str = "@me", limit: int = 30,
-                    offline: bool = False) -> int:
+                    offline: bool = False, *, digest: bool = False) -> int:
     result = sync.sync_github(root, author=author, limit=limit, offline=offline)
     if result["offline"]:
         print(f"sync github --offline: no network used; re-indexed local cache "
@@ -344,6 +344,13 @@ def cmd_sync_github(root: Path, author: str = "@me", limit: int = 30,
         print(f"sync github: fetched {result['fetched']} items via gh (read-only); "
               f"{result['new']} new, {result['updated']} updated contribution files")
         print(f"index now: {result['repos']} repos, {result['contributions']} contributions")
+    changed = int(result.get("new") or 0) + int(result.get("updated") or 0)
+    if digest and changed:
+        print("cache changed. assembling the digest. nothing is posted.")
+        return cmd_digest(root)
+    if digest:
+        print("cache unchanged. digest not assembled.")
+        return 0
     print("next: python -m stead factory run --factory weekly-contribution-digest --shadow")
     return 0
 
@@ -522,7 +529,8 @@ def cmd_factory_run(root: Path, factory_name: str, project: str | None,
         print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
               f"prompt {info['prompt_version']}")
         c = info["counts"]
-        print(f"bundle: {c['inbox']} inbox, {c['broken']} broken relations, {c['stale']} stale")
+        print(f"bundle: {c['inbox']} inbox, {c['broken']} broken relations, "
+              f"{c['stale']} stale, {c['duplicates']} duplicate titles")
         print(f"run dir: {info['run_dir']}/ (bundle.md, prompt.md, run.json)")
         print("no files were edited. Nothing was posted, pushed, or merged.")
         _print_draft(info, generate)
@@ -664,6 +672,9 @@ def build_parser() -> argparse.ArgumentParser:
     inbox = sub.add_parser("inbox", help="unsorted capture").add_subparsers(dest="sub", required=True)
     imported = inbox.add_parser("import", help="copy a local .eml, .ics, .md, or .txt file into inbox/")
     imported.add_argument("path")
+    sched = sub.add_parser("schedule", help="the weekly local jobs").add_subparsers(dest="sub", required=True)
+    sched.add_parser("show", help="print the Friday command. Does not install it.")
+    sched.add_parser("install", help="Windows only. Current user, Friday 16:00. No remote writes.")
     hook = sub.add_parser("hook", help="loopback or shared-server capture webhook").add_subparsers(dest="sub", required=True)
     hook.add_parser("set", help="create a webhook token. Printed once. Stored in stead.json.")
     hook.add_parser("show", help="say whether a webhook token is set. Never prints it.")
@@ -674,6 +685,8 @@ def build_parser() -> argparse.ArgumentParser:
     sg.add_argument("--limit", type=int, default=30)
     sg.add_argument("--offline", action="store_true",
                     help="skip network; re-index existing contribution files")
+    sg.add_argument("--digest", action="store_true",
+                    help="if the cache changed, assemble the digest. Nothing is posted.")
 
     model = sub.add_parser("model", help="the rented model factories may draft with").add_subparsers(dest="sub", required=True)
     model.add_parser("show", help="show the configured model. Never prints the key.")
@@ -849,7 +862,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{meta.get('id')}  {meta.get('kind', 'human')}  {meta.get('title')}")
         return 0
     if args.command == "sync" and args.sub == "github":
-        return cmd_sync_github(root, args.author, args.limit, args.offline)
+        return cmd_sync_github(root, args.author, args.limit, args.offline, digest=args.digest)
     if args.command == "model":
         from ctx import models
         try:
@@ -912,6 +925,18 @@ def main(argv: list[str] | None = None) -> int:
         for item in written:
             print(f"inbox {item['name']}")
         print("triage into context/. Nothing was posted.")
+        return 0
+    if args.command == "schedule":
+        from ctx.schedule import ScheduleError, install, show
+        if args.sub == "show":
+            print(show(root))
+            return 0
+        try:
+            name = install(root)
+        except ScheduleError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"installed {name}")
+        print("Friday 16:00. Read-only sync, local drafts. Nothing is posted.")
         return 0
     if args.command == "hook":
         from ctx.config import hook_token, set_hook_token
@@ -983,7 +1008,8 @@ def main(argv: list[str] | None = None) -> int:
         for item in report["ran"]:
             print(f"assembled {item['id']} reach {item['reach']} -> {item['run_dir']}")
             if item.get("remote") == "not-implemented":
-                print("  remote step is not implemented. Nothing was pushed, opened, or merged.")
+                print("  assembled only. To open a pull request from an isolated branch:")
+                print(f"  python -m stead factory publish --contribution {item['id']}")
         for item in report["skipped"]:
             print(f"skipped {item['id']}: {item['reason']}")
         return 0

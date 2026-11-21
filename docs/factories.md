@@ -32,7 +32,7 @@ python -m stead run log --factory F --task REF --prompt-version vN \
 
 The cockpit can assemble the same shadow run and approve or reject it.
 
-## The three factories
+## The four factories
 
 ### weekly-contribution-digest
 
@@ -88,7 +88,8 @@ merge.
 
 A run may ask for less than the repo ceiling. It may not ask for more.
 `context-maintenance` drafts a triage note from the inbox, broken relations,
-and objects older than 30 days. Assembly does not edit those files.
+objects older than 30 days, and titles that appear twice. Assembly does not
+edit those files.
 
 ```bash
 python -m stead factory run --factory context-maintenance --shadow
