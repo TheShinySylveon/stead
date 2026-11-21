@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The container package `ghcr.io/theshinysylveon/stead` is public.
 - `context-maintenance` drafts a triage note and does not edit the files.
   `stead factory new` scaffolds a factory. `stead inbox import` and `POST /hook`
   capture into the inbox only.

@@ -54,10 +54,7 @@ hashes.
 
 The published image is `ghcr.io/theshinysylveon/stead`. `main` pushes `latest`
 and the commit sha after the tests pass. Pull requests build the image and
-do not push it. GitHub creates the package private. The first time, set it
-public at
-[package settings](https://github.com/users/TheShinySylveon/packages/container/stead/settings).
-After that, a pull does not need a token.
+do not push it. The package is public. A pull does not need a token.
 
 ```bash
 docker compose pull

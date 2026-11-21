@@ -89,7 +89,7 @@ never go in `context/`.
   token only starts a server that has no accounts yet. Hashes live in the
   private volume, not in git.
 - The image is published from `main` to `ghcr.io/theshinysylveon/stead`.
-  GitHub creates the package private. The owner sets it public once.
+  The package is public. A pull does not need a token.
 
 ### Factories
 
@@ -191,11 +191,8 @@ Decided against:
 - Auto-merge. `stead factory merge` stays an explicit command. A factory run
   does not call it.
 
-Still a person, once:
-
-- GitHub creates `ghcr.io/theshinysylveon/stead` private. The Actions token
-  cannot change that visibility. Set the package public at
-  https://github.com/users/TheShinySylveon/packages/container/stead/settings
+The container package is public. `docker pull ghcr.io/theshinysylveon/stead:latest`
+does not need a token.
 
 ## 7. Principles
 
