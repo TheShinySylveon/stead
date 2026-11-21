@@ -198,6 +198,7 @@ def write_contribution(root: Path, item: dict, login: str | None, today: str) ->
                  "state": item["state"], "ci": item["ci"], "review": item["review"],
                  "visibility": "public"})
     meta.setdefault("role", item["role"])  # respect a manually set role
+    meta.setdefault("method", "spec-kit")  # user-owned choice; sync never overrides it
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
     return path, is_new

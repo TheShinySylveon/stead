@@ -322,7 +322,7 @@ class TestShippedFactoryArtifacts(unittest.TestCase):
 
     def test_evals_present_and_valid(self) -> None:
         evals = sorted((self.ROOT / "factories/feature-builder/evals").glob("*.json"))
-        self.assertEqual(len(evals), 3)
+        self.assertEqual(len(evals), 6)
         ids = set()
         for path in evals:
             case = json.loads(path.read_text(encoding="utf-8"))
@@ -331,7 +331,10 @@ class TestShippedFactoryArtifacts(unittest.TestCase):
             self.assertEqual(case["factory"], "feature-builder")
             ids.add(case["id"])
         self.assertEqual(ids, {"eval-feature-clear-spec", "eval-feature-vague-spec",
-                               "eval-feature-duplicate-work"})
+                               "eval-feature-duplicate-work",
+                               "eval-feature-spec-kit-method",
+                               "eval-feature-builtin-method",
+                               "eval-feature-spec-kit-vague"})
 
     def test_example_spec_seed_is_buildable(self) -> None:
         path = self.ROOT / "context/contributions/example-org-example-repo-issue-201.md"

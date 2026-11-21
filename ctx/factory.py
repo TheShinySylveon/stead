@@ -241,6 +241,19 @@ def assemble_digest(root: Path, factory: str = DIGEST_FACTORY,
 
 FEATURE_BUILDER_FACTORY = "feature-builder"
 
+# feature-builder is ALWAYS spec-driven and planning-first: no implementation
+# code is written before the specification, plan and tasks are produced and
+# reviewed. `method` selects only the TOOLING, never whether planning happens:
+#   spec-kit  (DEFAULT) = Spec-Driven Development via GitHub Spec Kit (an
+#     EXTERNAL, OPTIONAL tool, like gh): the coding agent runs the SDD phases
+#     in the target repo (constitution->specify->plan->tasks->implement->converge).
+#   builtin = the SAME SDD + planning-first phases, hand-rolled as markdown
+#     (no specify CLI) when it isn't installed or wanted.
+# ctx itself never imports or invokes specify/uv; assembly is deterministic,
+# local-only and identical for both tooling choices.
+CONTRIB_METHODS = ("builtin", "spec-kit")
+DEFAULT_METHOD = "spec-kit"
+
 # Deterministic spec-quality heuristics (no LLM): a buildable spec needs a
 # substantive description and an `## Acceptance criteria` checklist.
 _AC_HEADER = re.compile(r"^##\s+acceptance\s+criteria\s*$", re.IGNORECASE | re.MULTILINE)
@@ -331,6 +344,11 @@ def assemble_feature_build(root: Path, contribution_ref: str,
     repo_path, repo_meta, repo_body = repo_found
     repo_id = repo_meta["id"]
 
+    method = spec_meta.get("method", DEFAULT_METHOD)
+    if method not in CONTRIB_METHODS:
+        raise SystemExit(f"invalid method {method!r} on {spec_meta.get('id')}; "
+                         f"choose from {CONTRIB_METHODS}")
+
     description, criteria = split_spec(spec_body)
     flags = spec_flags(description, criteria)
 
@@ -361,7 +379,16 @@ def assemble_feature_build(root: Path, contribution_ref: str,
         parts = [
             f"# Feature build bundle — {spec_meta.get('title', spec_path.stem)}",
             f"<!-- factory: {FEATURE_BUILDER_FACTORY} | prompt: {version} "
-            f"| mode: {mode} | created: {created} -->",
+            f"| mode: {mode} | method: {method} | created: {created} -->",
+            "",
+            "## Method",
+            method,
+            "",
+            "The production prompt branches on this value. This factory is ALWAYS "
+            "spec-driven and planning-first; `method` selects only the tooling — "
+            "spec-kit = Spec-Driven Development via the external, optional Spec Kit "
+            "toolchain; builtin = the same SDD phases hand-rolled as markdown (no "
+            "specify CLI). Assembly is deterministic and local-only for both.",
             "",
             "## Build target (feature spec)",
             _contribution_entry(spec_path, spec_meta, spec_body, root),
@@ -422,6 +449,7 @@ def assemble_feature_build(root: Path, contribution_ref: str,
             "project": None,
             "prompt_version": version,
             "mode": mode,
+            "method": method,
             "created": created,
             "counts": {
                 "acceptance_criteria": len(criteria),

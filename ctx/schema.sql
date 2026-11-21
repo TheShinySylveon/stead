@@ -58,6 +58,8 @@ CREATE TABLE contributions (
                CHECK (ci IN ('pending', 'pass', 'fail', 'none')),
     review     TEXT NOT NULL DEFAULT 'none'
                CHECK (review IN ('requested', 'approved', 'changes', 'none')),
+    method     TEXT NOT NULL DEFAULT 'spec-kit'
+               CHECK (method IN ('builtin', 'spec-kit')),
     visibility TEXT NOT NULL DEFAULT 'public',
     path       TEXT NOT NULL,             -- repo-relative markdown path
     created    TEXT NOT NULL,             -- ISO date

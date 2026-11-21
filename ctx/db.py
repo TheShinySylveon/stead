@@ -58,12 +58,12 @@ def index_contribution(conn: sqlite3.Connection, root: Path, path: Path, meta: d
     """Upsert one context/contributions/ file into the contributions index."""
     conn.execute(
         "INSERT OR REPLACE INTO contributions "
-        "(id, title, repo, kind, number, url, role, state, ci, review, visibility, path, created, updated) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "(id, title, repo, kind, number, url, role, state, ci, review, method, visibility, path, created, updated) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (meta["id"], meta["title"], meta.get("repo", ""), meta.get("kind", "issue"),
          int(meta.get("number", 0)), meta.get("url"), meta.get("role", "author"),
          meta.get("state", "open"), meta.get("ci", "none"), meta.get("review", "none"),
-         meta.get("visibility", "public"),
+         meta.get("method", "spec-kit"), meta.get("visibility", "public"),
          path.relative_to(root).as_posix(),
          meta.get("created", today), meta.get("updated", today)),
     )
@@ -89,18 +89,28 @@ def init_db(root: Path) -> dict[str, int]:
         conn.executescript((PKG_DIR / "schema.sql").read_text(encoding="utf-8"))
         today = date.today().isoformat()
 
-        # Seed v1 = production for every factory that ships prompts/v1.md
-        # (weekly-contribution-digest is the first factory; weekly-project-status
-        # remains valid for own projects).
+        # Seed prompt versions from factories/*/prompts/v*.md. The HIGHEST
+        # version is production — the natural, current flow (e.g. v2 for
+        # feature-builder's spec-driven / planning-first prompt); lower versions
+        # are retired. Switch or roll back explicitly with `ctx prompt promote`.
         n_prompts = 0
         fdirs = sorted((root / "factories").iterdir()) if (root / "factories").is_dir() else []
         for fdir in fdirs:
-            v1 = fdir / "prompts" / "v1.md"
-            if fdir.is_dir() and v1.exists():
+            pdir = fdir / "prompts"
+            if not (fdir.is_dir() and pdir.is_dir()):
+                continue
+            paths = sorted(pdir.glob("v*.md"))
+            if not paths:
+                continue
+            latest = max(paths, key=lambda p: int(p.stem[1:]))
+            for prompt_path in paths:
+                version = prompt_path.stem
+                status = "production" if prompt_path == latest else "retired"
                 conn.execute(
                     "INSERT INTO prompt_versions (factory, version, status, path, created) "
-                    "VALUES (?, 'v1', 'production', ?, ?)",
-                    (fdir.name, v1.relative_to(root).as_posix(), today),
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (fdir.name, version, status,
+                     prompt_path.relative_to(root).as_posix(), today),
                 )
                 n_prompts += 1
 

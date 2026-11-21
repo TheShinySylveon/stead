@@ -21,6 +21,7 @@ CONTRIB_ROLES = ("author", "assignee", "reviewer")
 CONTRIB_STATES = ("open", "closed", "merged")
 CONTRIB_CI = ("pending", "pass", "fail", "none")
 CONTRIB_REVIEW = ("requested", "approved", "changes", "none")
+CONTRIB_METHODS = factory.CONTRIB_METHODS  # builtin | spec-kit (single source of truth)
 
 
 def _slugify(text: str) -> str:
@@ -205,13 +206,14 @@ def cmd_repo_list(root: Path, kind: str | None = None) -> int:
 def cmd_contribution_add(root: Path, title: str, repo: str, kind: str, number: int,
                          url: str | None = None, role: str = "author",
                          state: str = "open", ci: str = "none",
-                         review: str = "none") -> int:
+                         review: str = "none", method: str = "spec-kit") -> int:
     db.require_db(root)
     for label, value, allowed in (("kind", kind, CONTRIB_KINDS),
                                   ("role", role, CONTRIB_ROLES),
                                   ("state", state, CONTRIB_STATES),
                                   ("ci", ci, CONTRIB_CI),
-                                  ("review", review, CONTRIB_REVIEW)):
+                                  ("review", review, CONTRIB_REVIEW),
+                                  ("method", method, CONTRIB_METHODS)):
         if value not in allowed:
             raise SystemExit(f"invalid {label} {value!r}; choose from {allowed}")
     found = objects.find(root, "repo", repo)
@@ -230,7 +232,7 @@ def cmd_contribution_add(root: Path, title: str, repo: str, kind: str, number: i
     meta = {"id": f"contribution-{stem}", "type": "contribution", "title": title,
             "created": today, "updated": today, "repo": repo_id, "kind": kind,
             "number": number, "role": role, "state": state, "ci": ci,
-            "review": review, "visibility": "public"}
+            "review": review, "method": method, "visibility": "public"}
     if url:
         meta["url"] = url
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -280,19 +282,21 @@ def cmd_contribution_list(root: Path, repo: str | None = None, kind: str | None 
 
 def cmd_contribution_set(root: Path, contrib_id: str, state: str | None = None,
                          ci: str | None = None, review: str | None = None,
-                         role: str | None = None) -> int:
+                         role: str | None = None, method: str | None = None) -> int:
     db.require_db(root)
     updates = {}
     for label, value, allowed in (("state", state, CONTRIB_STATES),
                                   ("ci", ci, CONTRIB_CI),
                                   ("review", review, CONTRIB_REVIEW),
-                                  ("role", role, CONTRIB_ROLES)):
+                                  ("role", role, CONTRIB_ROLES),
+                                  ("method", method, CONTRIB_METHODS)):
         if value is not None:
             if value not in allowed:
                 raise SystemExit(f"invalid {label} {value!r}; choose from {allowed}")
             updates[label] = value
     if not updates:
-        raise SystemExit("nothing to set — pass at least one of --state/--ci/--review/--role")
+        raise SystemExit("nothing to set — pass at least one of "
+                         "--state/--ci/--review/--role/--method")
     found = objects.find(root, "contribution", contrib_id)
     if found is None:
         raise SystemExit(f"contribution not found: {contrib_id!r}")
@@ -463,6 +467,10 @@ def cmd_feature_build(root: Path, contribution: str, live: bool = False) -> int:
     c = info["counts"]
     print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
           f"prompt {info['prompt_version']} for {info['contribution']}")
+    print(f"method: {info['method']}"
+          + (" (Spec-Driven Development via the external, optional specify-cli "
+             "toolchain — planning-before-code is unconditional)"
+             if info["method"] == "spec-kit" else " (same SDD phases, hand-rolled markdown — no specify CLI)"))
     print(f"bundle: {c['acceptance_criteria']} acceptance criteria, "
           f"{c['related_documents']} related documents, "
           f"{c['related_contributions']} related cached contributions (duplicate sweep)")
@@ -555,6 +563,9 @@ def build_parser() -> argparse.ArgumentParser:
     ca.add_argument("--state", default="open", choices=CONTRIB_STATES)
     ca.add_argument("--ci", default="none", choices=CONTRIB_CI)
     ca.add_argument("--review", default="none", choices=CONTRIB_REVIEW)
+    ca.add_argument("--method", default="spec-kit", choices=CONTRIB_METHODS,
+                    help="feature-builder tooling (default: spec-kit; planning "
+                         "before code is unconditional in both)")
     cl = contrib.add_parser("list", help="list contributions")
     cl.add_argument("--repo")
     cl.add_argument("--kind", choices=CONTRIB_KINDS)
@@ -566,6 +577,7 @@ def build_parser() -> argparse.ArgumentParser:
     cs.add_argument("--ci", choices=CONTRIB_CI)
     cs.add_argument("--review", choices=CONTRIB_REVIEW)
     cs.add_argument("--role", choices=CONTRIB_ROLES)
+    cs.add_argument("--method", choices=CONTRIB_METHODS)
 
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
@@ -631,12 +643,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.sub == "add":
             return cmd_contribution_add(root, args.title, args.repo, args.kind,
                                         args.number, args.url, args.role,
-                                        args.state, args.ci, args.review)
+                                        args.state, args.ci, args.review,
+                                        args.method)
         if args.sub == "list":
             return cmd_contribution_list(root, args.repo, args.kind, args.role, args.state)
         if args.sub == "set":
             return cmd_contribution_set(root, args.id, args.state, args.ci,
-                                        args.review, args.role)
+                                        args.review, args.role, args.method)
     if args.command == "sync" and args.sub == "github":
         return cmd_sync_github(root, args.author, args.limit, args.offline)
     if args.command == "digest":
