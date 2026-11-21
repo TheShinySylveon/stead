@@ -95,9 +95,10 @@ state.db             <- GITIGNORED, rebuildable operational index (ctx init)
 - Do not edit `PLAN.md`. Do not delete run logs under `factories/*/runs/`.
 - Commit meaningful changes with git; the history is the audit trail.
 
-## CLI reference (run from the repo root, Python 3.14+, stdlib only)
+## CLI reference (run from the repo root, Python 3.11+, stdlib only)
 
 ```
+python3 -m ctx version                       # print 0.0.1
 python3 -m ctx init                          # rebuild state.db from schema.sql + files
 python3 -m ctx task add --title T --project P [--status to-do]
 python3 -m ctx task list [--project P] [--status S]

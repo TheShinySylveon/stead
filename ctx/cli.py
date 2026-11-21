@@ -532,6 +532,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--root", default=".", help="repo root (default: current directory)")
     sub = p.add_subparsers(dest="command", required=True)
 
+    sub.add_parser("version", help="print the Stead version")
     sub.add_parser("init", help="rebuild state.db from schema.sql + markdown (idempotent)")
 
     task = sub.add_parser("task", help="manage the task queue").add_subparsers(dest="sub", required=True)
@@ -671,6 +672,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     args = build_parser().parse_args(argv)
     root = Path(args.root).resolve()
+    if args.command == "version":
+        from ctx import __version__
+        print(__version__)
+        return 0
     if args.command == "init":
         return cmd_init(root)
     if args.command == "task":

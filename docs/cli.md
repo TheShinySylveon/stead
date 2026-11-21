@@ -4,6 +4,7 @@ Run from the repository root. Python standard library only.
 
 ```bash
 python3 -m ctx
+python3 -m ctx version
 python3 -m ctx --help
 python3 -m ctx <command> --help
 ```
