@@ -1,14 +1,18 @@
 # Cockpit
 
-The cockpit is a browser page served by this app, on your machine only.
+The cockpit is a browser page served by Stead. The command is `ctx`.
 
 ```bash
 python3 -m ctx ui
 python3 -m ctx ui --no-browser --port 8765
 ```
 
-The server refuses any address except loopback (`127.0.0.1`, `localhost`,
-`::1`). The page has no external fonts or scripts. It works offline.
+On this computer the server refuses any address except loopback
+(`127.0.0.1`, `localhost`, `::1`). A shared server is different: it is the
+Docker image, or `ctx ui --deploy`, and it will not start without an access
+token. See [Deploy](deploy.md).
+
+The page has no external fonts or scripts. It works offline.
 
 Writes go through the same rules as the CLI. Markdown stays the source of
 truth. The page never calls a model, and it never pushes or opens a pull
@@ -17,7 +21,8 @@ request.
 ## First visit
 
 If `context/projects/` is empty, you get Welcome instead of the normal
-navigation. Title, optional GitHub URL, Start. See [First run](first-run.md).
+navigation. Title, optional GitHub URL, and this computer or a shared server.
+See [First run](first-run.md).
 
 ## Pages
 
@@ -26,10 +31,11 @@ navigation. Title, optional GitHub URL, Start. See [First run](first-run.md).
 | Home | What needs you, projects, recent factory runs. Approve or reject a pending run, with an optional note. |
 | Tasks | Add a task, move its status. The title opens the note. |
 | Projects | Onboard a later project (repo + constitution, optional Spec Kit). Or add a project with no repo. Change a project's status. |
-| Library | Add and edit documents and meetings. |
+| Library | Add and edit documents and meetings. Rename them. The id does not change. |
 | Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind and status. Add a local issue or feature spec. |
 | Inbox | Drop a note. File it as a document, meeting, or task, or delete it. |
 | Factories | Assemble a shadow run. The prompt is left on disk for an agent. |
+| Settings | This computer or a shared server. Rotate the access token. Add actors (`human` or `agent`). |
 
 Opening a project, task, document, or meeting shows the note and an editor.
 Saving updates the body and the `updated` date. It does not change `created`

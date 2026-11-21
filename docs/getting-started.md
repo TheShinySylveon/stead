@@ -47,7 +47,7 @@ files still have your notes. `python3 -m ctx init` rebuilds the index.
 
 | Path | What it is |
 |---|---|
-| `context/` | Your notes. Empty until the first run. |
+| `context/` | Your notes. Empty until the first run. Includes `actors/` once you add people or agents. |
 | `inbox/` | Unsorted capture. File it into `context/` or delete it. |
 | `examples/context/` | Samples. Not part of your data. |
 | `factories/` | The three workflows: digest, project status, feature builder. |

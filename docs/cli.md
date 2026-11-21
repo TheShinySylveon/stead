@@ -14,15 +14,22 @@ not standing in one.
 ## First run and setup
 
 ```bash
-python3 -m ctx ui
-python3 -m ctx welcome --title "My Project" [--url https://github.com/owner/name]
+python3 -m ctx ui [--no-browser] [--port N] [--deploy]
+python3 -m ctx welcome --title "My Project" [--url URL] [--deployment single|multi]
 python3 -m ctx init
 ```
 
-`ui` opens the cockpit. On an empty checkout it shows Welcome.
+`ui` opens the cockpit. On an empty checkout it shows Welcome. Without
+`--deploy` it stays on loopback, even if `stead.json` says multi.
+`--deploy` is the shared server. It refuses to start without an access token.
+Prefer Docker. See [Deploy](deploy.md).
+
 `welcome` creates one project and a repo record. It does not run Spec Kit.
-`init` rebuilds `state.db`. If there are no projects, it prints the two
-commands above.
+`--deployment multi` prints an access token once and tells you how to start
+the container. It does not open the port on this computer.
+
+`init` rebuilds `state.db`. If there are no projects, it prints the welcome
+commands.
 
 Full project plus constitution, optional `specify init`:
 
@@ -60,6 +67,9 @@ Omitted, it is `spec-kit`.
 ## Status and GitHub
 
 ```bash
+python3 -m ctx actor add --title "Ada" --kind human|agent
+python3 -m ctx actor list
+
 python3 -m ctx status PROJECT
 python3 -m ctx sync github [--author @me] [--limit N]
 python3 -m ctx sync github --offline

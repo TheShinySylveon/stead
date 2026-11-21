@@ -59,9 +59,10 @@ pull request. See [Factories](factories.md).
 
 ## Several writers
 
-Humans and agents share a checkout through git. Each machine keeps its own
-`state.db`. SQLite is not the multi-user database, and it is not being
-replaced. See [Several people and agents](multi-actor.md).
+Humans and agents share markdown through git, or they share one Docker
+server with an access token. Each clone keeps its own `state.db`. The
+container keeps one index for that server. SQLite is not being replaced.
+See [Several people and agents](multi-actor.md) and [Deploy](deploy.md).
 
 ## What this is not
 

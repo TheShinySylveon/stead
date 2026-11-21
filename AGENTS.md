@@ -138,17 +138,20 @@ cron/Task Scheduler/systemd timer can invoke the CLI.
 
 ## Local cockpit
 
-`python3 -m ctx ui` opens a browser on `127.0.0.1` (loopback only; `--no-browser`
-to serve without opening one). It reads the same markdown and writes through
-the same handlers as the CLI: projects, tasks, documents, meetings, and repos;
-note edits; contribution fields (including role, CI, review, and method);
-inbox capture and triage; local issues and feature specs (public files);
-repo kind and status; a read-only GitHub sync; and shadow factory
-assembly. It never binds a public interface, never calls an LLM, and never
-performs a remote write. A contribution body is a public spec, not a private
-note. Factory runs
-from the cockpit are shadow-only — no draft PR. The page has no external
-assets, so it works offline.
+`python3 -m ctx ui` opens a browser on `127.0.0.1` (`--no-browser` to serve
+without opening one). A normal start stays on loopback even if Settings says
+shared server. `--deploy`, or the Docker image, is the shared server: it
+binds `0.0.0.0` and will not start without `STEAD_ACCESS_TOKEN`. Human docs:
+`docs/README.md`. Deploy: `docs/deploy.md`.
+
+The page reads the same markdown and writes through the same handlers as the
+CLI: projects, tasks, documents, meetings, repos, and actors; note edits;
+contribution fields (including role, CI, review, and method); inbox capture
+and triage; local issues and feature specs (public files); a read-only GitHub
+sync; and shadow factory assembly. It never calls an LLM and never performs a
+remote write. A contribution body is a public spec, not a private note.
+Factory runs from the cockpit are shadow-only — no draft PR. The page has no
+external assets, so it works offline.
 
 ## GitHub sync (read-only, offline-capable)
 

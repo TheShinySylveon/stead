@@ -119,7 +119,8 @@ writes in any mode**.
 
 A buildable spec is a contribution with `kind: issue`, `role: author`, tagged
 `feature-spec`, whose body has a description + a `## Acceptance criteria`
-checklist (see CONVENTIONS.md). A clearly-marked EXAMPLE spec is seeded.
+checklist (see CONVENTIONS.md). A sample spec lives in `examples/context/`,
+not in a fresh checkout.
 
 Every run is **spec-driven and planning-first**: the specification, technical
 plan, and dependency-ordered tasks are produced and reviewed before any
