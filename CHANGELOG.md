@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Docs match the command: sign-in, publish, merge, and the image.
 - `stead factory merge` merges a green pull request when the repo file says
   `reach: merge`. It does not bypass branch protection, and it does not push
   the default branch. Publish still does not merge.
@@ -24,7 +25,7 @@
 - `stead model set` / Settings store the endpoint. The key stays in the
   environment or gitignored `stead.json`.
 - `stead eval run` checks eval files with no model. `stead eval judge` asks the
-  configured model about one draft. Promote does not require that yet.
+  configured model about one draft. Promote requires a recorded pass for that version.
 
 ## 0.0.1
 

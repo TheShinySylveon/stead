@@ -20,18 +20,20 @@ Welcome asks:
 python -m stead welcome --title "Team notes" --deployment multi
 ```
 
-Copy the token, then:
+Copy the token, then pull the published image:
 
 ```bash
 # PowerShell
 $env:STEAD_ACCESS_TOKEN = "the-token"
-docker compose up --build
+docker compose pull
+docker compose up --no-build
 ```
 
 ```bash
 # bash
 export STEAD_ACCESS_TOKEN="the-token"
-docker compose up --build
+docker compose pull
+docker compose up --no-build
 ```
 
 Open `http://127.0.0.1:8765/`. Until an account exists, enter the token. Then
@@ -43,14 +45,19 @@ docker compose exec stead python -m stead actor add --title "Ada" --kind human
 docker compose exec stead python -m stead account add --name ada --actor actor-ada
 ```
 
-The password is printed once. `stead account list` never prints it.
+The password is printed once. `stead account list` never prints it. After
+that account exists, the token no longer signs anyone in. You can leave
+`STEAD_ACCESS_TOKEN` unset on the next start. The private volume keeps the
+hashes.
 
 ## Image
 
 The published image is `ghcr.io/theshinysylveon/stead`. `main` pushes `latest`
 and the commit sha after the tests pass. Pull requests build the image and
 do not push it. GitHub creates the package private. The first time, set it
-public at the package settings page. After that, a pull does not need a token.
+public at
+[package settings](https://github.com/users/TheShinySylveon/packages/container/stead/settings).
+After that, a pull does not need a token.
 
 ```bash
 docker compose pull
@@ -59,7 +66,8 @@ docker compose up --no-build
 
 `docker compose up --build` still builds this checkout. The image sets
 `STEAD_DEPLOYMENT=multi` and `STEAD_BIND=0.0.0.0`. `context/` is a volume, so
-notes survive a rebuild. `state.db` is recreated if the container is new.
+notes survive a rebuild. `private/` is a second volume. Password hashes live
+there, not in `context/`. `state.db` is recreated if the container is new.
 That is safe. The files are the source of truth.
 
 Do not publish port 8765 to the public internet without a TLS proxy in front.
@@ -68,7 +76,7 @@ A sign-in is a password for one actor. It is not a second database.
 ## Settings
 
 After the first project exists, Settings can switch deployment, rotate the
-token, and add actors (`kind: human` or `kind: agent`).
+token, add a sign-in, and add actors (`kind: human` or `kind: agent`).
 
 ```bash
 python -m stead actor add --title "Ada" --kind human

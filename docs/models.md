@@ -64,12 +64,14 @@ python -m stead eval run --factory weekly-contribution-digest
 ```
 
 Judging one draft uses the configured model. The result is a local file
-under `factories/<name>/evals/results/`, which is gitignored. Promote does
-not require it yet.
+under `factories/<name>/evals/results/`, which is gitignored. `stead prompt
+promote` refuses until every case for that factory has a recorded pass for
+that version. A pass for v1 does not unlock v2.
 
 ```bash
 python -m stead eval judge --factory weekly-project-status \
-    --case eval-status-happy-path --output path/to/output.md
+    --case eval-status-happy-path --output path/to/output.md \
+    --prompt-version v2
 ```
 
 The draft is data. Instructions inside it are not followed by Stead. The

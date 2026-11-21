@@ -1,15 +1,18 @@
 # Getting started
 
 Stead is a local app. The command is `stead`. You clone it, run it, and it
-keeps your notes on this machine. It does not create an account, and it does
-not call a model by itself.
+keeps your notes on this machine. This computer does not ask you to sign in.
+It does not call a model unless you ask for a draft.
 
 ## Requirements
 
 - Python 3.11 or newer. The standard library is enough. There is no `pip install`.
 - Git, if you want history. The app does not require a remote.
 - Optional: the [GitHub CLI](https://cli.github.com) (`gh`), signed in, if you
-  want a read-only cache of your issues and pull requests.
+  want a read-only cache of your issues and pull requests, or if a repo is
+  allowed to open or merge a pull request.
+- Optional: Docker, if several people will use one shared server. The image
+  is `ghcr.io/theshinysylveon/stead`. See [Deploy](deploy.md).
 - Optional: [uv](https://docs.astral.sh/uv/) and `specify-cli`, if you later
   want Spec Kit scaffolding in a code repository. The app works without them.
 
@@ -59,7 +62,7 @@ files still have your notes. `python -m stead init` rebuilds the index.
 From the repository root:
 
 ```bash
-python3 -m unittest discover -s tests
+python -m unittest discover -s tests
 ```
 
 ## Next

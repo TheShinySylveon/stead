@@ -7,7 +7,8 @@ A factory is a shared, named workflow. Each one lives in `factories/<name>/`:
   after `stead init`. Switch with `stead prompt promote`.
 - `evals/*.json` — cases and pass criteria. `stead eval run` checks that the
   files are well-formed. `stead eval judge` asks the configured model about
-  one draft. Promote does not require a recorded pass yet.
+  one draft and records a pass or fail. `stead prompt promote` refuses until
+  every case has a recorded pass for that version.
 - `runs/` — one directory per assembly. Gitignored. Safe to delete.
 
 ## What a run actually does
@@ -87,9 +88,16 @@ merge.
 
 A run may ask for less than the repo ceiling. It may not ask for more.
 `stead factory watch` assembles open authored `feature-spec` issues on repos
-set to watch, and skips flagged specs. `stead factory publish` opens a pull request from an isolated branch when
-the ceiling allows it. `stead factory merge` is separate, and only when the
-repo says `reach: merge` and the checks are green. See
+set to watch, and skips flagged specs. It does not push.
+
+`stead factory publish` pushes an isolated branch and opens a pull request
+when the ceiling is `draft-pr`, `pr`, or `merge`. The branch must not be the
+default. Set the repo `code_path` first. Publish does not merge.
+
+`stead factory merge` is a separate command. The repo file must say
+`reach: merge`. The checks must be green. It does not bypass branch
+protection, and it does not push the default branch. A factory run does not
+call it. See
 [feature-builder/FACTORY.md](../factories/feature-builder/FACTORY.md).
 
 ## Scheduling

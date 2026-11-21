@@ -41,13 +41,12 @@ The reaches above are the rungs. A repo may sit on any rung.
    **plan + proposed diff only**. NO remote writes, NO push, NO PR/issue/
    comment/label creation. A human reviews the plan and diff locally before
    anything is applied.
-2. **DRAFT-PR.** When the repo ceiling allows it, the agent may push an
-   isolated feature branch and open a **DRAFT PR** via `gh pr create --draft`
-   with passing tests and a structured body linking the issue. A **HUMAN
-   reviews and merges**. The agent never marks the PR ready-for-review, never
-   merges, never pushes to the default branch. Stead does not perform that
-   push yet.
-3. **PULL REQUEST.** A normal pull request. A human still merges.
+2. **DRAFT-PR.** When the repo ceiling allows it, `stead factory publish`
+   pushes an isolated feature branch and opens a **DRAFT PR**. A **HUMAN
+   reviews and merges**. The command never marks the PR ready-for-review,
+   never merges, and never pushes the default branch.
+3. **PULL REQUEST.** `stead factory publish` opens a normal pull request.
+   A human still merges, unless the repo file says `reach: merge`.
 4. **TRUSTED (explicit per repo, never the default).** `stead factory merge`
    only after ALL of: the repo file says `reach: merge`, the checks are
    actually green, and GitHub accepts the merge. Branch protection is not

@@ -22,7 +22,8 @@ python -m stead init
 
 `ui` opens the cockpit. On an empty checkout it shows Welcome. Without
 `--deploy` it stays on loopback, even if `stead.json` says multi.
-`--deploy` is the shared server. It refuses to start without an access token.
+`--deploy` is the shared server. It refuses to start unless an account
+exists, or `STEAD_ACCESS_TOKEN` is set for a server that has no accounts yet.
 Prefer Docker. See [Deploy](deploy.md).
 
 `welcome` creates one project and a repo record. It does not run Spec Kit.
@@ -83,6 +84,12 @@ python -m stead sync github --offline
 `sync github` is read-only. It uses `gh`. `--offline` only re-indexes files
 already on disk.
 
+`actor use` remembers who is writing on this computer. Later writes stamp
+`actor:` when that file exists. `account add` is a shared-server sign-in for
+one actor. The password is printed once and stored as a hash in gitignored
+`private/accounts.json`. `account list` never prints it. This computer does
+not ask for that password.
+
 ## Factories and prompts
 
 ```bash
@@ -99,7 +106,7 @@ python -m stead repo set ID --path DIR
 python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live] [--generate] [--reach REACH]
 python -m stead digest [--generate]
 python -m stead eval run [--factory F]
-python -m stead eval judge --factory F --case ID --output PATH
+python -m stead eval judge --factory F --case ID --output PATH [--prompt-version V]
 
 python -m stead run log --factory F --task REF --prompt-version V \
     [--output TEXT] [--verdict approved|rejected]
@@ -114,11 +121,22 @@ raise the ceiling and it does not open a pull request. `--reach` is
 feature-builder only. It cannot exceed the repo ceiling. Merge is not an
 install default. See [Models](models.md).
 
+`factory publish` pushes the checkout's current branch and opens a pull
+request. The branch must not be the default, and it must be ahead of that
+default. The repo ceiling must be `draft-pr`, `pr`, or `merge`. Set
+`code_path` with `repo set --path` first. This command does not merge.
+
+`factory merge` is separate. The repo file must say `reach: merge`. The pull
+request must be open, and the checks must be green. It does not pass
+`--admin`, and it does not push the default branch. A factory run does not
+call it.
+
 `prompt promote` marks one version production and retires the previous one.
-Old prompt files are kept.
+It refuses if any eval case lacks a recorded pass for that version. Judge
+with `--prompt-version` first. Old prompt files are kept.
 
 ## Tests
 
 ```bash
-python3 -m unittest discover -s tests
+python -m unittest discover -s tests
 ```

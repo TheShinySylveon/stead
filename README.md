@@ -32,7 +32,7 @@ A fresh checkout shows Welcome instead.
 - A local cockpit in the browser, or the same actions from the CLI.
 - Three factories that assemble a prompt. `--generate` drafts with the model
   you configure. The default still calls nothing.
-- A first-run choice: this computer, or a shared Docker server with an access token.
+- A first-run choice: this computer, or a shared Docker server where each person signs in.
 
 Docs: [docs/README.md](docs/README.md).
 
@@ -94,8 +94,10 @@ default) uses the optional `specify` CLI when you onboard a code directory.
 `method: builtin` is the same phases as markdown. Assembly itself never calls
 a model and never pushes.
 
-Shadow is the only mode the cockpit offers, and the CLI default. A draft pull
-request is described in the prompt and is not implemented.
+Shadow is the only mode the cockpit offers, and the CLI default. Assembly
+does not push. `stead factory publish` opens a pull request from an isolated
+branch when that repo's ceiling allows it. `stead factory merge` is separate,
+and only when the repo file says `reach: merge` and the checks are green.
 
 ```bash
 python -m stead sync github --limit 30    # read-only, needs gh
@@ -115,7 +117,7 @@ More: [docs/factories.md](docs/factories.md) and
 | [Cockpit](docs/cockpit.md) | The browser UI |
 | [CLI](docs/cli.md) | Every command |
 | [Models](docs/models.md) | The optional endpoint a factory drafts with |
-| [Deploy](docs/deploy.md) | Docker and the access token |
+| [Deploy](docs/deploy.md) | Docker, the image, and sign-in |
 | [Several writers](docs/multi-actor.md) | Actors, git, and why SQLite stays |
 | [CONVENTIONS.md](CONVENTIONS.md) | Frontmatter schema. Read this before writing objects. |
 | [AGENTS.md](AGENTS.md) | Entry point for coding agents |
@@ -125,7 +127,7 @@ Samples live in `examples/context/`. They are not loaded into a fresh checkout.
 ## Develop
 
 ```bash
-python3 -m unittest discover -s tests
+python -m unittest discover -s tests
 ```
 
 CI on `main` and on pull requests runs that suite on Python 3.11 and 3.12.
@@ -137,8 +139,10 @@ Pull requests build the Docker image. `main` publishes
 - A shared server asks each person to sign in. This computer does not.
   The access token only starts a server that has no accounts yet.
 - A normal `stead ui` stays on loopback. `--deploy` and Docker are the only
-  public binds, and they require the token.
-- `actor:` is stamped only after you select who is writing. It is not a login.
+  public binds. They start with an account, or with the token until the first
+  account exists.
+- `actor:` is stamped when you select who is writing, or when that person is
+  signed in on a shared server. It is not a permission check.
 - A factory calls a model only when you pass `--generate` or check Draft
   with model. The endpoint is yours: OpenAI, Anthropic, Grok, or another
   chat server. The draft is a file. Nothing is posted, pushed, or merged.
@@ -154,7 +158,7 @@ Issues and pull requests are welcome. Read [AGENTS.md](AGENTS.md) and
 you open a pull request:
 
 ```bash
-python3 -m unittest discover -s tests
+python -m unittest discover -s tests
 ```
 
 History of this release: [CHANGELOG.md](CHANGELOG.md).

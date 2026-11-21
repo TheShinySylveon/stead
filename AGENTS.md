@@ -91,9 +91,11 @@ state.db             <- GITIGNORED, rebuildable operational index (stead init)
   are private. Never copy private strategy into a contribution file or a digest.
 - **Core GitHub access is read-only:** `sync`/`digest` never create
   issues/PRs/comments/labels and never push; the digest only drafts locally and a
-  human reviews before anything is filed. The sole gated exception is
-  `feature-builder`'s future draft-PR rung (isolated branch + draft PR, human
-  merges) — shadow-only today, zero remote writes.
+  human reviews before anything is filed. The gated exceptions are explicit
+  commands, not factory assembly: `stead factory publish` may push an isolated
+  branch and open a pull request; `stead factory merge` may merge when the repo
+  file says `reach: merge` and the checks are green. Neither pushes the default
+  branch. Neither runs from the cockpit.
 - Do not edit `PLAN.md`. Do not delete run logs under `factories/*/runs/`.
 - Commit meaningful changes with git; the history is the audit trail.
 
@@ -153,7 +155,8 @@ scheduler-agnostic: any cron/Task Scheduler/systemd timer can invoke the CLI.
 `python -m stead ui` opens a browser on `127.0.0.1` (`--no-browser` to serve
 without opening one). A normal start stays on loopback even if Settings says
 shared server. `--deploy`, or the Docker image, is the shared server: it
-binds `0.0.0.0` and will not start without `STEAD_ACCESS_TOKEN`. Human docs:
+binds `0.0.0.0` and will not start unless an account exists, or
+`STEAD_ACCESS_TOKEN` is set and no account exists yet. Human docs:
 `docs/README.md`. Deploy: `docs/deploy.md`.
 
 The page reads the same markdown and writes through the same handlers as the
@@ -232,9 +235,11 @@ LLM/network/subprocess/remote writes.
 
 1. **Shadow first.** New factories and new prompt versions run in shadow mode
    (`--shadow`, the default): outputs are drafts, a human reviews before anything
-   is filed or acted on. The digest **never auto-posts** to GitHub; feature-builder
-   is shadow-only today (autonomy ladder above).
-2. Promote prompts only after evals pass: `stead prompt promote` (old production
-   version is retired, never deleted).
+   is filed or acted on. The digest **never auto-posts** to GitHub. Assembly
+   does not push. Publish and merge are separate commands, and only inside the
+   repo ceiling (autonomy ladder above).
+2. Promote prompts only after evals pass: `stead prompt promote` refuses until
+   every eval case has a recorded pass for that version. The old production
+   version is retired, never deleted.
 3. Log every run. Review run logs; fix real observed failures, not imagined
    ones. Start simple.

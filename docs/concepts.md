@@ -7,8 +7,8 @@ Stead is two things in one folder:
 1. A **context system** — projects, tasks, notes, meetings, repos, and the
    issues and pull requests you touch.
 2. **Factories** — a few named workflows that assemble a prompt from those
-   files. A person or any coding agent writes the result. The factory does not
-   call a model.
+   files. A person or any coding agent writes the result. A factory calls a
+   model only when you pass `--generate`.
 
 Nothing here is tied to one vendor. Hermes, Claude Code, Codex, or a human
 can read the same files.
@@ -60,12 +60,15 @@ pull request. See [Factories](factories.md).
 ## Several writers
 
 Humans and agents share markdown through git, or they share one Docker
-server with an access token. Each clone keeps its own `state.db`. The
+server and sign in as themselves. Each clone keeps its own `state.db`. The
 container keeps one index for that server. SQLite is not being replaced.
 See [Several people and agents](multi-actor.md) and [Deploy](deploy.md).
 
 ## What this is not
 
-- Not a hosted multi-user website. The cockpit is loopback-only.
-- Not a model provider. Generation is whoever reads the prompt.
-- Not an auto-merge bot. Merging is a human action.
+- Not a hosted website you sign up for. This computer is loopback-only.
+  A shared server is a container you run, and each person signs in there.
+- Not a model provider. A draft is a file. You choose the endpoint, or you
+  hand `prompt.md` to any agent.
+- Not an auto-merge bot. `stead factory merge` is an explicit command. A
+  factory run does not call it. A red check is refused.

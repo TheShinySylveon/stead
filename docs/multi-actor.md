@@ -62,23 +62,32 @@ Two ways to share:
 
 - **Several clones.** Each person runs a loopback cockpit. They meet in git.
   Each clone has its own `state.db`.
-- **One shared server.** Docker runs a single process with an access token.
-  Several browsers use that one index. Do not scale the container. See
+- **One shared server.** Docker runs a single process. Several browsers use
+  that one index. Each person signs in. Do not scale the container. See
   [Deploy](deploy.md).
 
 A normal `stead ui` stays on loopback even after you choose Shared server.
 The choice is recorded in gitignored `stead.json`. The open port is the
-container, started with `STEAD_ACCESS_TOKEN` set.
+container. `STEAD_ACCESS_TOKEN` only starts it until the first account exists.
+
+## Sign-in
+
+An account is a password for one actor, used only on a shared server.
+
+```bash
+python -m stead account add --name ada --actor actor-ada
+```
+
+The password is printed once. The hash lives in gitignored
+`private/accounts.json`, not in `context/`. A signed-in write stamps that
+actor. `stead actor use` does the same for this computer, without a password.
+
+This is attribution. It is not a permission check.
 
 ## What is not built yet
 
 - No per-object permission checks in the CLI. If you can write the file, you
   can write the object. Repository access is the permission.
-- A shared server has sign-ins. `stead account add` stores a password hash in
-  gitignored `private/accounts.json`. A signed-in write stamps that actor.
-  This computer still has no login.
-- `actor:` is stamped when someone is selected, or when they are signed in.
-  It is not a permission check.
 - Agents are not registered for you. Add an actor file when a new agent
   starts writing.
 

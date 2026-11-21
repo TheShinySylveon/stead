@@ -8,9 +8,9 @@ python -m stead ui --no-browser --port 8765
 ```
 
 On this computer the server refuses any address except loopback
-(`127.0.0.1`, `localhost`, `::1`). A shared server is different: it is the
-Docker image, or `stead ui --deploy`, and it will not start without an access
-token. See [Deploy](deploy.md).
+(`127.0.0.1`, `localhost`, `::1`). A shared server is the Docker image, or
+`stead ui --deploy`. It starts if a person account exists, or if
+`STEAD_ACCESS_TOKEN` is set and no account exists yet. See [Deploy](deploy.md).
 
 The page has no external fonts or scripts. It works offline.
 
@@ -35,7 +35,7 @@ See [First run](first-run.md).
 | Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. |
 | Inbox | Drop a note. File it as a document, meeting, or task, or delete it. |
 | Factories | Assemble a shadow run. Check Draft with model to write `output.md`. Nothing is posted. |
-| Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add actors (`human` or `agent`). |
+| Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add a sign-in. Choose who is writing. Add actors (`human` or `agent`). |
 
 Opening a project, task, document, or meeting shows the note and an editor.
 Saving updates the body and the `updated` date. It does not change `created`

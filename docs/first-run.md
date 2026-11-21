@@ -17,7 +17,8 @@ for three things:
 3. Who this copy is for:
    - **This computer.** Loopback. No login.
    - **Shared server.** Several people, via Docker. You get an access token
-     once. This window does not open the port.
+     once. It only opens the door until the first person has an account.
+     This window does not open the port.
 
 Start writes:
 
@@ -39,7 +40,9 @@ python -m stead welcome --title "Team notes" --deployment multi
 ```
 
 `--deployment` is `single` (default) or `multi`. Multi prints the access
-token once and tells you to start Docker. See [Deploy](deploy.md).
+token once and tells you to start Docker. After the first
+`stead account add`, people sign in by name. The token is no longer the
+login. See [Deploy](deploy.md).
 
 `python -m stead` with no command prints the two entry points.
 
@@ -59,7 +62,7 @@ Those belong to later steps.
 |---|---|
 | Another project, with a constitution and optional Spec Kit | Projects → Onboard, or `stead onboard` |
 | A project with no repo | Projects → Add project |
-| Switch this computer / shared server, rotate the token, add actors | Settings |
+| Switch this computer / shared server, rotate the token, add a sign-in, add actors | Settings |
 | The Spec Kit rules | [Spec Kit](spec-kit-workflow.md) |
 
 ```bash

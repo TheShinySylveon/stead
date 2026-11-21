@@ -50,8 +50,11 @@ acceptance criteria) and a shadow `feature-builder` run.
    `Converged`.
 9. **Map artifacts** — tasks -> `context/tasks/`, plan + spec ->
    `context/documents/`, constitution -> repo notes; `stead init`. One context.
-10. **Deliver** — SHADOW (artifacts + proposed diff, zero remote writes) or
-    DRAFT-PR (draft PR, human merges).
+10. **Deliver** — SHADOW (artifacts + proposed diff, zero remote writes).
+    When the repo ceiling allows it, `stead factory publish` opens a pull
+    request from an isolated branch. `stead factory merge` is a separate
+    command, and only when that repo says `reach: merge` and the checks are
+    green.
 
 ## Tooling (`method` on the spec)
 
@@ -80,8 +83,10 @@ bundled assets, so it needs no network.
   code as a DRAFT PR to upstream under the human gate. Never impose `.specify/`
   on an upstream repo uninvited.
 
-## Safety (unchanged)
+## Safety
 
-SHADOW (default) = zero remote writes; DRAFT-PR = draft PR, human merges; never
-push to the default branch; never auto-merge. Spec Kit's own bug-fix and
-idea-assessment extensions are optional and not part of the default flow.
+SHADOW (default) = zero remote writes. Publish opens a pull request from an
+isolated branch when the ceiling allows it. Merge is an explicit command, never
+the install default, and it refuses a red check. Never push to the default
+branch. Spec Kit's own bug-fix and idea-assessment extensions are optional and
+not part of the default flow.
