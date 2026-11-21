@@ -615,8 +615,8 @@ function renderInbox() {
   const items = state.snap.inbox.filter(match);
   return `
     <form class="stack" id="capture">
-      <input type="text" name="title" placeholder="Capture a thought" required aria-label="Capture title">
-      <textarea name="body" placeholder="Optional detail. This lands in inbox/ for triage — not in a contribution file." aria-label="Capture body"></textarea>
+      <input type="text" name="title" placeholder="Capture a thought" required maxlength="200" aria-label="Capture title">
+      <textarea name="body" maxlength="20000" placeholder="Optional detail. This lands in inbox/ for triage — not in a contribution file." aria-label="Capture body"></textarea>
       <div><button class="primary" type="submit">Drop in inbox</button></div>
     </form>
     <form class="inline" id="import-inbox" style="margin-bottom:12px">
@@ -699,8 +699,8 @@ function renderFactories() {
       <span class="meta">Assembles watched specs locally. Nothing is pushed.</span>
     </div>
     <form class="inline" id="new-factory" style="margin-bottom:16px">
-      <input type="text" name="name" placeholder="factory-name" required aria-label="New factory name">
-      <input type="text" name="title" placeholder="What it drafts" required aria-label="New factory title">
+      <input type="text" name="name" placeholder="factory-name" required maxlength="40" pattern="[a-z][a-z0-9-]*" aria-label="New factory name">
+      <input type="text" name="title" placeholder="What it drafts" required maxlength="80" aria-label="New factory title">
       <button class="primary" type="submit">New factory</button>
     </form>
     ${panels}`;
@@ -971,7 +971,23 @@ async function openRun(id) {
   }
 }
 document.addEventListener("keydown", (event) => {
-  if (event.key === "Escape") closeReader();
+  if (event.key === "Escape") { closeReader(); return; }
+  if (event.key !== "Tab") return;
+  const panel = document.getElementById("reader");
+  if (panel.hidden) return;
+  const nodes = Array.from(panel.querySelectorAll(
+    'button, [href], input, textarea, select, [tabindex]:not([tabindex="-1"])'
+  )).filter(node => !node.disabled && node.offsetParent !== null);
+  if (!nodes.length) return;
+  const first = nodes[0];
+  const last = nodes[nodes.length - 1];
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault();
+    last.focus();
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault();
+    first.focus();
+  }
 });
 
 document.body.addEventListener("click", async (event) => {
