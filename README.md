@@ -1,4 +1,4 @@
-# Shared Context
+# Stead
 
 A local-first, model-agnostic knowledge system for one person and their agents.
 Inspired by Notion's *A New Shape for Work*: a **context system** (one shared,
@@ -6,6 +6,9 @@ organized, versioned place for knowledge) plus **factories** (specific, shared,
 scrutinized AI workflows).
 
 > **Rent the intelligence. Own the context.**
+
+The command is `ctx`. Licensed under the Apache License, Version 2.0.
+Copyright 2026 Tyler Rathbone. See `LICENSE`.
 
 Everything is open and durable:
 
@@ -22,10 +25,12 @@ Everything is open and durable:
 ## Quick start
 
 ```bash
-git clone https://github.com/TheShinySylveon/shared-context.git
-cd shared-context
+git clone https://github.com/TheShinySylveon/stead.git
+cd stead
 python3 -m ctx ui
 ```
+
+Documentation: [docs/](docs/README.md).
 
 A fresh checkout has an empty `context/`. The cockpit asks for a project title
 and an optional GitHub URL, then stops. That is the whole first run.

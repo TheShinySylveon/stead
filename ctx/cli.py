@@ -528,7 +528,7 @@ def cmd_factory_run(root: Path, factory_name: str, project: str | None,
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="ctx", description="Shared Context CLI — stdlib only, local-first, tool-agnostic.")
+        prog="ctx", description="Stead — local context you own. Command: ctx. Stdlib only.")
     p.add_argument("--root", default=".", help="repo root (default: current directory)")
     sub = p.add_subparsers(dest="command", required=True)
 
@@ -654,7 +654,7 @@ def main(argv: list[str] | None = None) -> int:
     if argv is None:
         argv = sys.argv[1:]
     if not argv:
-        print("Shared Context")
+        print("Stead")
         print("  python3 -m ctx ui")
         print("  python3 -m ctx welcome --title \"My Project\"")
         print("  python3 -m ctx --help")

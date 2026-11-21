@@ -1,4 +1,4 @@
-# AGENTS.md — Shared Context
+# AGENTS.md — Stead
 
 Entry point for **any** agent (Hermes, Claude Code, Codex, Cursor, or a human).
 This file follows the open AGENTS.md convention. Nothing here is tied to a
@@ -33,7 +33,7 @@ AGENTS.md            <- you are here (agent entry point)
 README.md            <- human entry point
 CONVENTIONS.md       <- ontology + frontmatter schema (READ BEFORE WRITING)
 PLAN.md              <- design history (owned by the human; do not edit)
-docs/
+docs/                <- human documentation (start at docs/README.md)
   spec-kit-workflow.md <- always-on SDD flow (method selects tooling only)
 context/
   projects/          <- one .md per project

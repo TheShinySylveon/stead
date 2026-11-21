@@ -923,7 +923,7 @@ def serve(root: Path, host: str = "127.0.0.1", port: int = 8765,
     httpd = make_server(root, host, port)
     bound = httpd.server_address[1]
     url = f"http://127.0.0.1:{bound}/"
-    print(f"Shared Context cockpit\n  {url}")
+    print(f"Stead\n  {url}")
     print("  loopback only · markdown is the source of truth · Ctrl+C to stop")
     if open_browser:
         webbrowser.open(url)
