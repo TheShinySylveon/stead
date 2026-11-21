@@ -17,6 +17,14 @@ The model can be swapped. The files stay yours. The command is `ctx`.
 Version **0.0.1**. Licensed under Apache-2.0. Copyright 2026 Tyler Rathbone.
 See [LICENSE](LICENSE).
 
+![Stead cockpit](docs/images/cockpit.png)
+
+The cockpit, after the first project exists. The shot is a sample named Field notes, not data shipped with the repo.
+
+![First run](docs/images/welcome.png)
+
+A fresh checkout shows Welcome instead.
+
 ## What you get
 
 - Markdown files with flat YAML frontmatter. That is the source of truth.
