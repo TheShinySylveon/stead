@@ -229,6 +229,38 @@ def promotion_blockers(root: Path, factory_name: str, version: str) -> list[str]
     return missing
 
 
+def eval_status(root: Path, factory_name: str, version: str = "") -> dict:
+    """Per-case verdict for one prompt version. Reads local result files only."""
+    folder = root / "factories" / factory_name / "evals"
+    cases = []
+    if not folder.is_dir():
+        return {"factory": factory_name, "version": version, "cases": []}
+    for path in sorted(folder.glob("*.json")):
+        try:
+            case = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            case = {}
+        case_id = case.get("id") or path.stem
+        recorded = folder / "results" / f"{case_id}.json"
+        verdict = "no result"
+        recorded_version = ""
+        if recorded.is_file():
+            try:
+                result = json.loads(recorded.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                result = {}
+            verdict = result.get("verdict") or "no result"
+            recorded_version = result.get("prompt_version") or ""
+        cases.append({
+            "id": case_id,
+            "title": case.get("title") or case_id,
+            "verdict": verdict,
+            "recorded_version": recorded_version,
+            "ok": verdict == "pass" and (not version or recorded_version == version),
+        })
+    return {"factory": factory_name, "version": version, "cases": cases}
+
+
 def _production_version(root: Path, factory_name: str) -> str:
     from ctx import db
     if db.db_path(root).exists():

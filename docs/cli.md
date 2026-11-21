@@ -61,10 +61,17 @@ python -m stead contribution add --title T --repo REPO --kind issue|pr --number 
 python -m stead contribution list
 python -m stead contribution set ID [--state S] [--ci C] [--review R] \
     [--role R] [--method spec-kit|builtin]
+
+python -m stead delete TYPE ID [--force]
 ```
 
 `method` chooses tooling for feature-builder. It does not turn planning off.
 Omitted, it is `spec-kit`.
+
+`delete` removes one project, task, document, meeting, repo, or actor file and
+its index row. Git history keeps the old text. A project with linked objects,
+or a repo with cached contributions, is refused unless `--force`. Cached
+contributions are not deletable; refresh the cache instead.
 
 ## People, status, and GitHub
 

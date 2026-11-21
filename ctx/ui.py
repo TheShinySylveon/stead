@@ -236,7 +236,7 @@ def _runs(root: Path) -> list[dict]:
         _ensure_note_column(conn)
         rows = conn.execute(
             "SELECT id, factory, task_ref, project, prompt_version, mode, verdict, "
-            "created, bundle_path, note FROM runs ORDER BY id DESC LIMIT 40"
+            "created, bundle_path, note FROM runs ORDER BY id DESC LIMIT 200"
         ).fetchall()
     except Exception:
         return []
@@ -400,6 +400,7 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
     pending = sum(1 for r in runs if r["verdict"] == "pending")
     return {
         "today": date.today().isoformat(),
+        "version": _version(),
         "first_run": _needs_welcome(root),
         "deployment": _deployment_view(root, port),
         "model": _model_view(root),
@@ -445,6 +446,11 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
     }
 
 
+def _version() -> str:
+    from ctx import __version__
+    return __version__
+
+
 def object_detail(root: Path, otype: str, ref: str) -> dict:
     if otype not in objects.TYPE_DIRS:
         raise UiError("unknown object type", 404)
@@ -452,7 +458,7 @@ def object_detail(root: Path, otype: str, ref: str) -> dict:
     if found is None:
         raise UiError(f"{otype} not found: {ref}", 404)
     path, meta, body = found
-    return {
+    detail = {
         "type": otype,
         "id": meta.get("id", path.stem),
         "title": meta.get("title", path.stem),
@@ -460,6 +466,71 @@ def object_detail(root: Path, otype: str, ref: str) -> dict:
         "meta": {k: v for k, v in meta.items() if k != "title"},
         "body": body,
     }
+    if otype == "project":
+        detail["rollup"] = _project_rollup(root, meta.get("id", path.stem))
+    return detail
+
+
+def _project_rollup(root: Path, project_id: str) -> dict:
+    counts = {status: 0 for status in cli.TASK_STATUSES}
+    for _path, meta, _body in objects.iter_objects(root, "task"):
+        if meta.get("project") == project_id:
+            status = meta.get("status", "to-do")
+            counts[status] = counts.get(status, 0) + 1
+    docs = sum(1 for _p, m, _b in objects.iter_objects(root, "document")
+               if m.get("project") == project_id)
+    meetings = sum(1 for _p, m, _b in objects.iter_objects(root, "meeting")
+                   if m.get("project") == project_id)
+    runs = []
+    if db.db_path(root).exists():
+        conn = db.connect(root)
+        try:
+            runs = [dict(row) for row in conn.execute(
+                "SELECT id, factory, prompt_version, mode, verdict, created FROM runs "
+                "WHERE project = ? ORDER BY id DESC LIMIT 5", (project_id,)).fetchall()]
+        finally:
+            conn.close()
+    return {"counts": counts, "documents": docs, "meetings": meetings, "runs": runs}
+
+
+def delete_object(root: Path, otype: str, ref: str, force: bool = False) -> dict:
+    """Remove one object file. Git history is the audit trail."""
+    if otype not in objects.TYPE_DIRS:
+        raise UiError("unknown object type", 404)
+    if otype == "contribution":
+        reason = "a cached contribution is GitHub-derived. Refresh the cache instead."
+        raise UiError(reason)
+    found = objects.find(root, otype, ref)
+    if found is None:
+        raise UiError(f"{otype} not found: {ref}", 404)
+    path, meta, _body = found
+    object_id = meta.get("id", path.stem)
+    if not force and otype == "project":
+        linked = [m.get("id") for t in ("task", "document", "meeting")
+                  for _p, m, _b in objects.iter_objects(root, t)
+                  if m.get("project") == object_id]
+        if linked:
+            raise UiError(
+                f"{object_id} still has {len(linked)} linked object(s). "
+                "Move or delete them first.")
+    if not force and otype == "repo":
+        linked = [m.get("id") for _p, m, _b in objects.iter_objects(root, "contribution")
+                  if m.get("repo") == object_id]
+        if linked:
+            raise UiError(
+                f"{object_id} still has {len(linked)} cached contribution(s). "
+                "Delete those first, or use force.")
+    path.unlink()
+    if db.db_path(root).exists():
+        table = {"task": "tasks", "repo": "repos"}.get(otype)
+        if table:
+            conn = db.connect(root)
+            try:
+                conn.execute(f"DELETE FROM {table} WHERE id = ?", (object_id,))
+                conn.commit()
+            finally:
+                conn.close()
+    return {"ok": True, "type": otype, "id": object_id}
 
 
 def read_inbox(root: Path, name: str) -> dict:
@@ -1260,6 +1331,13 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = watch_now(root)
         elif path == "/api/eval/run":
             result = check_evals(root, payload.get("factory") or "")
+        elif path == "/api/eval/status":
+            from ctx.models import eval_status
+            result = eval_status(root, payload.get("factory") or "",
+                                 payload.get("version") or "")
+        elif path == "/api/object/delete":
+            result = delete_object(root, payload.get("type") or "",
+                                   payload.get("id") or "", bool(payload.get("force")))
         elif path == "/api/prompt/promote":
             result = promote_prompt(root, payload.get("factory") or "",
                                     payload.get("version") or "")

@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- Delete for projects, tasks, documents, meetings, repos, and actors, in the
+  CLI and the reader. A linked project or repo is refused without force.
+- A project's reader shows task counts, linked notes, and recent runs.
+- Eval results are per case, so a failed promote shows which cases lack a pass.
+- Run history shows beyond the newest six; the run viewer keeps the draft.
+- The page shows its version, keeps scroll and focus, confirms before closing
+  unsaved edits, warns errors longer, and reflows at phone width.
 - A review note no longer replaces the draft. It is stored as `note`, and the
   run viewer shows the draft, prompt, and bundle.
 - "Needs you" lists one row per object with every reason.

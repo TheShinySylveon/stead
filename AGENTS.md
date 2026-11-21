@@ -131,6 +131,7 @@ python -m stead repo list [--kind own|oss]
 python -m stead contribution add --title T --repo REPO --kind issue|pr --number N [--role author|assignee|reviewer] [--state open|closed|merged] [--ci pending|pass|fail|none] [--method spec-kit|builtin]
 python -m stead contribution list
 python -m stead contribution set ID [--state S] [--ci C] [--review R] [--role R] [--method spec-kit|builtin]
+python -m stead delete TYPE ID [--force]       # TYPE: project task document meeting repo actor
 
 python -m stead sync github [--author @me] [--limit N]   # READ-ONLY refresh via gh
 python -m stead sync github --offline                    # no network: re-index cache

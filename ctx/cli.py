@@ -681,6 +681,12 @@ def build_parser() -> argparse.ArgumentParser:
     hook.add_parser("set", help="create a webhook token. Printed once. Stored in stead.json.")
     hook.add_parser("show", help="say whether a webhook token is set. Never prints it.")
 
+    dele = sub.add_parser("delete", help="remove one object file. Git history is the audit trail.")
+    dele.add_argument("type", choices=("project", "task", "document", "meeting", "repo", "actor"))
+    dele.add_argument("id")
+    dele.add_argument("--force", action="store_true",
+                      help="delete a project or repo that still has linked objects")
+
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
     sg.add_argument("--author", default="@me")
@@ -938,6 +944,15 @@ def main(argv: list[str] | None = None) -> int:
         for item in written:
             print(f"inbox {item['name']}")
         print("triage into context/. Nothing was posted.")
+        return 0
+    if args.command == "delete":
+        from ctx.ui import UiError, delete_object
+        try:
+            removed = delete_object(root, args.type, args.id, args.force)
+        except UiError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"deleted {removed['type']} {removed['id']}")
+        print("git history keeps the old text.")
         return 0
     if args.command == "schedule":
         from ctx.schedule import ScheduleError, install, show

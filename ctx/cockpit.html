@@ -115,6 +115,14 @@
     padding: var(--space-xs) var(--space-sm); min-height: 36px;
   }
   input[type="search"] { width: 240px; }
+  input[type="file"] { font: inherit; color: var(--color-muted); }
+  input[type="file"]::file-selector-button {
+    font: 500 var(--text-sm)/1.2 var(--font-body); margin-right: var(--space-xs);
+    background: var(--color-paper-2); color: var(--color-ink);
+    border: var(--rule-hair) solid var(--color-rule-2); border-radius: var(--radius-control);
+    padding: var(--space-xs) var(--space-sm); min-height: 36px; cursor: pointer;
+  }
+  input[type="file"]::file-selector-button:hover { border-color: var(--color-ink-2); }
   textarea { width: 100%; min-height: 88px; resize: vertical; }
   button.primary, button.quiet, button[type="submit"] {
     font: 500 var(--text-sm)/1.2 var(--font-body);
@@ -256,6 +264,13 @@
     input[type="search"] { width: 100%; }
     .top { flex-direction: column; align-items: stretch; }
   }
+  @media (max-width: 34rem) {
+    .stats, .board { grid-template-columns: 1fr; }
+    main { padding: var(--space-sm); }
+    .card select, .row select, .card input, .inline input, .inline select { max-width: none; width: 100%; }
+    .inline { align-items: stretch; }
+    #reader { width: 100%; padding: var(--space-md); }
+  }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after { animation-duration: 0.01ms !important; animation-iteration-count: 1 !important; transition-duration: 0.01ms !important; }
   }
@@ -271,7 +286,7 @@
     </div>
   </div>
   <nav id="nav" aria-label="Sections"></nav>
-  <p class="nav-foot">Loopback by default. Files are the source of truth. Nothing here writes to GitHub.</p>
+  <p class="nav-foot">Loopback by default. Files are the source of truth. Nothing here writes to GitHub.<br><span id="version"></span></p>
 </aside>
 <main>
   <div class="top">
@@ -308,7 +323,14 @@ const TITLES = {
   settings: ["Settings", "This computer, a shared server, the model, and how far the software factory may go."],
 };
 const state = { snap: null, view: "home", q: "", onboardResult: null,
-  scheduleText: "", scheduleProject: "", hookToken: "" };
+  scheduleText: "", scheduleProject: "", hookToken: "",
+  showAllRuns: false, evals: {}, opener: null, dirty: false };
+
+function when(value) {
+  if (!value) return "";
+  const d = new Date(value);
+  return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
+}
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -327,12 +349,13 @@ function match(item) {
 function options(values, selected) {
   return values.map(v => `<option${v === selected ? " selected" : ""}>${esc(v)}</option>`).join("");
 }
-function toast(message) {
+function toast(message, ms) {
   const el = document.getElementById("toast");
   el.hidden = false;
   el.textContent = message;
   clearTimeout(toast._t);
-  toast._t = setTimeout(() => { el.hidden = true; }, 2400);
+  const wait = ms || (/fail|error|refus|missing|wrong|cannot|too |invalid|not found/i.test(String(message)) ? 6000 : 2600);
+  toast._t = setTimeout(() => { el.hidden = true; }, wait);
 }
 async function api(path, opts) {
   const res = await fetch(path, {
@@ -348,8 +371,12 @@ async function api(path, opts) {
   return data;
 }
 async function load() {
+  const y = window.scrollY;
   state.snap = await api("/api/snapshot");
   render();
+  const version = document.getElementById("version");
+  if (version) version.textContent = "v" + state.snap.version;
+  window.scrollTo(0, y);
 }
 function projectName(id) {
   const p = (state.snap.projects || []).find(x => x.id === id);
@@ -380,14 +407,15 @@ function renderHome() {
   ];
   const attention = s.attention.filter(match);
   const projects = s.projects.filter(match);
-  const runs = (s.runs || []).filter(r => match({title: r.factory, id: r.task_ref, status: r.verdict})).slice(0, 6);
+  const filtered = (s.runs || []).filter(r => match({title: r.factory, id: r.task_ref, status: r.verdict}));
+  const runs = state.showAllRuns ? filtered : filtered.slice(0, 6);
   const runRows = runs.map(r => `
     <div class="card" style="display:block;min-width:0">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:flex-start;flex-wrap:wrap">
         <div style="min-width:0"><strong>${esc(r.factory)}</strong><div class="meta">${esc(r.task_ref)} · ${esc(r.prompt_version)} · ${esc(r.mode)}</div></div>
         <span class="chips">${chip(r.verdict, r.verdict === "approved" || r.verdict === "pass" ? "done" : r.verdict === "rejected" || r.verdict === "fail" ? "fail" : "doing")}</span>
       </div>
-      <div class="meta clip" style="margin-top:6px" title="${esc(r.bundle_path || "")}">${esc(r.created)}${r.bundle_path ? " · " + esc(r.bundle_path) : ""}</div>
+      <div class="meta clip" style="margin-top:6px" title="${esc(r.bundle_path || "")}">${esc(when(r.created))}${r.bundle_path ? " · " + esc(r.bundle_path) : ""}</div>
       ${r.note ? `<div class="meta">Review: ${esc(r.note)}</div>` : ""}
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
         <button type="button" class="quiet" data-run-open="${esc(r.id)}">Open run</button>
@@ -411,8 +439,9 @@ function renderHome() {
       <section>
         <div class="section-title">Projects</div>
         <div class="list">${projects.map(projectCard).join("") || `<div class="empty">No projects yet.</div>`}</div>
-        <div class="section-title">Recent runs</div>
+        <div class="section-title">Recent runs${filtered.length !== runs.length ? ` (${runs.length} of ${filtered.length})` : ""}</div>
         ${runRows || `<div class="empty">No factory runs yet.</div>`}
+        ${filtered.length > 6 ? `<button type="button" class="quiet" data-toggle-runs style="margin-top:10px">${state.showAllRuns ? "Show recent only" : `Show all ${filtered.length} runs`}</button>` : ""}
       </section>
     </div>`;
 }
@@ -561,6 +590,8 @@ function renderRepos() {
         <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
           <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="code_path" value="${esc(r.code_path || "")}" placeholder="Local code path for publish" aria-label="Code path for ${esc(r.title)}">
           <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="default_branch" value="${esc(r.default_branch || "")}" placeholder="Default branch" aria-label="Default branch for ${esc(r.title)}" style="max-width:170px">
+          <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="url" value="${esc(r.url || "")}" placeholder="Repo URL" aria-label="URL for ${esc(r.title)}">
+          <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="notes" value="${esc(r.notes || "")}" placeholder="Short notes" aria-label="Notes for ${esc(r.title)}">
         </div>
       </div>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
     <form class="stack" id="add-spec">
@@ -596,7 +627,7 @@ function renderInbox() {
     ${items.length ? `<div class="list">${items.map(item => `
       <div class="card" style="display:block">
         <button type="button" class="linkish" data-open data-type="inbox" data-id="${esc(item.name)}">${esc(item.name)}</button>
-        <div class="meta">${esc(item.updated)} · ${esc(item.bytes)} bytes</div>
+      <div class="meta">${esc(item.updated)} · ${esc(item.bytes)} bytes</div>
         <form class="inline" data-triage="${esc(item.name)}" style="margin-top:8px">
           <input type="text" name="title" placeholder="Title (optional)" aria-label="Filed title for ${esc(item.name)}">
           <select name="project" aria-label="Project for ${esc(item.name)}">${projectOptions()}</select>
@@ -608,7 +639,10 @@ function renderInbox() {
       </div>`).join("")}</div>` : `<div class="empty">Inbox is clear.</div>`}`;
 }
 function renderFactories() {
-  const factories = state.snap.factories.filter(f => match({title: f.name, id: f.name}));
+  const rank = ["weekly-contribution-digest", "weekly-project-status", "feature-builder", "context-maintenance"];
+  const factories = state.snap.factories
+    .filter(f => match({title: f.name, id: f.name}))
+    .sort((a, b) => (rank.indexOf(a.name) + 1 || 99) - (rank.indexOf(b.name) + 1 || 99) || a.name.localeCompare(b.name));
   const panels = factories.map(f => {
     const prod = (f.prompts || []).find(p => p.status === "production");
     const draftBox = `<label class="meta"><input type="checkbox" name="generate" value="1"> Draft with model</label>`;
@@ -634,17 +668,28 @@ function renderFactories() {
         <button class="primary" type="submit">Assemble shadow</button></form>`;
     }
     const runs = (f.recent_runs || []).map(r =>
-      `<div class="meta">${esc(r.created)} · ${esc(r.mode)} · ${esc(r.verdict)} · ${esc(r.bundle_path || "")}</div>`
+      `<div class="meta"><button type="button" class="linkish" data-run-open="${esc(r.id)}">${esc(when(r.created))} · ${esc(r.mode)} · ${esc(r.verdict)}</button> · ${esc(r.bundle_path || "")}</div>`
     ).join("");
+    const report = state.evals[f.name];
+    const evalsBox = report ? `<div class="panel" style="padding:12px 14px;margin-top:10px">
+      <strong>Evals${report.version ? " for " + esc(report.version) : ""}</strong>
+      <div class="list" style="margin-top:8px">${report.cases.map(c => `<div class="row">
+        <span><strong>${esc(c.title)}</strong><br><small>${esc(c.id)}${c.recorded_version ? " · recorded " + esc(c.recorded_version) : ""}</small></span>
+        ${chip(c.ok ? "pass" : c.verdict, c.ok ? "done" : "fail")}
+      </div>`).join("") || `<div class="empty">No eval cases.</div>`}</div>
+      <p class="meta">Promote needs a pass for every case at that version.</p>
+      <button type="button" class="quiet" data-eval-close="${esc(f.name)}">Close evals</button>
+    </div>` : "";
     return `<div class="panel" style="padding:14px 16px;margin-bottom:12px">
       <strong>${esc(f.name)}</strong>
       <div class="chips" style="margin:8px 0">${chip(prod ? prod.version + " production" : "no prompt", prod ? "done" : "")}${chip(f.evals + " evals")}</div>
       ${form}
       <form class="inline" data-promote="${esc(f.name)}" style="margin-top:8px">
         <select name="version" aria-label="Prompt version for ${esc(f.name)}">${(f.prompts || []).map(p => `<option value="${esc(p.version)}" ${prod && prod.version === p.version ? "selected" : ""}>${esc(p.version)}${prod && prod.version === p.version ? " (production)" : ""}</option>`).join("")}</select>
-        <button class="quiet" type="submit" ${(f.prompts || []).length ? "" : "disabled"}>Promote prompt</button>
+        <button class="quiet" type="submit" data-promote-button ${prod ? "disabled" : ""}>Promote prompt</button>
         <button type="button" class="quiet" data-evals="${esc(f.name)}">Check evals</button>
       </form>
+      ${evalsBox}
       ${runs || `<div class="meta">No runs yet.</div>`}
     </div>`;
   }).join("") || `<div class="empty">No factories.</div>`;
@@ -671,6 +716,7 @@ function renderSettings() {
   return `
     ${shown}
     ${accountShown}
+    <div class="section-title">Model</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>${m.configured ? esc(m.provider) + " · " + esc(m.name) : "No model"}</strong>
       <p class="meta">Factories stay offline until you check Draft with model. Key ${m.key_set ? "set (" + esc(m.key_from) + ")" : "not set"}. Prefer ${esc(m.key_env)}. It is not written into context/.</p>
@@ -682,6 +728,7 @@ function renderSettings() {
         <div><button class="primary" type="submit">Save model</button></div>
       </form>
     </div>
+    <div class="section-title">Factory</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>Software factory</strong>
       <p class="meta">Install default is ${esc((state.snap.factory || {}).trigger || "on-demand")} / ${esc((state.snap.factory || {}).reach || "shadow")}. A repo can be lower or, if it says so, merge. Merge is never inherited. Nothing is pushed.</p>
@@ -691,6 +738,7 @@ function renderSettings() {
         <button class="primary" type="submit">Save factory default</button>
       </form>
     </div>
+    <div class="section-title">Capture and schedule</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>Weekly job</strong>
       <p class="meta">Read-only sync, a digest if the cache changed, a maintenance draft${state.scheduleProject ? ", and " + esc(state.scheduleProject) + "'s status" : ""}. Nothing is pushed.</p>
@@ -707,6 +755,7 @@ function renderSettings() {
       <button type="button" class="quiet" data-hook>${(state.snap.hook || {}).set ? "Rotate webhook token" : "Enable webhook"}</button>
       ${state.hookToken ? `<div class="banner">Webhook token, shown once: ${esc(state.hookToken)}</div>` : ""}
     </div>
+    <div class="section-title">Server</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>Index</strong>
       <p class="meta">state.db is an index. Rebuilding it reads context/ again and changes no notes.</p>
@@ -722,6 +771,7 @@ function renderSettings() {
         ${d.deployment === "multi" && state.snap.signed_in ? `<button type="button" class="quiet" data-signout>Sign out</button>` : ""}
       </div>
     </div>
+    <div class="section-title">People</div>
     <form class="inline" id="add-account">
       <input type="text" name="name" placeholder="Sign-in name" required aria-label="Sign-in name">
       <select name="actor" aria-label="Actor for this sign-in">${(state.snap.actors || []).map(a => `<option value="${esc(a.id)}">${esc(a.title)}</option>`).join("")}</select>
@@ -807,6 +857,8 @@ function renderMarkdown(src) {
 }
 async function openReader(type, id) {
   const panel = document.getElementById("reader");
+  state.opener = document.activeElement;
+  state.dirty = false;
   panel.hidden = false;
   panel.setAttribute("role", "dialog");
   panel.setAttribute("aria-modal", "true");
@@ -847,25 +899,54 @@ python -m stead factory merge --contribution ${esc(data.id || id)}</code></pre>
         <p class="meta">Publish opens a pull request only when the repo ceiling allows it. Merge needs <code>reach: merge</code> and green checks.</p>
       </div>` : "";
     const path = data.path ? `<div class="meta">${esc(data.path)}</div>` : "";
+    const roll = data.rollup ? `
+      <div class="panel" style="padding:12px 14px;margin-top:12px">
+        <strong>Rollup</strong>
+        <div class="chips" style="margin:8px 0">${Object.entries(data.rollup.counts).map(([key, n]) =>
+          chip(key + " " + n, key === "done" ? "done" : key === "blocked" ? "fail" : key === "doing" ? "doing" : "")).join("")}${chip(data.rollup.documents + " docs")}${chip(data.rollup.meetings + " meetings")}</div>
+        ${data.rollup.runs.length ? `<div style="display:flex;gap:6px;flex-wrap:wrap">${data.rollup.runs.map(r =>
+          `<button type="button" class="quiet" data-run-open="${esc(r.id)}">run ${esc(r.id)} · ${esc(r.factory)} · ${esc(r.verdict)}</button>`).join("")}</div>`
+          : `<div class="meta">No factory runs for this project yet.</div>`}
+      </div>` : "";
+    const deletable = ["project", "task", "document", "meeting", "repo", "actor"].includes(type);
+    const danger = deletable ? `
+      <div class="panel" style="padding:12px 14px;margin-top:12px">
+        <strong>Delete</strong>
+        <p class="meta">Removes the file. Git history keeps the old text.</p>
+        <button type="button" class="quiet" data-delete-object="${esc(data.id || id)}" data-delete-type="${esc(type)}">Delete ${esc(type)}</button>
+      </div>` : "";
     panel.innerHTML = `
       <button type="button" class="quiet" id="close-reader">Close</button>
       ${path}
       <h3>${esc(title)}</h3>
       ${banner}
       <div class="reader-body">${renderMarkdown(body)}</div>
-      ${editor}${specEditor}`;
+      ${roll}
+      ${editor}${specEditor}
+      ${danger}`;
+    const close = panel.querySelector("#close-reader");
+    if (close) close.focus();
   } catch (err) {
     panel.innerHTML = `<button type="button" class="quiet" id="close-reader">Close</button><p>${esc(err.message)}</p>`;
   }
 }
 function closeReader() {
   const panel = document.getElementById("reader");
+  if (state.dirty && panel.querySelector("textarea") &&
+      !confirm("Close without saving?")) return;
+  state.dirty = false;
   panel.hidden = true;
   panel.removeAttribute("role");
   panel.removeAttribute("aria-modal");
+  if (state.opener && state.opener.focus) state.opener.focus();
 }
+document.addEventListener("input", (event) => {
+  if (event.target.closest("#reader") && event.target.tagName === "TEXTAREA") state.dirty = true;
+});
 async function openRun(id) {
   const panel = document.getElementById("reader");
+  state.opener = document.activeElement;
+  state.dirty = false;
   panel.hidden = false;
   panel.setAttribute("role", "dialog");
   panel.setAttribute("aria-modal", "true");
@@ -954,6 +1035,35 @@ document.body.addEventListener("click", async (event) => {
   }
   const runOpen = event.target.closest("[data-run-open]");
   if (runOpen) { openRun(runOpen.dataset.runOpen); return; }
+  if (event.target.closest("[data-toggle-runs]")) {
+    state.showAllRuns = !state.showAllRuns;
+    render();
+    return;
+  }
+  const removeObject = event.target.closest("[data-delete-object]");
+  if (removeObject) {
+    const type = removeObject.dataset.deleteType;
+    const id = removeObject.dataset.deleteObject;
+    if (!confirm("Delete " + type + " " + id + "? Git history keeps the old text.")) return;
+    try {
+      await api("/api/object/delete", {method: "POST", body: JSON.stringify({type, id})});
+      toast("Deleted " + id);
+      closeReader();
+      await load();
+    } catch (err) {
+      if (/still has/i.test(err.message) && confirm(err.message + "\n\nDelete it anyway?")) {
+        try {
+          await api("/api/object/delete", {method: "POST", body: JSON.stringify({type, id, force: true})});
+          toast("Deleted " + id);
+          closeReader();
+          await load();
+        } catch (forced) { toast(forced.message); }
+      } else {
+        toast(err.message);
+      }
+    }
+    return;
+  }
   if (event.target.closest("[data-signout]")) {
     try {
       await api("/api/session/end", {method: "POST", body: "{}"});
@@ -972,9 +1082,20 @@ document.body.addEventListener("click", async (event) => {
   const evals = event.target.closest("[data-evals]");
   if (evals) {
     try {
-      const result = await api("/api/eval/run", {method: "POST", body: JSON.stringify({factory: evals.dataset.evals})});
-      toast(result.ok ? "Eval files ok (" + result.cases + " cases)" : result.problems.join("; "));
+      const form = evals.closest("[data-promote]");
+      const version = form && form.querySelector("select") ? form.querySelector("select").value : "";
+      const result = await api("/api/eval/status", {method: "POST", body: JSON.stringify({
+        factory: evals.dataset.evals, version,
+      })});
+      state.evals[evals.dataset.evals] = result;
+      render();
     } catch (err) { toast(err.message); }
+    return;
+  }
+  const evalClose = event.target.closest("[data-eval-close]");
+  if (evalClose) {
+    delete state.evals[evalClose.dataset.evalClose];
+    render();
     return;
   }
   if (event.target.closest("[data-watch]")) {
@@ -1038,6 +1159,15 @@ document.body.addEventListener("click", async (event) => {
   if (open && !event.target.closest("select")) openReader(open.dataset.type, open.dataset.id);
 });
 document.body.addEventListener("change", async (event) => {
+  const promoteSelect = event.target.closest("[data-promote] select");
+  if (promoteSelect) {
+    const form = promoteSelect.closest("[data-promote]");
+    const factory = state.snap.factories.find(f => f.name === form.dataset.promote);
+    const prod = factory && (factory.prompts || []).find(p => p.status === "production");
+    const button = form.querySelector("[data-promote-button]");
+    if (button) button.disabled = !prod || promoteSelect.value === prod.version;
+    return;
+  }
   const status = event.target.closest("[data-set-status]");
   const contrib = event.target.closest("[data-set-contrib]");
   try {
@@ -1083,6 +1213,8 @@ document.body.addEventListener("submit", async (event) => {
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
   if (event.submitter && event.submitter.name) data[event.submitter.name] = event.submitter.value;
+  const submitter = event.submitter;
+  if (submitter) submitter.disabled = true;
   try {
     if (form.id === "add-task") {
       await api("/api/task", {method: "POST", body: JSON.stringify(data)});
@@ -1224,6 +1356,8 @@ document.body.addEventListener("submit", async (event) => {
     await load();
   } catch (err) {
     toast(err.message);
+  } finally {
+    if (submitter) submitter.disabled = false;
   }
 });
 document.getElementById("q").addEventListener("input", (event) => {

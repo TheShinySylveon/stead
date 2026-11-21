@@ -138,6 +138,51 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(len(notes), 1)
         self.assertIn("Ready.", notes[0].read_text(encoding="utf-8"))
 
+    def test_delete_refuses_a_linked_project_and_force_removes_it(self) -> None:
+        task = {"id": "task-linked", "type": "task", "title": "Linked",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "to-do", "project": "project-demo"}
+        (self.root / "context/tasks").mkdir(parents=True)
+        (self.root / "context/tasks/linked.md").write_text(
+            frontmatter.dumps(task, "# Linked\n"), encoding="utf-8")
+        status, body = self._post("/api/object/delete",
+                                  {"type": "project", "id": "project-demo"})
+        self.assertEqual(status, 400)
+        self.assertIn("linked object", body["error"])
+        self.assertTrue((self.root / "context/projects/demo.md").is_file())
+        status, body = self._post("/api/object/delete",
+                                  {"type": "project", "id": "project-demo", "force": True})
+        self.assertEqual(status, 200, body)
+        self.assertFalse((self.root / "context/projects/demo.md").exists())
+
+    def test_delete_removes_the_index_row(self) -> None:
+        status, body = self._post("/api/object/delete",
+                                  {"type": "task", "id": "task-linked"})
+        self.assertEqual(status, 404)
+
+    def test_project_detail_has_a_rollup(self) -> None:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/object?type=project&id=project-demo")
+        req.add_header("X-Ctx-Token", self.token)
+        status, body = _read(req)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["rollup"]["counts"]["to-do"], 0)
+        self.assertEqual(body["rollup"]["runs"][0]["factory"], "weekly-project-status")
+
+    def test_eval_status_lists_cases_without_a_result(self) -> None:
+        status, body = self._post("/api/eval/status",
+                                  {"factory": "weekly-project-status", "version": "v2"})
+        self.assertEqual(status, 200)
+        self.assertEqual(body["cases"][0]["id"], "eval-demo")
+        self.assertFalse(body["cases"][0]["ok"])
+
+    def test_snapshot_reports_the_version(self) -> None:
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/api/snapshot")
+        req.add_header("X-Ctx-Token", self.token)
+        status, body = _read(req)
+        self.assertEqual(status, 200)
+        self.assertEqual(body["version"], "0.0.1")
+
     def test_run_viewer_returns_the_draft(self) -> None:
         path = f"http://127.0.0.1:{self.port}/api/run?id={self.run_id}"
         req = urllib.request.Request(path)
