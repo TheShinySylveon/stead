@@ -123,6 +123,7 @@
   }
   button.row:hover, button.card:hover { border-color: #cfc3b4; }
   .row small, .card small, .meta { color: var(--muted); font-size: 13px; }
+  .clip { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 100%; }
   .chips { display: flex; gap: 6px; flex-wrap: wrap; }
   .chip {
     font-size: 12px; padding: 2px 8px; border-radius: 999px;
@@ -318,8 +319,9 @@ function renderHome() {
         <div><strong>${esc(r.factory)}</strong><div class="meta">${esc(r.task_ref)} · ${esc(r.prompt_version)} · ${esc(r.mode)}</div></div>
         ${chip(r.verdict, r.verdict === "approved" || r.verdict === "pass" ? "done" : r.verdict === "rejected" || r.verdict === "fail" ? "fail" : "doing")}
       </div>
-      <div class="meta" style="margin-top:6px">${esc(r.created)}${r.bundle_path ? " · " + esc(r.bundle_path) : ""}</div>
-      ${r.verdict === "pending" ? `<div style="margin-top:8px;display:flex;gap:8px">
+      <div class="meta clip" style="margin-top:6px" title="${esc(r.bundle_path || "")}">${esc(r.created)}${r.bundle_path ? " · " + esc(r.bundle_path) : ""}</div>
+      ${r.verdict === "pending" ? `<div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="text" data-run-note="${esc(r.id)}" placeholder="Review note (optional)" aria-label="Review note for run ${esc(r.id)}">
         <button type="button" class="primary" data-verdict="approved" data-run="${esc(r.id)}">Approve</button>
         <button type="button" class="quiet" data-verdict="rejected" data-run="${esc(r.id)}">Reject</button>
       </div>` : ""}
@@ -454,10 +456,27 @@ function renderRepos() {
     </div>
     <div class="section-title">Repos</div>
     <div class="grid">${repos.map(r => `
-      <button type="button" class="card" data-open data-type="repo" data-id="${esc(r.id)}">
-        <span><strong>${esc(r.title)}</strong><br><small>${esc(r.kind)} · ${esc(r.status || "")}</small></span>
-        ${chip(r.kind)}
-      </button>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
+      <div class="card" style="display:block">
+        <button type="button" class="linkish" data-open data-type="repo" data-id="${esc(r.id)}">${esc(r.title)}</button>
+        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
+          <select data-set-repo data-id="${esc(r.id)}" data-field="kind" aria-label="Kind for ${esc(r.title)}">${options(choices.repo_kind, r.kind || "oss")}</select>
+          <select data-set-repo data-id="${esc(r.id)}" data-field="status" aria-label="Status for ${esc(r.title)}">${options(choices.repo_status, r.status || "active")}</select>
+        </div>
+      </div>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
+    <form class="stack" id="add-spec">
+      <div class="section-title">Local issue or feature spec</div>
+      <p class="meta">Public file only. Nothing is posted to GitHub. Put private notes in a document.</p>
+      <input type="text" name="title" placeholder="Title" required aria-label="Spec title">
+      <select name="repo" aria-label="Repo" ${repos.length ? "" : "disabled"}>${repos.map(r => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}</select>
+      <div class="inline" style="margin:0">
+        <input type="number" name="number" min="1" placeholder="Number" required aria-label="Issue or PR number" style="width:120px">
+        <select name="kind" aria-label="Kind">${options(choices.contrib_kind, "issue")}</select>
+        <select name="method" aria-label="Method">${options(choices.method, "spec-kit")}</select>
+      </div>
+      <textarea name="description" placeholder="What and why. No private strategy." aria-label="Spec description"></textarea>
+      <textarea name="criteria" placeholder="One acceptance criterion per line" aria-label="Acceptance criteria"></textarea>
+      <div><button class="primary" type="submit" ${repos.length ? "" : "disabled"}>Add to local cache</button></div>
+    </form>
     <div class="section-title">Contributions</div>
     ${rows || `<div class="empty">No cached issues or pull requests.</div>`}`;
 }
@@ -474,6 +493,7 @@ function renderInbox() {
         <button type="button" class="linkish" data-open data-type="inbox" data-id="${esc(item.name)}">${esc(item.name)}</button>
         <div class="meta">${esc(item.updated)} · ${esc(item.bytes)} bytes</div>
         <form class="inline" data-triage="${esc(item.name)}" style="margin-top:8px">
+          <input type="text" name="title" placeholder="Title (optional)" aria-label="Filed title for ${esc(item.name)}">
           <select name="project" aria-label="Project for ${esc(item.name)}">${projectOptions()}</select>
           <button class="quiet" type="submit" name="type" value="document">File as document</button>
           <button class="quiet" type="submit" name="type" value="meeting">File as meeting</button>
@@ -572,10 +592,20 @@ async function openReader(type, id) {
       ? `<div class="banner">Public GitHub cache. Private strategy belongs in a document, not here.</div>` : "";
     const editable = ["project", "task", "document", "meeting"].includes(type);
     const editor = editable ? `
-      <form id="save-body" data-type="${esc(type)}" data-id="${esc(data.id || id)}" style="margin-top:16px">
+      <form id="save-title" data-type="${esc(type)}" data-id="${esc(data.id || id)}" class="inline" style="margin-top:12px">
+        <input type="text" name="title" value="${esc(title)}" aria-label="Title" required>
+        <button class="quiet" type="submit">Rename</button>
+      </form>
+      <form id="save-body" data-type="${esc(type)}" data-id="${esc(data.id || id)}" style="margin-top:8px">
         <div class="section-title">Edit</div>
         <textarea name="body" aria-label="Note body">${esc(data.body || "")}</textarea>
         <div><button class="primary" type="submit">Save note</button></div>
+      </form>` : "";
+    const specEditor = type === "contribution" ? `
+      <form id="save-spec" data-id="${esc(data.id || id)}" style="margin-top:16px">
+        <div class="section-title">Public spec</div>
+        <textarea name="body" aria-label="Public spec body">${esc(data.body || "")}</textarea>
+        <div><button class="primary" type="submit">Save public spec</button></div>
       </form>` : "";
     const path = data.path ? `<div class="meta">${esc(data.path)}</div>` : "";
     panel.innerHTML = `
@@ -584,7 +614,7 @@ async function openReader(type, id) {
       <h3>${esc(title)}</h3>
       ${banner}
       <div class="reader-body">${renderMarkdown(body)}</div>
-      ${editor}`;
+      ${editor}${specEditor}`;
   } catch (err) {
     panel.innerHTML = `<button type="button" class="quiet" id="close-reader">Close</button><p>${esc(err.message)}</p>`;
   }
@@ -597,7 +627,10 @@ document.body.addEventListener("click", async (event) => {
   const verdict = event.target.closest("[data-verdict]");
   if (verdict) {
     try {
-      await api("/api/run/verdict", {method: "POST", body: JSON.stringify({id: Number(verdict.dataset.run), verdict: verdict.dataset.verdict})});
+      const note = verdict.parentElement && verdict.parentElement.querySelector("[data-run-note]");
+      await api("/api/run/verdict", {method: "POST", body: JSON.stringify({
+        id: Number(verdict.dataset.run), verdict: verdict.dataset.verdict, output: note ? note.value : "",
+      })});
       toast(verdict.dataset.verdict === "approved" ? "Run approved" : "Run rejected");
       await load();
     } catch (err) {
@@ -643,6 +676,11 @@ document.body.addEventListener("change", async (event) => {
       await api("/api/task/status", {method: "POST", body: JSON.stringify({id: status.dataset.id, status: status.value})});
       toast("Status saved");
       await load();
+    } else if (event.target.closest("[data-set-repo]")) {
+      const repo = event.target.closest("[data-set-repo]");
+      await api("/api/repo", {method: "POST", body: JSON.stringify({id: repo.dataset.id, [repo.dataset.field]: repo.value})});
+      toast("Repo updated");
+      await load();
     } else if (event.target.closest("[data-set-project]")) {
       const project = event.target.closest("[data-set-project]");
       await api("/api/project/status", {method: "POST", body: JSON.stringify({id: project.dataset.id, status: project.value})});
@@ -662,7 +700,8 @@ document.body.addEventListener("submit", async (event) => {
   const form = event.target;
   const handled = form.id === "add-task" || form.id === "capture" || form.id === "add-project"
     || form.id === "add-document" || form.id === "add-meeting" || form.id === "add-repo"
-    || form.id === "save-body" || form.dataset.factory || form.dataset.triage;
+    || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
+    || form.id === "add-spec" || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
@@ -688,6 +727,26 @@ document.body.addEventListener("submit", async (event) => {
       })});
       toast("Repo added");
       form.reset();
+    } else if (form.id === "add-spec") {
+      await api("/api/contribution/add", {method: "POST", body: JSON.stringify(data)});
+      toast("Added to the local cache");
+      form.reset();
+    } else if (form.id === "save-title") {
+      await api("/api/title", {method: "POST", body: JSON.stringify({
+        type: form.dataset.type, id: form.dataset.id, title: data.title,
+      })});
+      toast("Renamed");
+      await load();
+      await openReader(form.dataset.type, form.dataset.id);
+      return;
+    } else if (form.id === "save-spec") {
+      await api("/api/contribution/body", {method: "POST", body: JSON.stringify({
+        id: form.dataset.id, body: data.body,
+      })});
+      toast("Public spec saved");
+      await load();
+      await openReader("contribution", form.dataset.id);
+      return;
     } else if (form.id === "save-body") {
       await api("/api/object/body", {method: "POST", body: JSON.stringify({
         type: form.dataset.type, id: form.dataset.id, body: data.body,
@@ -698,7 +757,7 @@ document.body.addEventListener("submit", async (event) => {
       return;
     } else if (form.dataset.triage) {
       await api("/api/inbox/triage", {method: "POST", body: JSON.stringify({
-        name: form.dataset.triage, type: data.type, project: data.project,
+        name: form.dataset.triage, type: data.type, project: data.project, title: data.title,
       })});
       toast("Filed into context");
     } else if (form.id === "capture") {

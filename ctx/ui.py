@@ -226,6 +226,7 @@ def snapshot(root: Path) -> dict:
             "contrib_review": list(cli.CONTRIB_REVIEW),
             "contrib_role": list(cli.CONTRIB_ROLES),
             "method": list(cli.CONTRIB_METHODS),
+            "contrib_kind": list(cli.CONTRIB_KINDS),
             "project_status": list(PROJECT_STATUSES),
             "repo_kind": list(cli.REPO_KINDS),
             "repo_status": list(cli.REPO_STATUSES),
@@ -366,6 +367,167 @@ def save_body(root: Path, otype: str, ref: str, body: str) -> dict:
         finally:
             conn.close()
     return {"ok": True, "id": meta.get("id"), "type": otype}
+
+
+def set_title(root: Path, otype: str, ref: str, title: str) -> dict:
+    """Rename a private object. The id stays put."""
+    if otype not in EDITABLE:
+        raise UiError("only projects, tasks, documents, and meetings can be renamed here")
+    title = (title or "").strip()
+    if not title or len(title) > 200:
+        raise UiError("needs a title of at most 200 characters")
+    found = objects.find(root, otype, ref or "")
+    if found is None:
+        raise UiError(f"{otype} not found: {ref}", 404)
+    path, meta, body = found
+    meta["title"] = title
+    meta["updated"] = date.today().isoformat()
+    path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+    if otype == "task" and db.db_path(root).exists():
+        conn = db.connect(root)
+        try:
+            conn.execute("UPDATE tasks SET title = ?, updated = ? WHERE id = ?",
+                         (title, meta["updated"], meta["id"]))
+            conn.commit()
+        finally:
+            conn.close()
+    return {"ok": True, "id": meta.get("id"), "title": title}
+
+
+def _spec_body(title: str, description: str, criteria: str) -> str:
+    parts = [f"# {title}", ""]
+    if description.strip():
+        parts += [description.strip(), ""]
+    items = []
+    for raw in criteria.splitlines():
+        item = raw.strip().removeprefix("- ").strip()
+        if not item:
+            continue
+        if item.startswith("[ ] ") or item.startswith("[x] ") or item.startswith("[X] "):
+            items.append(f"- {item}")
+        else:
+            items.append(f"- [ ] {item}")
+    if items:
+        parts += ["## Acceptance criteria", "", *items]
+    return "\n".join(parts).rstrip() + "\n"
+
+
+def create_contribution(root: Path, payload: dict) -> dict:
+    """Add a local public issue or PR. Does not post it to GitHub."""
+    title = (payload.get("title") or "").strip()
+    repo = (payload.get("repo") or "").strip()
+    if not title or not repo:
+        raise UiError("a contribution needs a title and a repo")
+    try:
+        number = int(payload.get("number"))
+    except (TypeError, ValueError) as exc:
+        raise UiError("number must be a positive integer") from exc
+    if number < 1:
+        raise UiError("number must be a positive integer")
+    kind = payload.get("kind") or "issue"
+    method = payload.get("method") or "spec-kit"
+    role = payload.get("role") or "author"
+    _call(cli.cmd_contribution_add, root, title, repo, kind, number, None,
+          role, "open", "none", "none", method)
+    found_repo = objects.find(root, "repo", repo)
+    if found_repo is None:
+        raise UiError(f"repo not found: {repo}")
+    ref = f"contribution-{found_repo[1]['id'].removeprefix('repo-')}-{kind}-{number}"
+    description = payload.get("description") or ""
+    criteria = payload.get("criteria") or ""
+    if description.strip() or criteria.strip():
+        found = objects.find(root, "contribution", ref)
+        if found is None:
+            raise UiError("contribution was added but could not be found")
+        path, meta, _body = found
+        if criteria.strip():
+            tags = meta.get("tags") if isinstance(meta.get("tags"), list) else []
+            if "feature-spec" not in tags:
+                tags.append("feature-spec")
+            meta["tags"] = tags
+        meta["updated"] = date.today().isoformat()
+        path.write_text(frontmatter.dumps(meta, _spec_body(title, description, criteria)),
+                        encoding="utf-8")
+        if db.db_path(root).exists():
+            conn = db.connect(root)
+            try:
+                db.index_contribution(conn, root, path, meta, meta["updated"])
+                conn.commit()
+            finally:
+                conn.close()
+    return {"ok": True, "id": ref, "type": "contribution"}
+
+
+def save_public_body(root: Path, ref: str, body: str) -> dict:
+    """Edit a contribution body. It is public GitHub-cache data, not a private note."""
+    if not ref:
+        raise UiError("id is required")
+    if body is None:
+        raise UiError("body is required")
+    if len(body) > MAX_NOTE:
+        raise UiError("note is too long")
+    found = objects.find(root, "contribution", ref)
+    if found is None:
+        raise UiError(f"contribution not found: {ref}", 404)
+    path, meta, _old = found
+    meta["updated"] = date.today().isoformat()
+    text = body if body.endswith("\n") or body == "" else body + "\n"
+    path.write_text(frontmatter.dumps(meta, text), encoding="utf-8")
+    if db.db_path(root).exists():
+        conn = db.connect(root)
+        try:
+            db.index_contribution(conn, root, path, meta, meta["updated"])
+            conn.commit()
+        finally:
+            conn.close()
+    return {"ok": True, "id": meta.get("id")}
+
+
+def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
+    found = objects.find(root, "repo", repo_id or "")
+    if found is None:
+        raise UiError(f"repo not found: {repo_id}", 404)
+    path, meta, body = found
+    changed = False
+    if payload.get("status"):
+        if payload["status"] not in cli.REPO_STATUSES:
+            raise UiError(f"invalid status {payload['status']!r}")
+        meta["status"] = payload["status"]
+        changed = True
+    if payload.get("kind"):
+        if payload["kind"] not in cli.REPO_KINDS:
+            raise UiError(f"invalid kind {payload['kind']!r}")
+        meta["kind"] = payload["kind"]
+        changed = True
+    if "notes" in payload:
+        notes = (payload.get("notes") or "").strip()
+        if len(notes) > 400:
+            raise UiError("notes are too long")
+        if notes:
+            meta["notes"] = notes
+        else:
+            meta.pop("notes", None)
+        changed = True
+    if "url" in payload:
+        url = _https_or_empty(payload.get("url"), "url")
+        if url:
+            meta["url"] = url
+        else:
+            meta.pop("url", None)
+        changed = True
+    if not changed:
+        raise UiError("nothing to set")
+    today = date.today().isoformat()
+    meta["updated"] = today
+    path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+    if db.db_path(root).exists():
+        conn = db.connect(root)
+        try:
+            db.index_repo(conn, root, path, meta, today)
+            conn.commit()
+        finally:
+            conn.close()
+    return {"ok": True, "id": meta.get("id")}
 
 
 def set_project_status(root: Path, project_id: str, status: str) -> dict:
@@ -516,7 +678,8 @@ def _public_run(info: dict) -> dict:
 _REVIEW_VERDICTS = ("approved", "rejected")
 
 
-def set_run_verdict(root: Path, run_id: object, verdict: str) -> dict:
+def set_run_verdict(root: Path, run_id: object, verdict: str,
+                    output: str | None = None) -> dict:
     """Record a human review on an existing run. Does not create a new row."""
     if verdict not in _REVIEW_VERDICTS:
         raise UiError("verdict must be approved or rejected")
@@ -524,11 +687,18 @@ def set_run_verdict(root: Path, run_id: object, verdict: str) -> dict:
         rid = int(run_id)
     except (TypeError, ValueError) as exc:
         raise UiError("run id must be a number") from exc
+    note = (output or "").strip()
+    if len(note) > 4000:
+        raise UiError("review note is too long")
     if not db.db_path(root).exists():
         raise UiError("state.db not found — run ctx init first", 404)
     conn = db.connect(root)
     try:
-        cur = conn.execute("UPDATE runs SET verdict = ? WHERE id = ?", (verdict, rid))
+        if note:
+            cur = conn.execute("UPDATE runs SET verdict = ?, output = ? WHERE id = ?",
+                               (verdict, note, rid))
+        else:
+            cur = conn.execute("UPDATE runs SET verdict = ? WHERE id = ?", (verdict, rid))
         conn.commit()
         if cur.rowcount != 1:
             raise UiError(f"run not found: {rid}", 404)
@@ -591,12 +761,24 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = set_task_status(root, payload.get("id", ""), payload.get("status", ""))
         elif path == "/api/contribution":
             result = set_contribution(root, payload)
+        elif path == "/api/contribution/add":
+            result = create_contribution(root, payload)
+        elif path == "/api/contribution/body":
+            if "body" not in payload:
+                raise UiError("body is required")
+            result = save_public_body(root, payload.get("id") or "", payload.get("body"))
+        elif path == "/api/repo":
+            result = set_repo(root, payload.get("id") or "", payload)
+        elif path == "/api/title":
+            result = set_title(root, payload.get("type") or "", payload.get("id") or "",
+                               payload.get("title") or "")
         elif path == "/api/capture":
             result = capture(root, payload.get("title", ""), payload.get("body", ""))
         elif path == "/api/factory/run":
             result = shadow_run(root, payload)
         elif path == "/api/run/verdict":
-            result = set_run_verdict(root, payload.get("id"), payload.get("verdict") or "")
+            result = set_run_verdict(root, payload.get("id"), payload.get("verdict") or "",
+                                     payload.get("output"))
         elif path == "/api/object":
             result = create_object(root, payload)
         elif path == "/api/object/body":

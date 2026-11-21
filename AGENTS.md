@@ -139,9 +139,11 @@ cron/Task Scheduler/systemd timer can invoke the CLI.
 to serve without opening one). It reads the same markdown and writes through
 the same handlers as the CLI: projects, tasks, documents, meetings, and repos;
 note edits; contribution fields (including role, CI, review, and method);
-inbox capture and triage; a read-only GitHub sync; and shadow factory
+inbox capture and triage; local issues and feature specs (public files);
+repo kind and status; a read-only GitHub sync; and shadow factory
 assembly. It never binds a public interface, never calls an LLM, and never
-performs a remote write. Contribution bodies stay read-only. Factory runs
+performs a remote write. A contribution body is a public spec, not a private
+note. Factory runs
 from the cockpit are shadow-only — no draft PR. The page has no external
 assets, so it works offline.
 

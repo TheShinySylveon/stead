@@ -115,6 +115,40 @@ class TestSnapshot(UiTestCase):
         with self.assertRaises(ui.UiError):
             ui.delete_inbox(self.root, "README.md")
 
+    def test_spec_repo_title_and_review_note(self) -> None:
+        cli.cmd_repo_add(self.root, "My App", "https://github.com/testuser/my-app", "own")
+        created = ui.create_contribution(self.root, {
+            "title": "Add a flag", "repo": "repo-testuser-my-app", "number": 7,
+            "description": "Users need a flag so the list command can emit JSON to stdout.",
+            "criteria": "prints JSON\nexisting output unchanged",
+        })
+        self.assertTrue(created["id"].endswith("-issue-7"))
+        spec = __import__("ctx").objects.find(self.root, "contribution", created["id"])
+        self.assertIn("## Acceptance criteria", spec[2])
+        self.assertIn("- [ ] prints JSON", spec[2])
+        self.assertIn("feature-spec", spec[1]["tags"])
+        ui.save_public_body(self.root, created["id"], "# Add a flag\n\nPublic only.\n")
+        spec = __import__("ctx").objects.find(self.root, "contribution", created["id"])
+        self.assertIn("Public only.", spec[2])
+        ui.set_repo(self.root, "repo-testuser-my-app", {"status": "paused", "notes": "local"})
+        repo = __import__("ctx").objects.find(self.root, "repo", "repo-testuser-my-app")
+        self.assertEqual(repo[1]["status"], "paused")
+        self.assertEqual(repo[1]["notes"], "local")
+        ui.set_title(self.root, "project", "project-demo", "Demo renamed")
+        project = __import__("ctx").objects.find(self.root, "project", "project-demo")
+        self.assertEqual(project[1]["title"], "Demo renamed")
+        self.assertEqual(project[1]["id"], "project-demo")
+        with self.assertRaises(ui.UiError):
+            ui.set_title(self.root, "contribution", created["id"], "private rename")
+        run = ui.shadow_run(self.root, {"factory": "weekly-project-status", "project": "project-demo"})
+        ui.set_run_verdict(self.root, run["run_id"], "approved", "looks right")
+        conn = db.connect(self.root)
+        try:
+            row = conn.execute("SELECT output FROM runs WHERE id = ?", (run["run_id"],)).fetchone()
+        finally:
+            conn.close()
+        self.assertEqual(row["output"], "looks right")
+
     def test_offline_sync_does_not_touch_the_network(self) -> None:
         result = ui.sync_github(self.root, offline=True)
         self.assertTrue(result["offline"])
