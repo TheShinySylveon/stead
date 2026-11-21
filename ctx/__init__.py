@@ -4,4 +4,4 @@ Run from the repo root:  python -m stead <command>
 See AGENTS.md and CONVENTIONS.md for the system contract.
 """
 
-__version__ = "0.0.1"
+__version__ = "0.1.0"

@@ -40,6 +40,18 @@ def weekly_command(root: Path, project: str | None = None) -> str:
     return command
 
 
+def launcher_path(root: Path) -> Path:
+    """Short, stable path for Task Scheduler. The command itself is too long."""
+    return root / "private" / "run-weekly.cmd"
+
+
+def _write_launcher(root: Path, command: str) -> Path:
+    path = launcher_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text("@echo off\r\n" + command + "\r\n", encoding="utf-8")
+    return path
+
+
 def show(root: Path, project: str | None = None) -> str:
     command = weekly_command(root, project)
     extra = f", and {project}'s status" if project else ""
@@ -48,9 +60,10 @@ def show(root: Path, project: str | None = None) -> str:
         f"Read-only sync, a local digest if the cache changed, a maintenance\n"
         f"draft{extra}. Nothing is posted, pushed, or merged.\n\n"
         f"Command:\n{command}\n\n"
-        "Windows:\n"
+        "Windows (install writes this to private/run-weekly.cmd so the task\n"
+        "command stays under the 261 character limit):\n"
         f'schtasks /Create /TN {TASK_NAME} /SC WEEKLY /D FRI /ST 16:00 '
-        f'/TR "cmd /c {command}" /F\n\n'
+        f'/TR "cmd /c {launcher_path(root)}" /F\n\n'
         "cron:\n"
         f"0 16 * * 5 {command}\n"
     )
@@ -62,9 +75,13 @@ def install(root: Path, *, runner=None, platform: str | None = None,
     if (platform or sys.platform) != "win32":
         raise ScheduleError("this install is for Windows Task Scheduler. Use `stead schedule show` for the cron line.")
     command = weekly_command(root, project)
+    launcher = _write_launcher(root, command)
+    trigger = f'cmd /c "{launcher}"'
+    if len(trigger) > 261:
+        raise ScheduleError("the launcher path is too long for Task Scheduler")
     argv = [
         "schtasks", "/Create", "/TN", TASK_NAME, "/SC", "WEEKLY", "/D", "FRI",
-        "/ST", "16:00", "/TR", f"cmd /c {command}", "/F",
+        "/ST", "16:00", "/TR", trigger, "/F",
     ]
     if any(part in {"push", "merge", "pr"} for part in argv):
         raise ScheduleError("refusing a schedule that writes to GitHub")

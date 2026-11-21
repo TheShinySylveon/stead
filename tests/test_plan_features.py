@@ -103,15 +103,22 @@ class ScaffoldAndImportTest(unittest.TestCase):
 
 class ScheduleAndSyncTest(unittest.TestCase):
     def test_weekly_command_does_not_push_or_merge(self) -> None:
-        text = show(Path("C:/notes"))
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        text = show(root)
         self.assertIn("sync github --limit 30 --digest", text)
         self.assertIn("context-maintenance", text)
         self.assertNotIn("factory publish", text)
         self.assertNotIn("factory merge", text)
         calls = []
-        install(Path("C:/notes"), runner=lambda argv: calls.append(argv) or "",
-                platform="win32")
+        install(root, runner=lambda argv: calls.append(argv) or "", platform="win32")
         self.assertEqual(calls[0][0], "schtasks")
+        trigger = calls[0][calls[0].index("/TR") + 1]
+        self.assertLessEqual(len(trigger), 261)
+        launcher = root / "private" / "run-weekly.cmd"
+        self.assertTrue(launcher.is_file())
+        self.assertIn("context-maintenance", launcher.read_text(encoding="utf-8"))
         self.assertNotIn("push", calls[0])
         self.assertNotIn("merge", calls[0])
 

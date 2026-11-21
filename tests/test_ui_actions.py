@@ -195,7 +195,7 @@ class CockpitActionsTest(unittest.TestCase):
         req.add_header("X-Ctx-Token", self.token)
         status, body = _read(req)
         self.assertEqual(status, 200)
-        self.assertEqual(body["version"], "0.0.1")
+        self.assertEqual(body["version"], "0.1.0")
 
     def test_run_viewer_returns_the_draft(self) -> None:
         path = f"http://127.0.0.1:{self.port}/api/run?id={self.run_id}"

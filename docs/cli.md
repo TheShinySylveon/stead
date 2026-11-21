@@ -145,9 +145,11 @@ python -m stead schedule install [--project P]
 run a factory. The hook is off until that token exists.
 
 `schedule show` prints the Friday command for cron or Task Scheduler.
-`schedule install` creates the current user's Windows task. The job runs a
-read-only sync, a local digest if the cache changed, a maintenance draft, and
-the status of `--project` when you pass one. It does not push or merge.
+`schedule install` creates the current user's Windows task. It writes
+`private/run-weekly.cmd` and registers that short path, because Task Scheduler
+rejects a command over 261 characters. The job runs a read-only sync, a local
+digest if the cache changed, a maintenance draft, and the status of
+`--project` when you pass one. It does not push or merge.
 
 ## Publishing and merging
 

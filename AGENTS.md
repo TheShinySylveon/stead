@@ -108,7 +108,7 @@ state.db             <- GITIGNORED, rebuildable operational index (stead init)
 ## CLI reference (run from the repo root, Python 3.11+, stdlib only)
 
 ```
-python -m stead version                       # print 0.0.1
+python -m stead version                       # print 0.1.0
 python -m stead model show                    # configured endpoint; never prints the key
 python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME
 python -m stead eval run [--factory F]        # structural check, no model

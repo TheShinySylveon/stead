@@ -14,7 +14,7 @@ own.
 > Rent the intelligence. Own the context.
 
 The model can be swapped. The files stay yours. The command is `stead`.
-Version **0.0.1**. Licensed under Apache-2.0. Copyright 2026 Tyler Rathbone.
+Version **0.1.0**. Licensed under Apache-2.0. Copyright 2026 Tyler Rathbone.
 See [LICENSE](LICENSE).
 
 ![Stead cockpit](docs/images/cockpit.png)
@@ -145,7 +145,7 @@ CI on `main` and on pull requests runs that suite on Python 3.11 and 3.12.
 Pull requests build the Docker image. `main` publishes
 `ghcr.io/theshinysylveon/stead`.
 
-## Limits of 0.0.1
+## Limits of 0.1.0
 
 - A shared server asks each person to sign in. This computer does not.
   The access token only starts a server that has no accounts yet.

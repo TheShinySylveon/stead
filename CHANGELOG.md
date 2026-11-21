@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.1.0 — 2026-11-21
+
+The cockpit catches up with the CLI, a shared server has per-person sign-in,
+and the planned factory set is complete.
 
 - Delete for projects, tasks, documents, meetings, repos, and actors, in the
   CLI and the reader. A linked project or repo is refused without force.
@@ -11,6 +14,8 @@
 - The page shows its version, keeps scroll and focus, confirms before closing
   unsaved edits, traps focus in the reader, warns errors longer, and reflows at
   phone width.
+- The Windows weekly task registers a short launcher in `private/`, so a deep
+  checkout path no longer hits the 261-character limit.
 - A review note no longer replaces the draft. It is stored as `note`, and the
   run viewer shows the draft, prompt, and bundle.
 - "Needs you" lists one row per object with every reason.
