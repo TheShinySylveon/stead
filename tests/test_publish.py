@@ -24,12 +24,27 @@ class PublishTest(FeatureBuilderTestCase):
         with self.assertRaises(PublishError):
             publish(self.root, SPEC_ID, runner=boom)
 
-    def test_merge_is_refused(self) -> None:
+    def test_merge_ceiling_still_does_not_merge_from_publish(self) -> None:
         autonomy.set_repo(self.root, "repo-testuser-my-app", reach="merge",
                           code_path=str(self.code))
-        with self.assertRaises(PublishError) as caught:
-            publish(self.root, SPEC_ID, runner=lambda *_: "no")
-        self.assertIn("merge is not implemented", str(caught.exception))
+        calls = []
+
+        def runner(argv, _cwd):
+            calls.append(argv)
+            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+                return "feature/json\n"
+            if argv[:3] == ["git", "rev-list", "--count"]:
+                return "1\n"
+            if argv[:3] == ["git", "push", "-u"]:
+                return ""
+            if argv[:3] == ["gh", "pr", "create"]:
+                self.assertNotIn("--draft", argv)
+                return "https://github.com/testuser/my-app/pull/4\n"
+            raise AssertionError(argv)
+
+        opened = publish(self.root, SPEC_ID, runner=runner)
+        self.assertFalse(opened["merged"])
+        self.assertFalse(any(len(argv) > 2 and argv[1:3] == ["pr", "merge"] for argv in calls))
 
     def test_refuses_the_default_branch(self) -> None:
         autonomy.set_repo(self.root, "repo-testuser-my-app", reach="draft-pr",

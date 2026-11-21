@@ -12,8 +12,9 @@ __pycache__/
 *.pyc
 *.pyo
 
-# Deployment secrets. Never commit an access token.
+# Deployment secrets. Never commit an access token or a password hash.
 stead.json
+private/
 .env
 
 # Hallmark redesign records. Not the product.

@@ -72,11 +72,13 @@ container, started with `STEAD_ACCESS_TOKEN` set.
 
 ## What is not built yet
 
-- No accounts, passwords, or sessions.
 - No per-object permission checks in the CLI. If you can write the file, you
   can write the object. Repository access is the permission.
-- `actor:` is stamped when someone is selected (`stead actor use` or Settings).
-  It is not a login.
+- A shared server has sign-ins. `stead account add` stores a password hash in
+  gitignored `private/accounts.json`. A signed-in write stamps that actor.
+  This computer still has no login.
+- `actor:` is stamped when someone is selected, or when they are signed in.
+  It is not a permission check.
 - Agents are not registered for you. Add an actor file when a new agent
   starts writing.
 

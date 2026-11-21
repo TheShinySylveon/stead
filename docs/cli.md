@@ -71,6 +71,9 @@ Omitted, it is `spec-kit`.
 python -m stead actor add --title "Ada" --kind human|agent
 python -m stead actor list
 python -m stead actor use actor-ada
+python -m stead account add --name ada --actor actor-ada
+python -m stead account list
+python -m stead account reset --name ada
 
 python -m stead status PROJECT
 python -m stead sync github [--author @me] [--limit N]
@@ -91,6 +94,7 @@ python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr
 python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr]
 python -m stead factory watch
 python -m stead factory publish --contribution ID
+python -m stead factory merge --contribution ID
 python -m stead repo set ID --path DIR
 python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live] [--generate] [--reach REACH]
 python -m stead digest [--generate]

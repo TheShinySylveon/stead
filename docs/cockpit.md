@@ -57,7 +57,8 @@ Assemble shadow writes `bundle.md`, `prompt.md`, and `run.json` under
 to any agent. Come back and approve or reject the run on Home.
 
 Draft pull requests are not a button. `stead factory publish` opens one
-from an isolated branch. The cockpit does not push.
+from an isolated branch. `stead factory merge` is a separate command, and
+only when that repo says `reach: merge`. The cockpit does not push or merge.
 
 ## Stopping it
 

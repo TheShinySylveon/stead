@@ -106,6 +106,9 @@ python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|cus
 python -m stead eval run [--factory F]        # structural check, no model
 python -m stead repo set ID --trigger on-demand|watch --reach shadow|draft-pr|pr|merge
 python -m stead factory watch                # watched feature specs; no push
+python -m stead factory publish --contribution ID  # isolated branch + pull request. Never merges.
+python -m stead factory merge --contribution ID    # green checks only. Repo must say reach: merge.
+python -m stead account add --name NAME --actor ACTOR  # shared-server sign-in. Hash only.
 python -m stead init                          # rebuild state.db from schema.sql + files
 python -m stead task add --title T --project P [--status to-do]
 python -m stead task list [--project P] [--status S]
@@ -208,15 +211,17 @@ rules: `docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`
 `merge`. A run may ask for less. It may not ask for more. Merge is never
 inherited from the install default. `stead factory publish` may push an
 isolated branch and open a pull request. It does not merge, and it refuses
-the default branch.
+the default branch. `stead factory merge` is separate. It runs only when the
+repo file says `reach: merge`, the checks are green, and GitHub accepts it.
+It does not pass `--admin`, and it does not push the default branch.
 
 **Autonomy ladder (a repo may sit on any rung):**
 1. **SHADOW (default):** plan + proposed diff only; zero remote writes.
 2. **DRAFT-PR:** isolated branch + `gh pr create --draft`; a HUMAN merges.
-   Not performed by Stead yet.
-3. **TRUSTED (never the install default):** merge only when the repo file says
-   `reach: merge`, checks are green, and branch protection is server-side.
-   Not performed by Stead yet.
+   `stead factory publish` does this when the ceiling allows it.
+3. **TRUSTED (never the install default):** `stead factory merge` only when
+   the repo file says `reach: merge`, checks are green, and GitHub accepts
+   the merge. No `--admin`. No push of the default branch.
 
 **Hard rules (every mode):** never push to main/default branch; never auto-merge
 by default; human review gate before anything consequential; vague/large specs

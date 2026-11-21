@@ -4,7 +4,7 @@ feature-builder assembly stays local. Publish is a separate, explicit step.
 It pushes the checkout's current branch only when that branch is not the
 default branch and already has commits ahead of it. A draft is the default.
 A normal pull request is allowed when the repo ceiling is `pr` or `merge`.
-Merging is not implemented.
+Merging is `stead factory merge`, and only when the repo file says so.
 """
 
 from __future__ import annotations
@@ -41,9 +41,6 @@ def publish(root: Path, contribution_ref: str, *, runner=None) -> dict:
     if reach == "shadow":
         raise PublishError(
             "this repo's ceiling is shadow. Raise it before opening a pull request.")
-    if reach == "merge":
-        raise PublishError(
-            "merge is not implemented. Open a pull request and merge it yourself.")
     code = Path(repo_meta.get("code_path") or "")
     if not repo_meta.get("code_path") or not code.is_dir():
         raise PublishError(
@@ -69,8 +66,9 @@ def publish(root: Path, contribution_ref: str, *, runner=None) -> dict:
         link = f"Closes #{number}."
     body = (
         f"{link}\n\n"
-        "Opened by Stead from an isolated branch. A person reviews and merges.\n"
-        "Stead does not merge."
+        "Opened by Stead from an isolated branch. A person reviews.\n"
+        "This command does not merge. `stead factory merge` is separate, and "
+        "only when this repo says reach: merge."
     )
     argv = ["gh", "pr", "create", "--base", default, "--head", branch,
             "--title", title, "--body", body]

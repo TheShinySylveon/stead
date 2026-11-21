@@ -131,10 +131,16 @@ def effective(root: Path, *, deploy: bool = False) -> dict:
     else:
         deployment = "single"
     token = os.environ.get(ENV_TOKEN, "").strip() or file_cfg.get("access_token") or ""
-    if deployment == "multi" and not token:
+    from ctx.accounts import AccountError, count
+    try:
+        people = count(root)
+    except AccountError as exc:
+        raise ConfigError(str(exc)) from exc
+    if deployment == "multi" and not token and people < 1:
         raise ConfigError(
-            "multi-user mode needs an access token. Set STEAD_ACCESS_TOKEN "
-            "or run welcome and choose Shared server.")
+            "multi-user mode needs a person account, or STEAD_ACCESS_TOKEN "
+            "until the first account exists. "
+            "python -m stead account add --name NAME --actor ACTOR")
     port_raw = os.environ.get(ENV_PORT, "").strip()
     port = int(port_raw) if port_raw else int(file_cfg.get("port") or 8765)
     bind = os.environ.get(ENV_BIND, "").strip()

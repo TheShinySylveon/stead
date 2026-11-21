@@ -13,6 +13,7 @@ import io
 import json
 import re
 import secrets
+import threading
 import webbrowser
 from datetime import date
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -24,7 +25,7 @@ from ctx import cli, db, factory, frontmatter, objects
 PKG_DIR = Path(__file__).resolve().parent
 PAGE_PATH = PKG_DIR / "cockpit.html"
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
-_GATE_PAGE = b"""<!DOCTYPE html>
+_GATE_STYLE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Stead</title>
 <meta name="description" content="Enter the shared-server access token. It is not stored in git.">
 <style>
@@ -53,12 +54,29 @@ _GATE_PAGE = b"""<!DOCTYPE html>
 <body>
 <form method="POST" action="/api/session">
   <h1>Stead</h1>
-  <p>This is a shared server. Enter the access token. It is not stored in git.</p>
-  <input type="password" name="token" autocomplete="current-password" required aria-label="Access token">
+  __FIELDS__
   <button type="submit">Continue</button>
 </form>
 </body></html>
 """
+
+
+def _gate_page(people: bool) -> bytes:
+    if people:
+        fields = (
+            "<p>Sign in as yourself. The password is not stored in git.</p>"
+            '<input name="name" autocomplete="username" required aria-label="Name">'
+            '<input type="password" name="password" autocomplete="current-password" '
+            'required aria-label="Password">'
+        )
+    else:
+        fields = (
+            "<p>No people yet. Enter the access token, then add an account. "
+            "It is not stored in git.</p>"
+            '<input type="password" name="token" autocomplete="current-password" '
+            'required aria-label="Access token">'
+        )
+    return _GATE_STYLE.replace("__FIELDS__", fields).encode("utf-8")
 MAX_BODY = 512 * 1024
 MAX_NOTE = 200_000
 EDITABLE = ("project", "task", "document", "meeting")
@@ -228,6 +246,14 @@ def _model_providers() -> list[dict]:
     return [{"id": key, "label": PROVIDER_LABELS[key]} for key in PROVIDERS]
 
 
+def _accounts(root: Path) -> list[dict]:
+    from ctx.accounts import AccountError, public_list
+    try:
+        return public_list(root)
+    except AccountError:
+        return []
+
+
 def _current_actor(root: Path) -> str:
     from ctx.actors import current
     return current(root)
@@ -312,6 +338,7 @@ def snapshot(root: Path) -> dict:
         "factory": _factory_defaults(root),
         "actor": _current_actor(root),
         "actors": _list(root, "actor"),
+        "accounts": _accounts(root),
         "counts": {
             "open_tasks": open_tasks,
             "attention": len(attention),
@@ -1026,6 +1053,14 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                 result = {"ok": True, "actor": use(root, payload.get("id") or "")}
             except ActorError as exc:
                 raise UiError(str(exc)) from exc
+        elif path == "/api/account":
+            from ctx.accounts import AccountError, add
+            try:
+                shown = add(root, payload.get("name") or "", payload.get("actor") or "")
+            except AccountError as exc:
+                raise UiError(str(exc)) from exc
+            result = {"ok": True, "name": (payload.get("name") or "").strip().lower(),
+                      "password": shown}
         elif path == "/api/actor":
             result = add_actor(root, payload.get("title") or "", payload.get("kind") or "human")
         else:
@@ -1051,18 +1086,36 @@ class CockpitHandler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").split(":")[0].strip("[]")
         return host in LOOPBACK
 
+    def _cookie(self, wanted: str) -> str:
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            name, _, value = part.strip().partition("=")
+            if name == wanted:
+                return value
+        return ""
+
+    def _people(self) -> int:
+        from ctx.accounts import AccountError, count
+        try:
+            return count(self.server.root)
+        except AccountError:
+            return 0
+
+    def _session_actor(self) -> str:
+        token = self._cookie("stead_session")
+        if not token:
+            return ""
+        with self.server.sessions_lock:
+            return self.server.sessions.get(token, "")
+
     def _access_ok(self) -> bool:
-        expected = getattr(self.server, "access_token", "") or ""
         if getattr(self.server, "deployment", "single") != "multi":
             return True
-        presented = self.headers.get("X-Stead-Access", "")
-        if not presented:
-            cookie = self.headers.get("Cookie", "")
-            for part in cookie.split(";"):
-                name, _, value = part.strip().partition("=")
-                if name == "stead_access":
-                    presented = value
-                    break
+        if self._session_actor():
+            return True
+        if self._people() > 0:
+            return False
+        expected = getattr(self.server, "access_token", "") or ""
+        presented = self.headers.get("X-Stead-Access", "") or self._cookie("stead_access")
         if not expected or not presented:
             return False
         return secrets.compare_digest(presented, expected)
@@ -1109,44 +1162,68 @@ class CockpitHandler(BaseHTTPRequestHandler):
         parsed = urlparse(self.path)
         if not self._access_ok():
             if method == "GET" and parsed.path == "/":
-                self._send(200, _GATE_PAGE, "text/html; charset=utf-8")
+                self._send(200, _gate_page(self._people() > 0), "text/html; charset=utf-8")
                 return
             if method == "POST" and parsed.path == "/api/session":
                 self._open_session()
                 return
-            self._reject(401, "access token required")
+            self._reject(401, "sign in required")
             return
-        token_ok = secrets.compare_digest(
-            self.headers.get("X-Ctx-Token", ""), self.server.token)
+        from ctx.actors import bind, unbind
+        bound = bind(self._session_actor())
         try:
-            payload = self._read_json() if method == "POST" else None
-        except UiError as exc:
-            self._reject(exc.status, str(exc))
-            return
-        status, body, content_type = dispatch(
-            self.server.root, method, parsed.path, self._query(), payload, token_ok=token_ok)
-        if parsed.path == "/" and status == 200:
-            body = body.replace(b"__CTX_TOKEN__", self.server.token.encode("ascii"), 1)
-        self._send(status, body, content_type)
+            token_ok = secrets.compare_digest(
+                self.headers.get("X-Ctx-Token", ""), self.server.token)
+            try:
+                payload = self._read_json() if method == "POST" else None
+            except UiError as exc:
+                self._reject(exc.status, str(exc))
+                return
+            status, body, content_type = dispatch(
+                self.server.root, method, parsed.path, self._query(), payload, token_ok=token_ok)
+            if parsed.path == "/" and status == 200:
+                body = body.replace(b"__CTX_TOKEN__", self.server.token.encode("ascii"), 1)
+            self._send(status, body, content_type)
+        finally:
+            unbind(bound)
 
     def _open_session(self) -> None:
-        expected = getattr(self.server, "access_token", "") or ""
         length = int(self.headers.get("Content-Length") or "0")
         raw = self.rfile.read(length) if length else b""
-        token = ""
         ctype = self.headers.get("Content-Type", "")
-        if "application/json" in ctype:
-            try:
-                token = json.loads(raw.decode("utf-8")).get("token") or ""
-            except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
-                token = ""
-        else:
-            from urllib.parse import parse_qs
-            token = (parse_qs(raw.decode("utf-8", errors="replace")).get("token") or [""])[0]
+        fields = self._session_fields(raw, ctype)
+        if self._people() > 0:
+            from ctx.accounts import verify
+            person = verify(self.server.root, fields.get("name") or "", fields.get("password") or "")
+            if not person or not person.get("actor"):
+                self._reject(401, "name or password is wrong")
+                return
+            session = secrets.token_urlsafe(24)
+            with self.server.sessions_lock:
+                self.server.sessions[session] = person["actor"]
+            cookie = "stead_session=%s; HttpOnly; SameSite=Lax; Path=/" % session
+            self._send_session(cookie, ctype)
+            return
+        expected = getattr(self.server, "access_token", "") or ""
+        token = fields.get("token") or ""
         if not expected or not token or not secrets.compare_digest(token, expected):
             self._reject(401, "access token required")
             return
         cookie = "stead_access=%s; HttpOnly; SameSite=Lax; Path=/" % token
+        self._send_session(cookie, ctype)
+
+    def _session_fields(self, raw: bytes, ctype: str) -> dict:
+        if "application/json" in ctype:
+            try:
+                payload = json.loads(raw.decode("utf-8"))
+            except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+                return {}
+            return payload if isinstance(payload, dict) else {}
+        from urllib.parse import parse_qs
+        parsed = parse_qs(raw.decode("utf-8", errors="replace"))
+        return {key: values[0] for key, values in parsed.items() if values}
+
+    def _send_session(self, cookie: str, ctype: str) -> None:
         if "application/json" not in ctype:
             self.send_response(303)
             self.send_header("Location", "/")
@@ -1191,12 +1268,17 @@ def make_server(root: Path, host: str | None = None, port: int | None = None,
         raise SystemExit(
             f"single-user mode only binds to loopback ({', '.join(LOOPBACK)}). "
             "Choose Shared server and run with --deploy, or use Docker.")
-    if cfg["deployment"] == "multi" and not cfg["access_token"]:
-        raise SystemExit("multi-user mode needs an access token")
+    from ctx.accounts import count
+    if cfg["deployment"] == "multi" and not cfg["access_token"] and count(root) < 1:
+        raise SystemExit(
+            "multi-user mode needs a person account, or an access token until "
+            "the first account exists")
     ensure_index(root)
     httpd = CockpitServer(root, (bind, listen_port), secrets.token_urlsafe(24))
     httpd.deployment = cfg["deployment"]
     httpd.access_token = cfg["access_token"]
+    httpd.sessions = {}
+    httpd.sessions_lock = threading.Lock()
     return httpd
 
 
@@ -1208,7 +1290,7 @@ def serve(root: Path, host: str | None = None, port: int | None = None,
     url = f"http://{shown}:{bound_port}/"
     print(f"Stead\n  {url}")
     if httpd.deployment == "multi":
-        print("  shared server · access token required · markdown is the source of truth · Ctrl+C to stop")
+        print("  shared server · sign in required · markdown is the source of truth · Ctrl+C to stop")
     else:
         print("  this computer · loopback only · markdown is the source of truth · Ctrl+C to stop")
     if open_browser:

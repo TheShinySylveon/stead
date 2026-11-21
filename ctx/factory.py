@@ -342,9 +342,9 @@ _REACH_SAFETY = {
     ),
     "merge": (
         "Mode: **MERGE**. This repo explicitly allows a merge. Never the default.\n"
-        "You may push an isolated feature branch and merge only after the checks\n"
-        "are actually green and branch protection allows it. NEVER push to the\n"
-        "default branch. NEVER merge a red or pending check."
+        "Do not merge yourself. A person runs `stead factory merge` after the\n"
+        "checks are green. That command refuses a red or pending check and does\n"
+        "not bypass branch protection. NEVER push to the default branch."
     ),
 }
 

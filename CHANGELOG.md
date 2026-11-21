@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- `stead factory merge` merges a green pull request when the repo file says
+  `reach: merge`. It does not bypass branch protection, and it does not push
+  the default branch. Publish still does not merge.
+- A shared server has per-person sign-in. Passwords are hashes in gitignored
+  `private/accounts.json`. This computer still has no login.
 - The container image is published to `ghcr.io/theshinysylveon/stead` on `main`.
 - Writes stamp `actor:` when `stead actor use` or `STEAD_ACTOR` names an actor file.
 - `stead prompt promote` refuses until every eval case has a recorded pass for that version.

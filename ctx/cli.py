@@ -642,6 +642,15 @@ def build_parser() -> argparse.ArgumentParser:
     au = actor.add_parser("use", help="remember who is writing. Stamped on later writes.")
     au.add_argument("id")
 
+    account = sub.add_parser("account", help="shared-server sign-in. Not a login on this computer.").add_subparsers(dest="sub", required=True)
+    ac = account.add_parser("add", help="add a person. Prints a password once.")
+    ac.add_argument("--name", required=True)
+    ac.add_argument("--actor", required=True)
+    ac.add_argument("--password", help="optional. If omitted, one is generated and printed once.")
+    account.add_parser("list", help="list names and actors. Never prints a password.")
+    ar = account.add_parser("reset", help="replace a password. Prints the new one once.")
+    ar.add_argument("--name", required=True)
+
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
     sg.add_argument("--author", default="@me")
@@ -709,6 +718,8 @@ def build_parser() -> argparse.ArgumentParser:
     fwatch = fr.add_parser("watch", help="assemble open feature specs on repos set to watch")
     fpub = fr.add_parser("publish", help="push an isolated branch and open a pull request. Never merges.")
     fpub.add_argument("--contribution", required=True)
+    fmerge = fr.add_parser("merge", help="merge a green pull request. Repo must say reach: merge. Never bypasses protection.")
+    fmerge.add_argument("--contribution", required=True)
     fdef = fr.add_parser("defaults", help="install factory preference. Cannot be merge.")
     fdef.add_argument("--trigger", choices=("on-demand", "watch"))
     fdef.add_argument("--reach", choices=("shadow", "draft-pr", "pr"))
@@ -881,6 +892,37 @@ def main(argv: list[str] | None = None) -> int:
         print(f"opened {opened['url']}")
         print(f"branch {opened['branch']} -> {opened['base']} [{opened['reach']}]")
         print("not merged. A person reviews.")
+        return 0
+    if args.command == "factory" and args.sub == "merge":
+        from ctx.merge import MergeError, merge
+        try:
+            opened = merge(root, args.contribution)
+        except MergeError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"merged {opened['url']}")
+        print(f"branch {opened['branch']} -> {opened['base']}")
+        print("branch protection was not bypassed.")
+        return 0
+    if args.command == "account":
+        from ctx.accounts import AccountError, add, public_list, reset
+        try:
+            if args.sub == "add":
+                shown = add(root, args.name, args.actor, args.password)
+                print(f"account {args.name.strip().lower()} -> {args.actor}")
+                if args.password:
+                    print("password was not printed.")
+                else:
+                    print(f"password, shown once: {shown}")
+                print("stored as a hash in private/accounts.json")
+                return 0
+            if args.sub == "reset":
+                shown = reset(root, args.name)
+                print(f"password for {args.name.strip().lower()}, shown once: {shown}")
+                return 0
+        except AccountError as exc:
+            raise SystemExit(str(exc)) from exc
+        for item in public_list(root):
+            print(f"{item['name']}  {item['actor']}")
         return 0
     if args.command == "factory" and args.sub == "watch":
         report = factory.watch_specs(root)

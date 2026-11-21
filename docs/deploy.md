@@ -2,7 +2,8 @@
 
 Single-user is the default. `stead ui` binds to this computer and does not ask
 for a password. Multi-user is a shared server: one process, one index, several
-browsers. It does not start without an access token.
+browsers. Each person signs in. The access token is only the bootstrap until
+the first account exists.
 
 SQLite stays the index. Do not run two containers against one `state.db`.
 The compose file is one service on purpose.
@@ -33,8 +34,16 @@ export STEAD_ACCESS_TOKEN="the-token"
 docker compose up --build
 ```
 
-Open `http://127.0.0.1:8765/` and enter the token. The cookie stays in that
-browser. The token is not written into `context/`.
+Open `http://127.0.0.1:8765/`. Until an account exists, enter the token. Then
+add a person and sign in by name. The session cookie stays in that browser.
+Passwords are hashes in the private volume, not in `context/`.
+
+```bash
+docker compose exec stead python -m stead actor add --title "Ada" --kind human
+docker compose exec stead python -m stead account add --name ada --actor actor-ada
+```
+
+The password is printed once. `stead account list` never prints it.
 
 ## Image
 
@@ -53,7 +62,7 @@ notes survive a rebuild. `state.db` is recreated if the container is new.
 That is safe. The files are the source of truth.
 
 Do not publish port 8765 to the public internet without a TLS proxy in front.
-The token is a shared password, not a user account.
+A sign-in is a password for one actor. It is not a second database.
 
 ## Settings
 
@@ -66,12 +75,12 @@ python -m stead actor add --title "Review bot" --kind agent
 python -m stead actor list
 ```
 
-Actors are attribution. They are not logins. Anyone with the access token can
-use the shared cockpit. Repository or host access is still the real permission
-if you also share the files through git.
+Actors are attribution. An account is the sign-in for one actor on a shared
+server. This computer still has no login. Repository or host access is still
+the real permission if you also share the files through git.
 
 ## What this is not
 
 - Not a second database. Do not replace SQLite for this.
-- Not accounts or per-person passwords.
+- Not a password manager. Hashes live in the private volume, not in git.
 - Not a license to put `state.db` on a network share.

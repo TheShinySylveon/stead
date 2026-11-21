@@ -27,8 +27,11 @@ An install default in gitignored `stead.json` can be `shadow`, `draft-pr`, or
 A fresh install starts at on-demand and shadow.
 
 Assembly stays on disk. `stead factory publish` pushes an isolated branch
-and opens a pull request when the ceiling allows `draft-pr` or `pr`. It
-refuses the default branch. It does not merge.
+and opens a pull request when the ceiling allows `draft-pr`, `pr`, or
+`merge`. It refuses the default branch. It does not merge.
+`stead factory merge` is a separate command. The repo file must say
+`reach: merge`. The checks must be green. It does not bypass branch
+protection, and it does not push the default branch.
 
 ## Autonomy ladder (incremental trust — never skip a rung)
 
@@ -45,11 +48,10 @@ The reaches above are the rungs. A repo may sit on any rung.
    merges, never pushes to the default branch. Stead does not perform that
    push yet.
 3. **PULL REQUEST.** A normal pull request. A human still merges.
-4. **TRUSTED (explicit per repo, never the default).** Auto-merge only after ALL of:
-   the repo file says `reach: merge`, the checks are actually green, and
-   repository branch protection (required reviews + required status checks) is
-   enforced server-side. Even then, Stead does not merge today. Nothing in
-   this repo enables it.
+4. **TRUSTED (explicit per repo, never the default).** `stead factory merge`
+   only after ALL of: the repo file says `reach: merge`, the checks are
+   actually green, and GitHub accepts the merge. Branch protection is not
+   bypassed. A factory run does not call it. Nothing merges a red check.
 
 ## Hard safety rules (every rung, every mode)
 

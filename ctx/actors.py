@@ -1,17 +1,21 @@
 """Who last wrote an object. Attribution, not a login.
 
-The current actor is STEAD_ACTOR, or the actor id in gitignored stead.json.
-A write stamps that id when the actor file exists. It never invents one.
+A signed-in request wins. Otherwise the current actor is STEAD_ACTOR, or the
+actor id in gitignored stead.json. A write stamps that id when the actor file
+exists. It never invents one.
 """
 
 from __future__ import annotations
 
+import contextvars
 import os
 from pathlib import Path
 
 from ctx import config, objects
 
 ENV_ACTOR = "STEAD_ACTOR"
+_request_actor: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "stead_request_actor", default="")
 
 
 class ActorError(Exception):
@@ -19,7 +23,19 @@ class ActorError(Exception):
         super().__init__(message)
 
 
+def bind(actor_id: str):
+    """Remember the signed-in person for this request. Reset the returned token."""
+    return _request_actor.set((actor_id or "").strip())
+
+
+def unbind(token) -> None:
+    _request_actor.reset(token)
+
+
 def current(root: Path) -> str:
+    bound = _request_actor.get().strip()
+    if bound:
+        return bound
     chosen = os.environ.get(ENV_ACTOR, "").strip()
     if chosen:
         return chosen

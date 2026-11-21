@@ -1,5 +1,6 @@
 # One Stead process, one index, several browsers. Do not scale this service.
-# Set STEAD_ACCESS_TOKEN in the environment or a gitignored .env file.
+# People sign in with an account. STEAD_ACCESS_TOKEN is only the bootstrap
+# until the first account exists. Password hashes live in the private volume.
 services:
   stead:
     image: ghcr.io/theshinysylveon/stead:latest
@@ -10,10 +11,12 @@ services:
       STEAD_DEPLOYMENT: multi
       STEAD_BIND: 0.0.0.0
       STEAD_PORT: "8765"
-      STEAD_ACCESS_TOKEN: ${STEAD_ACCESS_TOKEN:?set STEAD_ACCESS_TOKEN}
+      STEAD_ACCESS_TOKEN: ${STEAD_ACCESS_TOKEN:-}
     volumes:
       - stead-context:/app/context
+      - stead-private:/app/private
     restart: unless-stopped
 
 volumes:
   stead-context:
+  stead-private:

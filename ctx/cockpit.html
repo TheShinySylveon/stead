@@ -635,9 +635,11 @@ function renderSettings() {
   const m = state.snap.model || {configured: false, key_set: false, provider: "", name: "", base_url: "", key_env: "STEAD_MODEL_API_KEY"};
   const actors = (state.snap.actors || []).filter(match);
   const shown = state.settingsToken ? `<div class="banner">New access token, shown once: ${esc(state.settingsToken)}</div>` : "";
+  const accountShown = state.accountPassword ? `<div class="banner">Password for ${esc(state.accountName)}, shown once: ${esc(state.accountPassword)}</div>` : "";
   const opt = (value, label) => `<option value="${value}" ${m.provider === value ? "selected" : ""}>${label}</option>`;
   return `
     ${shown}
+    ${accountShown}
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>${m.configured ? esc(m.provider) + " · " + esc(m.name) : "No model"}</strong>
       <p class="meta">Factories stay offline until you check Draft with model. Key ${m.key_set ? "set (" + esc(m.key_from) + ")" : "not set"}. Prefer ${esc(m.key_env)}. It is not written into context/.</p>
@@ -660,13 +662,19 @@ function renderSettings() {
     </div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>${d.deployment === "multi" ? "Shared server" : "This computer"}</strong>
-      <p class="meta">Bind ${esc(d.bind)} · port ${esc(d.port)} · token ${d.token_set ? "set" : "not set"}. A normal cockpit stays on loopback until you start Docker or pass --deploy.</p>
+      <p class="meta">Bind ${esc(d.bind)} · port ${esc(d.port)} · token ${d.token_set ? "set" : "not set"} · ${(state.snap.accounts || []).length} sign-in${(state.snap.accounts || []).length === 1 ? "" : "s"}. A normal cockpit stays on loopback. A shared server asks each person to sign in.</p>
       <div style="display:flex;gap:8px;flex-wrap:wrap">
         <button type="button" class="quiet" data-deploy="single">Use this computer</button>
         <button type="button" class="primary" data-deploy="multi">Use a shared server</button>
         <button type="button" class="quiet" data-rotate-token ${d.deployment === "multi" ? "" : "disabled"}>Rotate token</button>
       </div>
     </div>
+    <form class="inline" id="add-account">
+      <input type="text" name="name" placeholder="Sign-in name" required aria-label="Sign-in name">
+      <select name="actor" aria-label="Actor for this sign-in">${(state.snap.actors || []).map(a => `<option value="${esc(a.id)}">${esc(a.title)}</option>`).join("")}</select>
+      <button class="primary" type="submit" ${(state.snap.actors || []).length ? "" : "disabled"}>Add sign-in</button>
+    </form>
+    ${(state.snap.accounts || []).length ? `<div class="list">${state.snap.accounts.map(a => `<div class="row"><span><strong>${esc(a.name)}</strong><br><small>${esc(a.actor)}</small></span>${chip("sign-in")}</div>`).join("")}</div>` : ""}
     <form class="inline" id="use-actor">
       <select name="id" aria-label="Current actor">${(state.snap.actors || []).map(a => `<option value="${esc(a.id)}" ${state.snap.actor === a.id ? "selected" : ""}>${esc(a.title)}</option>`).join("")}</select>
       <button class="quiet" type="submit" ${(state.snap.actors || []).length ? "" : "disabled"}>Write as this actor</button>
@@ -891,7 +899,7 @@ document.body.addEventListener("submit", async (event) => {
     || form.id === "add-document" || form.id === "add-meeting" || form.id === "add-repo"
     || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
     || form.id === "add-spec" || form.id === "onboard" || form.id === "welcome"
-    || form.id === "add-actor" || form.id === "use-actor" || form.id === "set-model" || form.id === "set-factory"
+    || form.id === "add-actor" || form.id === "use-actor" || form.id === "add-account" || form.id === "set-model" || form.id === "set-factory"
     || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
@@ -929,6 +937,12 @@ document.body.addEventListener("submit", async (event) => {
     } else if (form.id === "use-actor") {
       await api("/api/actor/use", {method: "POST", body: JSON.stringify({id: data.id})});
       toast("Writing as " + data.id);
+    } else if (form.id === "add-account") {
+      const result = await api("/api/account", {method: "POST", body: JSON.stringify({name: data.name, actor: data.actor})});
+      state.accountPassword = result.password || "";
+      state.accountName = result.name || data.name;
+      toast("Sign-in added. Copy the password.");
+      form.reset();
     } else if (form.id === "add-actor") {
       await api("/api/actor", {method: "POST", body: JSON.stringify(data)});
       toast("Actor added");

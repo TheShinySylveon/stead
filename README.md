@@ -62,13 +62,14 @@ python -m stead welcome --title "My Project"
 |---|---|---|
 | Who | One person, and the agents on that machine | Several people, one process |
 | How | `python -m stead ui` | `docker compose pull && docker compose up --no-build` |
-| Network | Loopback only | Published port, access token required |
+| Network | Loopback only | Published port, each person signs in |
 | Index | One `state.db` on that machine | One `state.db` inside the container |
 
 Choosing Shared server in Welcome does not open a port on your laptop. It
 writes a gitignored `stead.json` and shows a token once. The image is
-`ghcr.io/theshinysylveon/stead`. Start it only after you set
-`STEAD_ACCESS_TOKEN`. Details: [docs/deploy.md](docs/deploy.md).
+`ghcr.io/theshinysylveon/stead`. The token only starts a server that has no
+accounts yet. After that, each person signs in. Details:
+[docs/deploy.md](docs/deploy.md).
 
 Do not scale the container. Do not put `state.db` on a network share. People
 who each have a clone share the markdown through git, and each clone keeps
@@ -133,7 +134,8 @@ Pull requests build the Docker image. `main` publishes
 
 ## Limits of 0.0.1
 
-- No per-person passwords. A shared server has one access token.
+- A shared server asks each person to sign in. This computer does not.
+  The access token only starts a server that has no accounts yet.
 - A normal `stead ui` stays on loopback. `--deploy` and Docker are the only
   public binds, and they require the token.
 - `actor:` is stamped only after you select who is writing. It is not a login.
@@ -144,13 +146,6 @@ Pull requests build the Docker image. `main` publishes
   constitution in `context/documents/`.
 - Git history before the empty-context commit still contains early demo
   files. A clone of `main` does not load them.
-
-## Coming soon
-
-- Merge. `stead factory publish` can open a draft or a normal pull request
-  from an isolated branch. It will not merge.
-- Per-person sign-in, instead of one shared token.
-
 
 ## Contributing
 
