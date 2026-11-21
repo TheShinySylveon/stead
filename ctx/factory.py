@@ -609,6 +609,7 @@ def assemble_maintenance(root: Path, factory: str = MAINTENANCE_FACTORY,
         info = {
             "factory": factory,
             "project": None,
+            "task_ref": "maintenance",
             "prompt_version": version,
             "mode": mode,
             "created": created,
@@ -637,6 +638,8 @@ def _inbox_notes(root: Path) -> list[str]:
         return []
     notes = []
     for path in sorted(folder.glob("*.md")):
+        if path.name.lower() == "readme.md":
+            continue
         notes.append(f"- {path.name}")
     return notes
 

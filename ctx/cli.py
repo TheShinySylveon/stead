@@ -579,7 +579,7 @@ def _print_draft(info: dict, generate: bool, *, coding: bool = False) -> None:
     else:
         print("no model call — hand prompt.md to any agent, or rerun with --generate")
     print(f"  python -m stead run log --factory {info['factory']} --task "
-          f"{info.get('contribution') or info.get('project') or 'contributions'} "
+          f"{info.get('contribution') or info.get('project') or info.get('task_ref') or 'contributions'} "
           f"--prompt-version {info['prompt_version']} --output TEXT --verdict approved|rejected")
     print("\n--- assembled prompt ---\n")
     print(info["assembled_prompt"])

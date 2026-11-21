@@ -28,6 +28,7 @@ class MaintenanceTest(unittest.TestCase):
         (root / "factories/context-maintenance/FACTORY.md").write_text("# F\n", encoding="utf-8")
         (prompt / "v1.md").write_text("Draft a triage note.\n", encoding="utf-8")
         (root / "inbox").mkdir()
+        (root / "inbox/README.md").write_text("# Inbox\n", encoding="utf-8")
         note = root / "inbox/waiting.md"
         note.write_text("# Waiting\n", encoding="utf-8")
         old = (date.today() - timedelta(days=40)).isoformat()
