@@ -15,8 +15,9 @@ Python 3.14.9). Branch `main`.
 
 ## Current state
 
-- **HEAD:** `b81cb0f` — working tree clean.
-- **Tests:** `python3 -m unittest discover -s tests` → **67 OK**.
+- **Spec-kit SDD:** `b81cb0f`. **Prior handoff:** `f2f8155`. Docs parity (this
+  change) sits on top of those — see "What remains" item 1.
+- **Tests:** `python3 -m unittest discover -s tests` → **67 OK** (unchanged by docs).
 - **Three factories** (shared, scrutinized AI workflows):
   - `weekly-contribution-digest`, `weekly-project-status`, `feature-builder`.
 - **Phase 3** (`feature-builder`: issue → PR in shadow/draft-PR mode) is complete
@@ -44,16 +45,16 @@ and the bundle/prompt carry `## Method\nspec-kit` + the SDD phases.
 
 ## What remains (next steps)
 
-1. **Documentation parity (not yet done):** `CONVENTIONS.md`, `README.md`, and
-   `AGENTS.md` do NOT yet mention the `method` field, the always-SDD flow, or
-   `docs/spec-kit-workflow.md` (which exists). Add:
-   - `method` field semantics + default `spec-kit`.
+1. **Documentation parity — done.**
+   `CONVENTIONS.md`, `README.md`, `AGENTS.md`, and `factories/feature-builder/FACTORY.md`
+   now document:
+   - `method` field semantics + default `spec-kit` (omission resolves to `spec-kit`).
    - pointer to `docs/spec-kit-workflow.md`.
-   - a note that SDD/planning-before-code is unconditional.
-   (Parent owns `AGENTS.md`; patch targeted, don't full-rewrite.)
-2. **Cosmetic:** commit `b81cb0f`'s message has two dropped phrases
-   (`ctx init`, `ctx prompt promote`) — the backticks in the `git commit -m "..."`
-   string were bash command-substituted. Optional `git commit --amend`. No code impact.
+   - SDD/planning-before-code is unconditional; `method` selects tooling only.
+   - `prompts/v2.md` is production; sync preserves `method` and never overrides it.
+2. **Cosmetic — skip.** `b81cb0f`'s message dropped two phrases because backticks
+   in a double-quoted `git commit -m` were command-substituted. Do **not** amend:
+   `f2f8155` sits on top of it. Rewriting history is not worth a cosmetic fix.
 3. **Optional verify:** actually run `specify init . --integration claude
    --non-interactive` in a scratch repo to confirm offline scaffolding end-to-end
    (only `specify --version` 1.4.3 and `specify init --help` verified so far).
@@ -89,7 +90,8 @@ python3 -m ctx factory run --factory feature-builder \
 
 - `AGENTS.md` — entry doc: one-cockpit, repos/contributions, factories, autonomy ladder.
 - `PLAN.md` — original 13-pillar plan (sustainability decisions).
-- `CONVENTIONS.md` / `README.md` — conventions + usage (need the spec-kit update, step 1).
+- `CONVENTIONS.md` / `README.md` / `AGENTS.md` — conventions + usage; `method`,
+  always-SDD, and `docs/spec-kit-workflow.md` are documented (step 1 done).
 - `ctx/` — `cli.py`, `factory.py`, `db.py`, `frontmatter.py`, `sync.py`, `schema.sql`, `objects.py`.
 - `factories/feature-builder/` — `FACTORY.md`, `prompts/{v1,v2}.md`, `evals/*.json` (6).
 - `docs/spec-kit-workflow.md` — the SDD flow + tooling + install.

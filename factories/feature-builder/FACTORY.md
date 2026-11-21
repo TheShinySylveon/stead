@@ -58,6 +58,21 @@ description plus a `## Acceptance criteria` checklist (`- [ ]` items).
 See CONVENTIONS.md → "Buildable feature specs". Author it with
 `ctx contribution add` (then edit the body) or by hand + `ctx init`.
 
+## Spec-driven, planning-first (every run)
+
+No implementation code is written before the specification, the technical
+plan, and the dependency-ordered tasks are produced and reviewed. That is
+unconditional. The spec's `method` field selects only the tooling:
+
+- `spec-kit` (default, including when omitted) — Spec-Driven Development via
+  the external, optional `specify` CLI. Phases: constitution → specify →
+  plan → tasks → implement (TDD) → converge.
+- `builtin` — the same phases, hand-rolled as markdown. No `specify` CLI.
+
+`ctx` never imports or invokes `specify`. Assembly stays deterministic,
+local, and network-free for both. Full flow, install, and own-vs-OSS rules:
+`docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`.
+
 ## Trigger
 
 - **Manual / on-demand (now):**
@@ -105,8 +120,10 @@ See CONVENTIONS.md → "Buildable feature specs". Author it with
 
 Python 3.14+ standard library only (`python3 -m ctx`). External open-source
 tools used by the *generation* step (not by assembly): `git` (branching,
-audit), `gh` (read-only context; draft-PR creation only in draft-PR mode).
-No provider is hardwired; no API key is required by this repo.
+audit), `gh` (read-only context; draft-PR creation only in draft-PR mode),
+and optionally `specify` (Spec Kit CLI, when `method` is `spec-kit`). `ctx`
+never invokes `specify`. No provider is hardwired; no API key is required
+by this repo.
 
 ## Risk level & incremental rollout
 

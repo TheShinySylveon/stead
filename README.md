@@ -91,6 +91,21 @@ A buildable spec is a contribution with `kind: issue`, `role: author`, tagged
 `feature-spec`, whose body has a description + a `## Acceptance criteria`
 checklist (see CONVENTIONS.md). A clearly-marked EXAMPLE spec is seeded.
 
+Every run is **spec-driven and planning-first**: the specification, technical
+plan, and dependency-ordered tasks are produced and reviewed before any
+implementation code. That is unconditional — it does not depend on `method`.
+The spec's `method` field selects only the tooling:
+
+- `spec-kit` (default, including when omitted) — Spec-Driven Development via
+  the external, optional `specify` CLI (GitHub Spec Kit).
+- `builtin` — the same phases, hand-rolled as markdown. No `specify` CLI.
+
+`ctx` never invokes `specify`. Flow, install, and own-vs-OSS rules:
+`docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md` (`ctx init`
+seeds the highest version; switch with `ctx prompt promote`). EXAMPLE issue
+202 sets `method: spec-kit`; issue 201 omits the field and still resolves to
+`spec-kit`.
+
 ```bash
 python3 -m ctx factory run --factory feature-builder \
     --contribution contribution-example-org-example-repo-issue-201 --shadow
@@ -100,10 +115,12 @@ python3 -m ctx factory run --factory feature-builder \
 # review its plan/diff, then record:
 python3 -m ctx run log --factory feature-builder \
     --task contribution-example-org-example-repo-issue-201 \
-    --prompt-version v1 --output "..." --verdict approved
+    --prompt-version v2 --output "..." --verdict approved
 ```
 
-The prompt encodes the delivery discipline: read the issue + all comments →
+The production prompt (`prompts/v2.md`) runs the SDD phases in
+`docs/spec-kit-workflow.md` before any implementation. It then encodes the
+delivery discipline: read the issue + all comments →
 sweep for duplicate/overlapping PRs and issues → validate the premise against
 current code → map EACH acceptance criterion to a test → TDD red-green on an
 isolated branch → sabotage-test the regression → run the repo's quality gates
@@ -132,6 +149,7 @@ consequential; vague/large specs are flagged for decomposition, not guessed.
 | `AGENTS.md` | Agent entry point: navigation, writing rules, CLI reference |
 | `CONVENTIONS.md` | Ontology: object types, frontmatter schema, naming |
 | `PLAN.md` | Design document and phased rollout (human-owned) |
+| `docs/spec-kit-workflow.md` | Always-on SDD flow for `feature-builder` (`method` selects tooling only) |
 | `context/` | Knowledge objects: `projects/`, `tasks/`, `documents/`, `meetings/`, `repos/`, `contributions/` |
 | `inbox/` | Unsorted capture; triage into `context/` |
 | `factories/` | Workflow definitions, versioned prompts, evals, run logs |
@@ -161,7 +179,8 @@ python3 -m ctx factory run --factory weekly-contribution-digest --shadow
 Phase 1: context skeleton + factory scaffolds, shadow-first. Phase 2:
 `weekly-contribution-digest` as the first factory — read-only GitHub cache,
 offline-capable, EXAMPLE seeds; specific real repos are deferred (see PLAN.md).
-Phase 3 (current): `feature-builder` — issue → PR autonomous build in strict
+Phase 3 (current): `feature-builder` — issue → PR autonomous build, always
+spec-driven and planning-first (`method: spec-kit` by default), in strict
 shadow/draft-PR mode, with an autonomy ladder and hard safety rules.
 Next phases per `PLAN.md`: eval-driven prompt promotion, scheduled triggers,
 inbox triage factory. Frontmatter relations are already team-ready; no rewrite

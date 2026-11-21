@@ -23,7 +23,8 @@ own projects and the open-source projects you contribute to (one cockpit):
    `factories/<name>/`. Each has versioned prompts, evals, and run logs.
    The first factory is `weekly-contribution-digest`; `weekly-project-status`
    remains available for own projects. The third, `feature-builder`, turns an
-   authored feature spec into an autonomous issue→PR build (shadow/draft-PR only).
+   authored feature spec into an autonomous issue→PR build (shadow/draft-PR only,
+   always planning-first; see `docs/spec-kit-workflow.md`).
 
 ## Layout
 
@@ -32,6 +33,8 @@ AGENTS.md            <- you are here (agent entry point)
 README.md            <- human entry point
 CONVENTIONS.md       <- ontology + frontmatter schema (READ BEFORE WRITING)
 PLAN.md              <- design history (owned by the human; do not edit)
+docs/
+  spec-kit-workflow.md <- always-on SDD flow (method selects tooling only)
 context/
   projects/          <- one .md per project
   tasks/             <- one .md per task (status: to-do|doing|done|blocked)
@@ -45,7 +48,7 @@ factories/
   weekly-project-status/        <- own-project status updates
   feature-builder/              <- issue->PR autonomous build (shadow/draft-PR)
     FACTORY.md       <- trigger, inputs, stages, outputs, risk level
-    prompts/v1.md    <- versioned prompt (production)
+    prompts/v2.md    <- versioned prompt (production; v1 retired)
     evals/           <- test cases + pass criteria (JSON)
     runs/            <- one directory per run: bundle.md, prompt.md, run.json
 ctx/                 <- Python stdlib-only CLI package (python3 -m ctx)
@@ -101,9 +104,9 @@ python3 -m ctx status PROJECT                # task rollup + recent factory runs
 
 python3 -m ctx repo add --title T [--url URL] [--kind own|oss] [--status active|paused|archived]
 python3 -m ctx repo list [--kind own|oss]
-python3 -m ctx contribution add --title T --repo REPO --kind issue|pr --number N [--role author|assignee|reviewer] [--state open|closed|merged] [--ci pending|pass|fail|none]
+python3 -m ctx contribution add --title T --repo REPO --kind issue|pr --number N [--role author|assignee|reviewer] [--state open|closed|merged] [--ci pending|pass|fail|none] [--method spec-kit|builtin]
 python3 -m ctx contribution list
-python3 -m ctx contribution set ID [--state S] [--ci C] [--review R] [--role R]
+python3 -m ctx contribution set ID [--state S] [--ci C] [--review R] [--role R] [--method spec-kit|builtin]
 
 python3 -m ctx sync github [--author @me] [--limit N]   # READ-ONLY refresh via gh
 python3 -m ctx sync github --offline                    # no network: re-index cache
@@ -134,7 +137,8 @@ cron/Task Scheduler/systemd timer can invoke the CLI.
   and caches your open PRs (author), review-requested PRs, and assigned issues as
   contribution markdown (`visibility: public`). It owns the GitHub-derived fields
   (`title`, `url`, `state`, `ci`, `review`, `updated`); your edits to `role`,
-  `tags`, `related`, `created`, and the body are preserved across syncs.
+  `method`, `tags`, `related`, `created`, and the body are preserved across
+  syncs. A missing `method` is filled with `spec-kit`; sync never overrides it.
 - **READ-ONLY:** only `gh search` / `gh pr view` / `gh api user` (GET). No remote
   writes, ever. `--offline` skips the network and re-indexes cached files.
 - `gh` missing or not authenticated -> clear message; use `--offline`. Seed data
@@ -151,6 +155,22 @@ flags thin/large/criteria-less specs for decomposition. A pluggable coding agent
 then reads `prompt.md` and implements under the issue-to-PR discipline (read
 issue + comments → duplicate sweep → validate premise → criterion→test map → TDD
 red-green → sabotage-test → quality gates → honest CI).
+
+Every run is **spec-driven and planning-first**. No implementation is written
+before a specification, a technical plan, and dependency-ordered tasks exist
+and have been reviewed. That discipline is unconditional. The contribution
+field `method` selects only the *tooling*:
+
+- `method: spec-kit` (default, including when the field is omitted) — Spec-Driven
+  Development via the external, optional `specify` CLI (GitHub Spec Kit). Phases:
+  constitution → specify → plan → tasks → implement (TDD) → converge.
+- `method: builtin` — the same phases, hand-rolled as markdown
+  (`constitution.md` / `spec.md` / `plan.md` / `tasks.md`); no `specify` CLI.
+
+`ctx` never imports or invokes `specify`. Full flow, install, and own-vs-OSS
+rules: `docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`
+(`ctx init` seeds the highest version as production; switch or roll back with
+`ctx prompt promote`).
 
 **Autonomy ladder (never skip a rung):**
 1. **SHADOW (default; only mode enabled today):** plan + proposed diff only; zero

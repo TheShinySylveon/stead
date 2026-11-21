@@ -73,13 +73,15 @@ role: author                         # author | assignee | reviewer
 state: open                          # open | closed | merged
 ci: pass                             # pending | pass | fail | none
 review: requested                    # requested | approved | changes | none
+method: spec-kit                     # spec-kit (default) | builtin — tooling only
 visibility: public                   # GitHub-derived data is always public
 ---
 ```
 
 `ctx sync github` owns the GitHub-derived fields (`title`, `url`, `state`, `ci`,
-`review`, `updated`); your edits to `role`, `tags`, `related`, `created`, and the
-body are preserved across syncs.
+`review`, `updated`); your edits to `role`, `method`, `tags`, `related`,
+`created`, and the body are preserved across syncs. A missing `method` is filled
+with `spec-kit`; sync never overrides a value you set.
 
 ### Buildable feature specs (`feature-builder` factory)
 
@@ -126,7 +128,28 @@ substantive (a one-line wish gets flagged, not built).
 Author it with `ctx contribution add --kind issue --role author ...` then edit
 the body (add the description + checklist + `feature-spec` tag), or write the
 file by hand and run `ctx init`. Optional: `related: [document-...]` links
-design notes into the build bundle.
+design notes into the build bundle. Optional: `--method spec-kit|builtin`
+(default `spec-kit`).
+
+#### Tooling (`method`) — planning is unconditional
+
+Every `feature-builder` run is **spec-driven and planning-first**. No
+implementation is written before a specification, a technical plan, and
+dependency-ordered tasks exist and have been reviewed. That discipline does
+not depend on `method`. `method` selects only the *tooling*:
+
+- `spec-kit` (**default**, including when the field is omitted) — Spec-Driven
+  Development via the external, optional `specify` CLI (GitHub Spec Kit).
+  Phases: constitution → specify → plan → tasks → implement (TDD) → converge.
+- `builtin` — the same phases, hand-rolled as `constitution.md` / `spec.md` /
+  `plan.md` / `tasks.md`. No `specify` CLI.
+
+`ctx` never imports or invokes `specify`. Set or change it with
+`ctx contribution add --method ...` or `ctx contribution set ID --method ...`.
+Full flow, install, and own-vs-OSS rules: `docs/spec-kit-workflow.md`.
+EXAMPLE seed issue 202 sets `method: spec-kit`; issue 201 omits the field and
+still resolves to `spec-kit`. Production prompt is `prompts/v2.md` (`ctx init`
+seeds the highest version; switch with `ctx prompt promote`).
 
 The assembler applies **deterministic quality flags** (no LLM):
 `missing-acceptance-criteria` (no checklist), `vague-spec` (description under
