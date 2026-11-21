@@ -779,6 +779,20 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/run/verdict":
             result = set_run_verdict(root, payload.get("id"), payload.get("verdict") or "",
                                      payload.get("output"))
+        elif path == "/api/onboard":
+            from ctx.onboard import OnboardError, onboard
+            try:
+                result = onboard(
+                    root, payload.get("title") or "",
+                    kind=payload.get("kind") or "own",
+                    url=payload.get("url"),
+                    code_path=payload.get("path"),
+                    method=payload.get("method") or "spec-kit",
+                    integration=payload.get("integration") or "claude",
+                    run_specify_init=payload.get("run_specify", True) is not False,
+                )
+            except OnboardError as exc:
+                raise UiError(str(exc)) from exc
         elif path == "/api/object":
             result = create_object(root, payload)
         elif path == "/api/object/body":

@@ -618,6 +618,18 @@ def build_parser() -> argparse.ArgumentParser:
     frun.add_argument("--shadow", action="store_true", help="shadow mode (default)")
     frun.add_argument("--live", action="store_true", help="record as a live run (still no LLM call)")
 
+    ob = sub.add_parser("onboard", help="create a project, its repo record, and the initial constitution")
+    ob.add_argument("--title", required=True)
+    ob.add_argument("--kind", default="own", choices=REPO_KINDS)
+    ob.add_argument("--url", help="https://github.com/owner/name")
+    ob.add_argument("--path", help="existing code directory; not this context repo")
+    ob.add_argument("--method", default="spec-kit", choices=CONTRIB_METHODS,
+                    help="spec-kit runs specify init when it is on PATH; builtin writes markdown only")
+    ob.add_argument("--integration", default="claude",
+                    choices=("claude", "copilot", "gemini", "codex", "generic"))
+    ob.add_argument("--no-specify", action="store_true",
+                    help="do not run specify init, even if it is installed")
+
     cockpit = sub.add_parser("ui", help="open the local cockpit in a browser (loopback only)")
     cockpit.add_argument("--port", type=int, default=8765)
     cockpit.add_argument("--host", default="127.0.0.1",
@@ -674,6 +686,28 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "factory" and args.sub == "run":
         return cmd_factory_run(root, args.factory, args.project, live=args.live,
                                contribution=args.contribution)
+    if args.command == "onboard":
+        from ctx.onboard import OnboardError, onboard
+        try:
+            result = onboard(root, args.title, kind=args.kind, url=args.url,
+                             code_path=args.path, method=args.method,
+                             integration=args.integration,
+                             run_specify_init=not args.no_specify)
+        except OnboardError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"onboarded {result['project']}")
+        print(f"repo: {result['repo']} [{result['kind']}]")
+        print(f"constitution: {result['constitution']}")
+        print(f"method: {result['method']}")
+        if result["code_path"]:
+            print(f"code path: {result['code_path']}")
+        print(f"specify: {result['specify']}")
+        if result["specify_detail"]:
+            print(result["specify_detail"])
+        if result["specify_command"] and result["specify"] != "ran":
+            print(f"command: {result['specify_command']}")
+        print("no push, no pull request")
+        return 0
     if args.command == "ui":
         from ctx import ui as cockpit
         return cockpit.serve(root, args.host, args.port, open_browser=not args.no_browser)

@@ -7,6 +7,29 @@ the dependency-ordered tasks are produced and reviewed. GitHub Spec Kit
 it, the same phases are hand-rolled as plain markdown. Either way the discipline
 is identical — `method` selects only the tooling.
 
+## Onboarding a project
+
+One command creates the context project, the repo record (`project:` links
+them), and the constitution document. It does not post or push.
+
+```
+python3 -m ctx onboard --title "My App" --kind own --method spec-kit \
+    --path /path/to/the/code
+```
+
+`--path` must be that project's own directory, not this context repo. When
+`method` is `spec-kit` and `specify` is on PATH, the command runs
+`specify init --here --force --non-interactive --ignore-agent-tools` there.
+If `specify` is missing, onboarding still succeeds and the constitution lives
+in `context/documents/`. `--method builtin` never runs `specify`; it writes
+`constitution.md` in the code directory instead. `--kind oss` records that
+`.specify/` stays local and must not be pushed upstream uninvited.
+
+The cockpit has the same form under Projects → Onboard.
+
+The first feature is still a separate spec (issue, `feature-spec` tag,
+acceptance criteria) and a shadow `feature-builder` run.
+
 ## The flow (every feature)
 
 0. **Gate check** — a flagged spec (missing acceptance criteria / vague / large)

@@ -53,6 +53,7 @@ url: https://github.com/example-org/example-repo
 default_branch: main                 # optional
 contributing: https://github.com/example-org/example-repo/blob/main/CONTRIBUTING.md  # optional, url or path
 notes: ...                           # optional, short scalar
+project: project-shared-context-rollout  # optional; set by ctx onboard
 ---
 ```
 

@@ -234,13 +234,13 @@ const VIEWS = [
 const TITLES = {
   home: ["Home", "What needs you, across projects and contributions."],
   tasks: ["Tasks", "Move work by status. The file and the index update together."],
-  projects: ["Projects", "Each project, and the tasks hanging off it."],
+  projects: ["Projects", "Onboard a project with its repo and constitution, or add a project on its own."],
   library: ["Library", "Private notes and meetings. Read them, or edit the note and save."],
   repos: ["Repos", "Own projects and OSS. Sync is read-only. Contribution files stay public."],
   inbox: ["Inbox", "Unsorted capture. File it into a document, meeting, or task, or delete it."],
   factories: ["Factories", "Assemble a shadow bundle. A person or an agent still has to write the output."],
 };
-const state = { snap: null, view: "home", q: "" };
+const state = { snap: null, view: "home", q: "", onboardResult: null };
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -390,11 +390,34 @@ function renderTasks() {
 function renderProjects() {
   const items = state.snap.projects.filter(match);
   const statuses = state.snap.choices.project_status;
+  const result = state.onboardResult;
+  const resultBox = result ? `<div class="panel" style="padding:14px 16px;margin-bottom:16px">
+    <strong>Onboarded ${esc(result.project)}</strong>
+    <div class="meta">Repo ${esc(result.repo)} · constitution ${esc(result.constitution)} · specify ${esc(result.specify)}</div>
+    <p>${esc(result.specify_detail || "")}</p>
+    ${result.specify_command && result.specify !== "ran" ? `<p class="meta">${esc(result.specify_command)}</p>` : ""}
+  </div>` : "";
   return `
+    <form class="stack" id="onboard">
+      <div class="section-title">Onboard</div>
+      <p class="meta">Creates the project, the repo record, and the constitution. specify init runs only in a code directory you name, and only if specify is installed. Nothing is pushed.</p>
+      <input type="text" name="title" placeholder="Project title" required aria-label="Onboard title">
+      <div class="inline" style="margin:0">
+        <select name="kind" aria-label="Repo kind">${options(state.snap.choices.repo_kind, "own")}</select>
+        <select name="method" aria-label="Spec method">${options(state.snap.choices.method, "spec-kit")}</select>
+        <select name="integration" aria-label="Spec Kit integration">
+          ${["claude", "copilot", "gemini", "codex", "generic"].map(name => `<option${name === "claude" ? " selected" : ""}>${esc(name)}</option>`).join("")}
+        </select>
+      </div>
+      <input type="text" name="url" placeholder="https://github.com/owner/name (optional)" aria-label="Repo URL">
+      <input type="text" name="path" placeholder="Existing code directory (optional)" aria-label="Code directory">
+      <div><button class="primary" type="submit">Onboard project</button></div>
+    </form>
+    ${resultBox}
     <form class="inline" id="add-project">
-      <input type="text" name="title" placeholder="New project" required aria-label="Project title">
+      <input type="text" name="title" placeholder="Project only, no repo" required aria-label="Project title">
       <select name="status" aria-label="Project status">${options(statuses, "active")}</select>
-      <button class="primary" type="submit">Add project</button>
+      <button class="quiet" type="submit">Add project</button>
     </form>
     ${items.length ? `<div class="grid">${items.map(projectCard).join("")}</div>` : `<div class="empty">No projects yet.</div>`}`;
 }
@@ -701,7 +724,7 @@ document.body.addEventListener("submit", async (event) => {
   const handled = form.id === "add-task" || form.id === "capture" || form.id === "add-project"
     || form.id === "add-document" || form.id === "add-meeting" || form.id === "add-repo"
     || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
-    || form.id === "add-spec" || form.dataset.factory || form.dataset.triage;
+    || form.id === "add-spec" || form.id === "onboard" || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
@@ -710,6 +733,13 @@ document.body.addEventListener("submit", async (event) => {
     if (form.id === "add-task") {
       await api("/api/task", {method: "POST", body: JSON.stringify(data)});
       toast("Task added");
+    } else if (form.id === "onboard") {
+      state.onboardResult = await api("/api/onboard", {method: "POST", body: JSON.stringify({
+        title: data.title, kind: data.kind, url: data.url, path: data.path,
+        method: data.method, integration: data.integration,
+      })});
+      toast("Onboarded " + state.onboardResult.project);
+      form.reset();
     } else if (form.id === "add-project") {
       await api("/api/object", {method: "POST", body: JSON.stringify({type: "project", title: data.title, status: data.status})});
       toast("Project added");

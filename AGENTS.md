@@ -119,6 +119,7 @@ python3 -m ctx factory run --factory weekly-contribution-digest [--shadow|--live
 python3 -m ctx factory run --factory weekly-project-status --project P [--shadow|--live]
 python3 -m ctx factory run --factory feature-builder --contribution ID [--shadow|--live]
 python3 -m ctx digest                        # shortcut for the digest shadow run
+python3 -m ctx onboard --title T [--kind own|oss] [--url URL] [--path DIR] [--method spec-kit|builtin] [--no-specify]
 python3 -m ctx ui                            # local cockpit in a browser (loopback only)
 python3 -m unittest discover -s tests        # run the test suite
 ```
