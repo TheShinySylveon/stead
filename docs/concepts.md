@@ -19,7 +19,7 @@ Every object is one markdown file with a flat YAML frontmatter block. The
 schema is in `CONVENTIONS.md`. If you are unsure where a note goes, put it in
 `inbox/` and file it later.
 
-`state.db` is a rebuildable index. It is gitignored. `python3 -m ctx init`
+`state.db` is a rebuildable index. It is gitignored. `python -m stead init`
 deletes and recreates it from the markdown and from `ctx/schema.sql`. Do not
 treat the database as a backup.
 
@@ -50,9 +50,9 @@ Ids are stable. Renaming a note in the cockpit changes the title, not the id.
 ## Factories
 
 A factory is a folder under `factories/<name>/`: a definition, versioned
-prompts, evals, and run logs. `ctx factory run` assembles a bundle and a
+prompts, evals, and run logs. `stead factory run` assembles a bundle and a
 prompt. It does not generate the answer. You hand `prompt.md` to an agent and
-record the verdict with `ctx run log`, or with Approve / Reject in the cockpit.
+record the verdict with `stead run log`, or with Approve / Reject in the cockpit.
 
 Shadow mode is the default. It drafts locally. It does not push or open a
 pull request. See [Factories](factories.md).

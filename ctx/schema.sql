@@ -1,5 +1,5 @@
 -- Shared Context operational schema (SQLite, Python stdlib sqlite3).
--- state.db is a REBUILDABLE artifact: `python3 -m ctx init` drops and
+-- state.db is a REBUILDABLE artifact: `python -m stead init` drops and
 -- recreates these tables, then re-indexes from the markdown source of truth.
 -- Knowledge lives in context/*.md; this database is an index + run ledger.
 
@@ -23,7 +23,7 @@ CREATE TABLE tasks (
 );
 
 -- Mirror of context/repos/ frontmatter (own projects + OSS repos).
--- Files are the source of truth; `ctx sync github` upserts these rows.
+-- Files are the source of truth; `stead sync github` upserts these rows.
 CREATE TABLE repos (
     id             TEXT PRIMARY KEY,      -- e.g. repo-example-org-example-repo
     title          TEXT NOT NULL,
@@ -42,7 +42,7 @@ CREATE TABLE repos (
 
 -- Mirror of context/contributions/ frontmatter: issues/PRs the user is
 -- involved with. GitHub-derived data is PUBLIC; private strategy/notes live
--- in context/documents/ instead. Rebuilt from markdown by `ctx init`.
+-- in context/documents/ instead. Rebuilt from markdown by `stead init`.
 CREATE TABLE contributions (
     id         TEXT PRIMARY KEY,          -- contribution-<owner>-<repo>-<kind>-<number>
     title      TEXT NOT NULL,

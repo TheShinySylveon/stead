@@ -4,15 +4,15 @@ A factory is a shared, named workflow. Each one lives in `factories/<name>/`:
 
 - `FACTORY.md` — what it is, what it may do, and what it must not do.
 - `prompts/vN.md` — versioned instructions. The highest version is production
-  after `ctx init`. Switch with `ctx prompt promote`.
-- `evals/*.json` — cases and pass criteria. `ctx eval run` checks that the
-  files are well-formed. `ctx eval judge` asks the configured model about
+  after `stead init`. Switch with `stead prompt promote`.
+- `evals/*.json` — cases and pass criteria. `stead eval run` checks that the
+  files are well-formed. `stead eval judge` asks the configured model about
   one draft. Promote does not require a recorded pass yet.
 - `runs/` — one directory per assembly. Gitignored. Safe to delete.
 
 ## What a run actually does
 
-`python3 -m ctx factory run` reads local files and writes three things:
+`python -m stead factory run` reads local files and writes three things:
 
 - `bundle.md` — the context the workflow is allowed to see.
 - `prompt.md` — the production prompt plus that bundle.
@@ -25,7 +25,7 @@ The draft is not executed, posted, or pushed. See [Models](models.md).
 You, or any agent, can still read `prompt.md` and record a verdict:
 
 ```bash
-python3 -m ctx run log --factory F --task REF --prompt-version vN \
+python -m stead run log --factory F --task REF --prompt-version vN \
     --output "what happened" --verdict approved
 ```
 
@@ -39,8 +39,8 @@ A weekly picture of pull requests in flight, reviews waiting on you, claimed
 issues, and CI, across the repos in the local cache.
 
 ```bash
-python3 -m ctx sync github --limit 30
-python3 -m ctx digest
+python -m stead sync github --limit 30
+python -m stead digest
 ```
 
 It drafts. It never posts to GitHub.
@@ -51,7 +51,7 @@ A status draft for one of your projects, from its tasks, documents, and
 meetings.
 
 ```bash
-python3 -m ctx factory run --factory weekly-project-status \
+python -m stead factory run --factory weekly-project-status \
     --project project-id --shadow
 ```
 
@@ -62,7 +62,7 @@ contribution with `kind: issue`, `role: author`, tag `feature-spec`, and a
 `## Acceptance criteria` checklist.
 
 ```bash
-python3 -m ctx factory run --factory feature-builder \
+python -m stead factory run --factory feature-builder \
     --contribution contribution-id --shadow
 ```
 
@@ -86,7 +86,7 @@ merge.
 | reach | `shadow`, `draft-pr`, `pr`, `merge` | shadow |
 
 A run may ask for less than the repo ceiling. It may not ask for more.
-`ctx factory watch` assembles open authored `feature-spec` issues on repos
+`stead factory watch` assembles open authored `feature-spec` issues on repos
 set to watch, and skips flagged specs. The remote step is not implemented.
 Nothing is pushed, opened, or merged. See
 [feature-builder/FACTORY.md](../factories/feature-builder/FACTORY.md).
@@ -96,6 +96,6 @@ Nothing is pushed, opened, or merged. See
 There is no built-in timer. Any scheduler can run the CLI:
 
 ```bash
-python3 -m ctx sync github --limit 30
-python3 -m ctx factory run --factory weekly-contribution-digest --shadow
+python -m stead sync github --limit 30
+python -m stead factory run --factory weekly-contribution-digest --shadow
 ```

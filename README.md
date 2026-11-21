@@ -13,7 +13,7 @@ own.
 
 > Rent the intelligence. Own the context.
 
-The model can be swapped. The files stay yours. The command is `ctx`.
+The model can be swapped. The files stay yours. The command is `stead`.
 Version **0.0.1**. Licensed under Apache-2.0. Copyright 2026 Tyler Rathbone.
 See [LICENSE](LICENSE).
 
@@ -28,7 +28,7 @@ A fresh checkout shows Welcome instead.
 ## What you get
 
 - Markdown files with flat YAML frontmatter. That is the source of truth.
-- A SQLite index (`state.db`) that `ctx init` can rebuild. It is not shared.
+- A SQLite index (`state.db`) that `stead init` can rebuild. It is not shared.
 - A local cockpit in the browser, or the same actions from the CLI.
 - Three factories that assemble a prompt. `--generate` drafts with the model
   you configure. The default still calls nothing.
@@ -43,7 +43,7 @@ Requires Python 3.11 or newer. No pip packages.
 ```bash
 git clone https://github.com/TheShinySylveon/stead.git
 cd stead
-python3 -m ctx ui
+python -m stead ui
 ```
 
 A fresh checkout has an empty `context/`. Welcome asks for a project title, an
@@ -53,7 +53,7 @@ server. Nothing is pushed.
 Without a browser:
 
 ```bash
-python3 -m ctx welcome --title "My Project"
+python -m stead welcome --title "My Project"
 ```
 
 ## This computer or a shared server
@@ -61,7 +61,7 @@ python3 -m ctx welcome --title "My Project"
 | | This computer | Shared server |
 |---|---|---|
 | Who | One person, and the agents on that machine | Several people, one process |
-| How | `python3 -m ctx ui` | `docker compose up --build` |
+| How | `python -m stead ui` | `docker compose up --build` |
 | Network | Loopback only | Published port, access token required |
 | Index | One `state.db` on that machine | One `state.db` inside the container |
 
@@ -96,8 +96,8 @@ Shadow is the only mode the cockpit offers, and the CLI default. A draft pull
 request is described in the prompt and is not implemented.
 
 ```bash
-python3 -m ctx sync github --limit 30    # read-only, needs gh
-python3 -m ctx digest                    # shadow digest
+python -m stead sync github --limit 30    # read-only, needs gh
+python -m stead digest                    # shadow digest
 ```
 
 More: [docs/factories.md](docs/factories.md) and
@@ -132,10 +132,10 @@ then builds the Docker image. It does not push the image.
 ## Limits of 0.0.1
 
 - No per-person passwords. A shared server has one access token.
-- A normal `ctx ui` stays on loopback. `--deploy` and Docker are the only
+- A normal `stead ui` stays on loopback. `--deploy` and Docker are the only
   public binds, and they require the token.
 - `actor:` is not stamped automatically. Add actors in Settings or with
-  `ctx actor add`. Attribution is a file, not a login.
+  `stead actor add`. Attribution is a file, not a login.
 - A factory calls a model only when you pass `--generate` or check Draft
   with model. The endpoint is yours: OpenAI, Anthropic, Grok, or another
   chat server. The draft is a file. Nothing is posted, pushed, or merged.

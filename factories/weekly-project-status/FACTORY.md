@@ -8,7 +8,7 @@ for one project), **shared** (any agent/human can run it via the CLI),
 
 - **Scheduled (target):** weekly, e.g. Friday afternoon. Scheduler-agnostic:
   any cron / Windows Task Scheduler / Hermes cron job invokes:
-  `python3 -m ctx factory run --factory weekly-project-status --project <P> --shadow`
+  `python -m stead factory run --factory weekly-project-status --project <P> --shadow`
 - **Event-driven (later):** project marked active, or manual trigger.
 - **Now (Phase 1–2):** manual invocation only.
 
@@ -23,14 +23,14 @@ One project id. The runner deterministically gathers (no LLM involved):
 
 ## Stages
 
-1. **Assemble** (`ctx factory run`): build `bundle.md`, emit `prompt.md`
+1. **Assemble** (`stead factory run`): build `bundle.md`, emit `prompt.md`
    (production prompt + bundle), write `run.json`, insert a `runs` row.
 2. **Generate** (pluggable): any agent or human reads `prompt.md` and drafts
    the status update. No provider is hardwired; no API key is required by
    this repo.
 3. **Review** (human, mandatory in shadow mode): check accuracy against the
    bundle, completeness, tone.
-4. **Record**: `ctx run log --factory weekly-project-status --task <project-id>
+4. **Record**: `stead run log --factory weekly-project-status --task <project-id>
    --prompt-version <v> --output <draft> --verdict approved|rejected`.
 5. **File** (only after approval, and only in later phases): the approved
    update becomes a document in `context/documents/` linked to the project.
@@ -45,7 +45,7 @@ One project id. The runner deterministically gathers (no LLM involved):
 
 ## Tools
 
-Python 3.14+ standard library only (`python3 -m ctx`). Generation step: any
+Python 3.14+ standard library only (`python -m stead`). Generation step: any
 LLM/agent the operator chooses. No network dependency in the runner.
 
 ## Risk level & incremental rollout
@@ -61,8 +61,8 @@ LLM/agent the operator chooses. No network dependency in the runner.
 
 ## Scrutiny
 
-- Prompts are versioned (`prompts/v1.md`, ...); `ctx prompt list` shows
-  testing/production/retired. Promote only after evals pass (`ctx prompt
+- Prompts are versioned (`prompts/v1.md`, ...); `stead prompt list` shows
+  testing/production/retired. Promote only after evals pass (`stead prompt
   promote`); old production is retired, never deleted.
-- Evals live in `evals/*.json` (loaded into state.db by `ctx init`).
+- Evals live in `evals/*.json` (loaded into state.db by `stead init`).
 - Review run logs weekly; fix **real observed failures**, not imagined ones.

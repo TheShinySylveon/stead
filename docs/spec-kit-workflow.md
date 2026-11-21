@@ -13,7 +13,7 @@ One command creates the context project, the repo record (`project:` links
 them), and the constitution document. It does not post or push.
 
 ```
-python3 -m ctx onboard --title "My App" --kind own --method spec-kit \
+python -m stead onboard --title "My App" --kind own --method spec-kit \
     --path /path/to/the/code
 ```
 
@@ -49,7 +49,7 @@ acceptance criteria) and a shadow `feature-builder` run.
 8. **Converge** — re-assess against the spec; repeat implement->converge until
    `Converged`.
 9. **Map artifacts** — tasks -> `context/tasks/`, plan + spec ->
-   `context/documents/`, constitution -> repo notes; `ctx init`. One context.
+   `context/documents/`, constitution -> repo notes; `stead init`. One context.
 10. **Deliver** — SHADOW (artifacts + proposed diff, zero remote writes) or
     DRAFT-PR (draft PR, human merges).
 

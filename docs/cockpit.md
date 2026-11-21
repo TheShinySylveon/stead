@@ -1,15 +1,15 @@
 # Cockpit
 
-The cockpit is a browser page served by Stead. The command is `ctx`.
+The cockpit is a browser page served by Stead. The command is `stead`.
 
 ```bash
-python3 -m ctx ui
-python3 -m ctx ui --no-browser --port 8765
+python -m stead ui
+python -m stead ui --no-browser --port 8765
 ```
 
 On this computer the server refuses any address except loopback
 (`127.0.0.1`, `localhost`, `::1`). A shared server is different: it is the
-Docker image, or `ctx ui --deploy`, and it will not start without an access
+Docker image, or `stead ui --deploy`, and it will not start without an access
 token. See [Deploy](deploy.md).
 
 The page has no external fonts or scripts. It works offline.
@@ -60,4 +60,4 @@ Draft pull requests are not a button. They are not implemented.
 
 ## Stopping it
 
-Ctrl+C in the terminal that started `ctx ui`.
+Ctrl+C in the terminal that started `stead ui`.

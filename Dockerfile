@@ -4,6 +4,7 @@ FROM python:3.12-slim
 
 WORKDIR /app
 COPY ctx ./ctx
+COPY stead ./stead
 COPY docs ./docs
 COPY factories ./factories
 COPY inbox ./inbox
@@ -19,4 +20,4 @@ ENV PYTHONUNBUFFERED=1 \
 EXPOSE 8765
 VOLUME ["/app/context"]
 
-CMD ["python", "-m", "ctx", "ui", "--no-browser", "--deploy"]
+CMD ["python", "-m", "stead", "ui", "--no-browser", "--deploy"]

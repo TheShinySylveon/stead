@@ -10,13 +10,13 @@ chat-completions server. Python standard library only. No pip package.
 ## Set one
 
 ```bash
-python3 -m ctx model set --provider openai --name gpt-4.1-mini
-python3 -m ctx model set --provider anthropic --name claude-sonnet-4-5
-python3 -m ctx model set --provider grok --name grok-4
-python3 -m ctx model set --provider openrouter --name openai/gpt-4.1-mini
-python3 -m ctx model set --provider ollama --name llama3.2
-python3 -m ctx model set --provider custom --name my-model --base-url http://127.0.0.1:8000/v1
-python3 -m ctx model show
+python -m stead model set --provider openai --name gpt-4.1-mini
+python -m stead model set --provider anthropic --name claude-sonnet-4-5
+python -m stead model set --provider grok --name grok-4
+python -m stead model set --provider openrouter --name openai/gpt-4.1-mini
+python -m stead model set --provider ollama --name llama3.2
+python -m stead model set --provider custom --name my-model --base-url http://127.0.0.1:8000/v1
+python -m stead model show
 ```
 
 The key belongs in the environment:
@@ -43,9 +43,9 @@ The same form is in the cockpit, under Settings.
 Assembly is still the default, and it still calls nothing.
 
 ```bash
-python3 -m ctx digest --generate
-python3 -m ctx factory run --factory weekly-project-status --project project-id --generate
-python3 -m ctx factory run --factory feature-builder --contribution ID --generate
+python -m stead digest --generate
+python -m stead factory run --factory weekly-project-status --project project-id --generate
+python -m stead factory run --factory feature-builder --contribution ID --generate
 ```
 
 That writes `output.md` next to `bundle.md` and `prompt.md`. The draft is
@@ -59,8 +59,8 @@ In the cockpit, check **Draft with model** on the Factories page.
 Eval files are checked with no model and no network. That is what CI runs.
 
 ```bash
-python3 -m ctx eval run
-python3 -m ctx eval run --factory weekly-contribution-digest
+python -m stead eval run
+python -m stead eval run --factory weekly-contribution-digest
 ```
 
 Judging one draft uses the configured model. The result is a local file
@@ -68,7 +68,7 @@ under `factories/<name>/evals/results/`, which is gitignored. Promote does
 not require it yet.
 
 ```bash
-python3 -m ctx eval judge --factory weekly-project-status \
+python -m stead eval judge --factory weekly-project-status \
     --case eval-status-happy-path --output path/to/output.md
 ```
 

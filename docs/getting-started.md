@@ -1,6 +1,6 @@
 # Getting started
 
-Stead is a local app. The command is `ctx`. You clone it, run it, and it
+Stead is a local app. The command is `stead`. You clone it, run it, and it
 keeps your notes on this machine. It does not create an account, and it does
 not call a model by itself.
 
@@ -26,7 +26,7 @@ On Windows, `python` is often the same interpreter.
 ```bash
 git clone https://github.com/TheShinySylveon/stead.git
 cd stead
-python3 -m ctx ui
+python -m stead ui
 ```
 
 That opens a browser on `127.0.0.1`. A fresh checkout has an empty `context/`
@@ -37,11 +37,11 @@ copy is for this computer or a shared Docker server. Details:
 Without a browser:
 
 ```bash
-python3 -m ctx welcome --title "My Project"
+python -m stead welcome --title "My Project"
 ```
 
 `state.db` is created on first use. It is an index. Delete it and the markdown
-files still have your notes. `python3 -m ctx init` rebuilds the index.
+files still have your notes. `python -m stead init` rebuilds the index.
 
 ## What you get
 

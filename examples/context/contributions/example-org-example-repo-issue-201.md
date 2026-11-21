@@ -24,7 +24,7 @@ for the `feature-builder` factory: a contribution with `kind: issue`,
 `## Acceptance criteria` checklist. Try it fully offline:
 
 ```
-python3 -m ctx factory run --factory feature-builder \
+python -m stead factory run --factory feature-builder \
     --contribution contribution-example-org-example-repo-issue-201 --shadow
 ```
 

@@ -1,6 +1,6 @@
 """Optional model client. Stdlib only. No vendor SDK.
 
-Assembly never calls this. `ctx factory run --generate` and `ctx eval judge`
+Assembly never calls this. `stead factory run --generate` and `stead eval judge`
 do. OpenAI, Grok, OpenRouter, and Ollama speak chat completions. Anthropic
 speaks its own messages API. Custom is any other chat-completions server.
 No vendor is hardwired.
@@ -98,7 +98,7 @@ def resolve(root: Path) -> dict:
     raw = _block(root)
     if not raw.get("name") or not raw.get("base_url"):
         raise ModelError(
-            "no model configured. Set one with `ctx model set` or in Settings.")
+            "no model configured. Set one with `stead model set` or in Settings.")
     key_env = raw.get("api_key_env") or ENV_KEY
     key = os.environ.get(key_env, "").strip() or raw.get("api_key") or ""
     settings = {

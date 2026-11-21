@@ -57,7 +57,7 @@ url: https://github.com/example-org/example-repo
 default_branch: main                 # optional
 contributing: https://github.com/example-org/example-repo/blob/main/CONTRIBUTING.md  # optional, url or path
 notes: ...                           # optional, short scalar
-project: project-shared-context-rollout  # optional; set by ctx onboard
+project: project-shared-context-rollout  # optional; set by stead onboard
 trigger: on-demand                   # optional: on-demand | watch. Default on-demand.
 reach: shadow                        # optional ceiling: shadow | draft-pr | pr | merge.
                                      # merge is never inherited from the install default.
@@ -86,7 +86,7 @@ visibility: public                   # GitHub-derived data is always public
 ---
 ```
 
-`ctx sync github` owns the GitHub-derived fields (`title`, `url`, `state`, `ci`,
+`stead sync github` owns the GitHub-derived fields (`title`, `url`, `state`, `ci`,
 `review`, `updated`); your edits to `role`, `method`, `tags`, `related`,
 `created`, and the body are preserved across syncs. A missing `method` is filled
 with `spec-kit`; sync never overrides a value you set.
@@ -133,9 +133,9 @@ substantive (a one-line wish gets flagged, not built).
 - [ ] Without the flag, output is unchanged and existing tests pass
 ```
 
-Author it with `ctx contribution add --kind issue --role author ...` then edit
+Author it with `stead contribution add --kind issue --role author ...` then edit
 the body (add the description + checklist + `feature-spec` tag), or write the
-file by hand and run `ctx init`. Optional: `related: [document-...]` links
+file by hand and run `stead init`. Optional: `related: [document-...]` links
 design notes into the build bundle. Optional: `--method spec-kit|builtin`
 (default `spec-kit`).
 
@@ -153,11 +153,11 @@ not depend on `method`. `method` selects only the *tooling*:
   `plan.md` / `tasks.md`. No `specify` CLI.
 
 `ctx` never imports or invokes `specify`. Set or change it with
-`ctx contribution add --method ...` or `ctx contribution set ID --method ...`.
+`stead contribution add --method ...` or `stead contribution set ID --method ...`.
 Full flow, install, and own-vs-OSS rules: `docs/spec-kit-workflow.md`.
 EXAMPLE seed issue 202 sets `method: spec-kit`; issue 201 omits the field and
-still resolves to `spec-kit`. Production prompt is `prompts/v2.md` (`ctx init`
-seeds the highest version; switch with `ctx prompt promote`).
+still resolves to `spec-kit`. Production prompt is `prompts/v2.md` (`stead init`
+seeds the highest version; switch with `stead prompt promote`).
 
 The assembler applies **deterministic quality flags** (no LLM):
 `missing-acceptance-criteria` (no checklist), `vague-spec` (description under
@@ -168,7 +168,7 @@ clarification plan, never guess and build.
 Build it (shadow by default — plan + proposed diff only, no remote writes):
 
 ```bash
-python3 -m ctx factory run --factory feature-builder \
+python -m stead factory run --factory feature-builder \
     --contribution contribution-example-org-example-repo-issue-201 --shadow
 ```
 
@@ -211,13 +211,13 @@ is a feature, not a limitation: any tool can parse it.
 
 ## GitHub sync (read-only, offline-capable)
 
-- `python3 -m ctx sync github [--author @me] [--limit N]` shells out to the
+- `python -m stead sync github [--author @me] [--limit N]` shells out to the
   open-source `gh` CLI (stdlib `subprocess`) and caches your open PRs (author),
   review-requested PRs, and assigned issues as contribution markdown files.
 - **READ-ONLY:** only `gh search`, `gh pr view`, `gh api user` (GET). The system
   never creates issues/PRs/comments/labels and never pushes. No remote writes.
 - Sync is explicit/on-demand. `--offline` skips the network entirely and just
-  re-indexes the cached files. `ctx init` also rebuilds the index from files
+  re-indexes the cached files. `stead init` also rebuilds the index from files
   without gh — the cache is fully offline-capable.
 - `gh` missing or not authenticated → clear error message; use `--offline`.
 - Seed data marked `EXAMPLE` in title/tags is demonstrative, not real.
@@ -239,11 +239,11 @@ factual and concise; agents read these verbatim into context bundles.
 ## How agents write safely
 
 1. Read this file and `AGENTS.md` before writing anything.
-2. Prefer the CLI: `python3 -m ctx task add|set`, `repo add|list`,
+2. Prefer the CLI: `python -m stead task add|set`, `repo add|list`,
    `contribution add|list|set` keep markdown and the SQLite index in sync and
    enforce the schema.
 3. Creating documents/meetings/projects/repos/contributions by hand is fine —
-   use the exact schema above, then run `python3 -m ctx init` to re-index.
+   use the exact schema above, then run `python -m stead init` to re-index.
 4. Bump `updated:` on every edit. Never edit `created:` or `id:`.
 5. Do not edit `PLAN.md` (human-owned). Do not delete or rewrite files under
    `factories/*/runs/` (append-only audit trail).
@@ -253,12 +253,12 @@ factual and concise; agents read these verbatim into context bundles.
 
 `state.db` is a **rebuildable index**, never the source of truth:
 
-- `tasks` — mirror of `context/tasks/` frontmatter (rebuilt by `ctx init`)
-- `repos` — mirror of `context/repos/` frontmatter (rebuilt by `ctx init`)
+- `tasks` — mirror of `context/tasks/` frontmatter (rebuilt by `stead init`)
+- `repos` — mirror of `context/repos/` frontmatter (rebuilt by `stead init`)
 - `contributions` — mirror of `context/contributions/` frontmatter (rebuilt by
-  `ctx init`; upserted by `ctx sync github`)
+  `stead init`; upserted by `stead sync github`)
 - `prompt_versions` — testing / production / retired per factory
 - `runs` — one row per factory run or manually logged run
 - `evals` — loaded from `factories/*/evals/*.json`
 
-Knowledge lives in files; if `state.db` is lost, `ctx init` restores it.
+Knowledge lives in files; if `state.db` is lost, `stead init` restores it.

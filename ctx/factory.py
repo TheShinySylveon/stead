@@ -1,7 +1,7 @@
 """Factory runner.
 
 Assembly is deterministic and does not call a model. `write_output` stores a
-draft that `ctx factory run --generate` got from the configured endpoint.
+draft that `stead factory run --generate` got from the configured endpoint.
 That draft is a file. Nothing here posts, pushes, or merges.
 """
 
@@ -36,7 +36,7 @@ def _production_prompt(conn, root: Path, factory: str) -> tuple[str, str]:
     ).fetchone()
     if row is None:
         raise SystemExit(f"no production prompt for factory {factory!r}; "
-                         "use `ctx prompt promote` first")
+                         "use `stead prompt promote` first")
     return row["version"], (root / row["path"]).read_text(encoding="utf-8")
 
 
@@ -127,7 +127,7 @@ def assemble(root: Path, factory: str, project_ref: str, mode: str = "shadow") -
             "created": created,
             "counts": {"tasks": len(tasks), "documents": len(docs), "meetings": len(meetings)},
             "verdict": "pending",
-            "note": "Deterministic assembly; no LLM call. Supply output via `ctx run log`.",
+            "note": "Deterministic assembly; no LLM call. Supply output via `stead run log`.",
         }
         (run_dir / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
 
@@ -230,7 +230,7 @@ def assemble_digest(root: Path, factory: str = DIGEST_FACTORY,
             for path, meta, body in by_repo[repo_id]:
                 parts.append(_contribution_entry(path, meta, body, root))
         if not contribs:
-            parts.append("_No contributions cached. Run `ctx sync github` "
+            parts.append("_No contributions cached. Run `stead sync github` "
                          "(or `--offline` after adding files) to populate._")
         bundle = "\n".join(parts)
         assembled_prompt = prompt_text.rstrip() + "\n\n---\n\n" + bundle
@@ -246,7 +246,7 @@ def assemble_digest(root: Path, factory: str = DIGEST_FACTORY,
             "counts": counts,
             "verdict": "pending",
             "note": "Deterministic assembly; no LLM call, no network. "
-                    "Supply output via `ctx run log`. Never auto-post to GitHub.",
+                    "Supply output via `stead run log`. Never auto-post to GitHub.",
         }
         (run_dir / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")
 
@@ -391,7 +391,7 @@ def assemble_feature_build(root: Path, contribution_ref: str,
     repo_ref = spec_meta.get("repo")
     repo_found = objects.find(root, "repo", repo_ref) if repo_ref else None
     if repo_found is None:
-        raise SystemExit(f"repo not found: {repo_ref!r} — add it with `ctx repo add` first")
+        raise SystemExit(f"repo not found: {repo_ref!r} — add it with `stead repo add` first")
     repo_path, repo_meta, repo_body = repo_found
     repo_id = repo_meta["id"]
     from ctx.autonomy import AutonomyError, effective, permit

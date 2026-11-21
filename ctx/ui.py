@@ -815,7 +815,7 @@ def set_run_verdict(root: Path, run_id: object, verdict: str,
     if len(note) > 4000:
         raise UiError("review note is too long")
     if not db.db_path(root).exists():
-        raise UiError("state.db not found — run ctx init first", 404)
+        raise UiError("state.db not found — run stead init first", 404)
     conn = db.connect(root)
     try:
         if note:

@@ -6,7 +6,7 @@ truth. Git is how those writers share. SQLite is not replaced.
 
 ## Why SQLite stays
 
-`state.db` is an index. `ctx init` rebuilds it from markdown. It is
+`state.db` is an index. `stead init` rebuilds it from markdown. It is
 gitignored on purpose, so two people never merge a binary database.
 
 A shared Postgres (or any server database) would only be worth it if the
@@ -53,7 +53,7 @@ attribution, not a login. Git history remains the audit trail.
 ## How sharing works
 
 1. One git remote. Humans and agents clone it.
-2. Each clone runs `ctx init` and gets its own `state.db`.
+2. Each clone runs `stead init` and gets its own `state.db`.
 3. Writes go to markdown, then get committed.
 4. Pull before a long edit. If two people change the same file, git shows a
    text conflict. Do not invent a silent merge in the database.
@@ -66,7 +66,7 @@ Two ways to share:
   Several browsers use that one index. Do not scale the container. See
   [Deploy](deploy.md).
 
-A normal `ctx ui` stays on loopback even after you choose Shared server.
+A normal `stead ui` stays on loopback even after you choose Shared server.
 The choice is recorded in gitignored `stead.json`. The open port is the
 container, started with `STEAD_ACCESS_TOKEN` set.
 

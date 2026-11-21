@@ -108,7 +108,7 @@ def _constitution(title: str, kind: str, method: str, today: str, project_id: st
              "Do not commit or push it unless the maintainers ask.")
     return f"""# Constitution — {title}
 
-Planning baseline for this repo. Written by `ctx onboard` on {today}.
+Planning baseline for this repo. Written by `stead onboard` on {today}.
 Later feature-builder runs check plans against this document before any code.
 `method` is `{method}`. Planning-before-code does not depend on that choice.
 
@@ -128,7 +128,7 @@ Project: `{project_id}`. Repo: `{repo_id}`.
 
 The first feature still needs its own spec: an issue you author, tagged `feature-spec`, with a `## Acceptance criteria` checklist. Then:
 
-    python3 -m ctx factory run --factory feature-builder --contribution ID --shadow
+    python -m stead factory run --factory feature-builder --contribution ID --shadow
 """
 
 

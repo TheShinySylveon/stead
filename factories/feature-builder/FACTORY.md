@@ -6,7 +6,7 @@ repo); a pluggable coding agent (Hermes, Claude Code, Codex — anything that
 reads `prompt.md`) implements it under the discipline encoded in the prompt.
 
 Like every factory here, feature-builder itself is **deterministic and
-LLM-free**: `ctx factory run --factory feature-builder --contribution ID`
+LLM-free**: `stead factory run --factory feature-builder --contribution ID`
 only assembles a build context bundle + prompt from local files. It writes no
 code, calls no LLM, uses no network, and performs **no remote writes in any
 mode**. The coding happens later, outside the factory, under the autonomy
@@ -18,7 +18,7 @@ Two settings, not one ladder everyone climbs. The ceiling is per repo.
 
 - **trigger:** `on-demand` (default) or `watch`. Watch may assemble open
   authored issues tagged `feature-spec` when a scheduler runs
-  `ctx factory watch`. Flagged specs are skipped. On-demand repos are skipped.
+  `stead factory watch`. Flagged specs are skipped. On-demand repos are skipped.
 - **reach:** `shadow` (default), `draft-pr`, `pr`, or `merge`. A run may ask
   for less. It may not ask for more.
 
@@ -74,7 +74,7 @@ A build target is a `contribution` with `kind: issue`, `role: author`, linked
 to a `repo`, tagged `feature-spec`, whose body contains the feature
 description plus a `## Acceptance criteria` checklist (`- [ ]` items).
 See CONVENTIONS.md → "Buildable feature specs". Author it with
-`ctx contribution add` (then edit the body) or by hand + `ctx init`.
+`stead contribution add` (then edit the body) or by hand + `stead init`.
 
 ## Spec-driven, planning-first (every run)
 
@@ -94,9 +94,9 @@ local, and network-free for both. Full flow, install, and own-vs-OSS rules:
 ## Trigger
 
 - **On demand (default):**
-  `python3 -m ctx factory run --factory feature-builder --contribution <spec-id>`
+  `python -m stead factory run --factory feature-builder --contribution <spec-id>`
   Optional `--reach` cannot exceed the repo ceiling.
-- **Watch:** `python3 -m ctx factory watch` assembles open authored issues
+- **Watch:** `python -m stead factory watch` assembles open authored issues
   tagged `feature-spec` whose repo `trigger` is `watch` and whose spec flags
   are clear. Scheduler-agnostic: any cron / Task Scheduler / Hermes job can
   invoke that command. It does not push.
@@ -115,7 +115,7 @@ local, and network-free for both. Full flow, install, and own-vs-OSS rules:
 
 1. **Author** the spec (human): description + acceptance criteria +
    `feature-spec` tag.
-2. **Assemble** (`ctx factory run --factory feature-builder --contribution ID`):
+2. **Assemble** (`stead factory run --factory feature-builder --contribution ID`):
    deterministic bundle + prompt + run.json + runs row; spec-quality flags
    computed. **No LLM call, no network, no remote writes.**
 3. **Generate** (pluggable coding agent): reads `prompt.md`; follows the
@@ -125,7 +125,7 @@ local, and network-free for both. Full flow, install, and own-vs-OSS rules:
    report).
 4. **Review** (human, mandatory): plan/diff in shadow; the draft PR in
    draft-PR mode. The human merges.
-5. **Record**: `ctx run log --factory feature-builder --task <spec-id>
+5. **Record**: `stead run log --factory feature-builder --task <spec-id>
    --prompt-version <v> --output <summary> --verdict approved|rejected`.
 
 ## Outputs
@@ -138,7 +138,7 @@ local, and network-free for both. Full flow, install, and own-vs-OSS rules:
 
 ## Tools
 
-Python 3.14+ standard library only (`python3 -m ctx`). External open-source
+Python 3.14+ standard library only (`python -m stead`). External open-source
 tools used by the *generation* step (not by assembly): `git` (branching,
 audit), `gh` (read-only context; draft-PR creation only in draft-PR mode),
 and optionally `specify` (Spec Kit CLI, when `method` is `spec-kit`). `ctx`
@@ -156,10 +156,10 @@ agent's own judgement.
 
 ## Scrutiny
 
-- Prompts are versioned (`prompts/v1.md`, ...); `ctx prompt list` shows
-  testing/production/retired. Promote only after evals pass (`ctx prompt
+- Prompts are versioned (`prompts/v1.md`, ...); `stead prompt list` shows
+  testing/production/retired. Promote only after evals pass (`stead prompt
   promote`); old production is retired, never deleted.
-- Evals live in `evals/*.json` (loaded into state.db by `ctx init`): clear
+- Evals live in `evals/*.json` (loaded into state.db by `stead init`): clear
   spec → full criterion→test mapping; vague spec → needs-decomposition;
   duplicate work → surfaced, not silently rebuilt.
 - Review run logs; fix **real observed failures**, not imagined ones.

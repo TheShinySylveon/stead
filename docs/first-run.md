@@ -6,7 +6,7 @@ instead of the normal cockpit.
 ## In the browser
 
 ```bash
-python3 -m ctx ui
+python -m stead ui
 ```
 
 On this computer the server binds to `127.0.0.1` only. The first page asks
@@ -33,15 +33,15 @@ Then the normal cockpit opens on this computer. Nothing was posted.
 The same step from a terminal:
 
 ```bash
-python3 -m ctx welcome --title "My Project"
-python3 -m ctx welcome --title "My Project" --url https://github.com/owner/name
-python3 -m ctx welcome --title "Team notes" --deployment multi
+python -m stead welcome --title "My Project"
+python -m stead welcome --title "My Project" --url https://github.com/owner/name
+python -m stead welcome --title "Team notes" --deployment multi
 ```
 
 `--deployment` is `single` (default) or `multi`. Multi prints the access
 token once and tells you to start Docker. See [Deploy](deploy.md).
 
-`python3 -m ctx` with no command prints the two entry points.
+`python -m stead` with no command prints the two entry points.
 
 ## What first run does not do
 
@@ -57,13 +57,13 @@ Those belong to later steps.
 
 | Want | Where |
 |---|---|
-| Another project, with a constitution and optional Spec Kit | Projects → Onboard, or `ctx onboard` |
+| Another project, with a constitution and optional Spec Kit | Projects → Onboard, or `stead onboard` |
 | A project with no repo | Projects → Add project |
 | Switch this computer / shared server, rotate the token, add actors | Settings |
 | The Spec Kit rules | [Spec Kit](spec-kit-workflow.md) |
 
 ```bash
-python3 -m ctx onboard --title "My App" --kind own --method spec-kit \
+python -m stead onboard --title "My App" --kind own --method spec-kit \
     --path /path/to/the/code
 ```
 

@@ -1,4 +1,4 @@
-"""Command-line interface: `python3 -m ctx <command>` (argparse, stdlib only).
+"""Command-line interface: `python -m stead <command>` (argparse, stdlib only).
 
 Handlers are plain functions taking a repo root Path so they are unit-testable
 and callable from any scheduler or agent without a shell.
@@ -45,8 +45,8 @@ def cmd_init(root: Path) -> int:
     from ctx.onboard import needs_welcome
     if needs_welcome(root):
         print("No projects yet. First run:")
-        print("  python3 -m ctx ui")
-        print("  python3 -m ctx welcome --title \"My Project\"")
+        print("  python -m stead ui")
+        print("  python -m stead welcome --title \"My Project\"")
     return 0
 
 
@@ -224,14 +224,14 @@ def cmd_contribution_add(root: Path, title: str, repo: str, kind: str, number: i
             raise SystemExit(f"invalid {label} {value!r}; choose from {allowed}")
     found = objects.find(root, "repo", repo)
     if found is None:
-        raise SystemExit(f"repo not found: {repo!r} — add it with `ctx repo add` first")
+        raise SystemExit(f"repo not found: {repo!r} — add it with `stead repo add` first")
     _rpath, rmeta, _rbody = found
     repo_id = rmeta["id"]
     stem = f"{repo_id.removeprefix('repo-')}-{kind}-{number}"
     path = root / "context" / "contributions" / f"{stem}.md"
     if path.exists():
         raise SystemExit(f"contribution already exists: contribution-{stem} "
-                         "— use `ctx contribution set` to update it")
+                         "— use `stead contribution set` to update it")
     if not url and rmeta.get("url"):
         url = f"{rmeta['url'].rstrip('/')}/{'pull' if kind == 'pr' else 'issues'}/{number}"
     today = date.today().isoformat()
@@ -334,7 +334,7 @@ def cmd_sync_github(root: Path, author: str = "@me", limit: int = 30,
         print(f"sync github: fetched {result['fetched']} items via gh (read-only); "
               f"{result['new']} new, {result['updated']} updated contribution files")
         print(f"index now: {result['repos']} repos, {result['contributions']} contributions")
-    print("next: python3 -m ctx factory run --factory weekly-contribution-digest --shadow")
+    print("next: python -m stead factory run --factory weekly-contribution-digest --shadow")
     return 0
 
 
@@ -393,7 +393,7 @@ def cmd_status(root: Path, project: str) -> int:
         if not rows:
             print("  (none)")
     else:
-        print("  (state.db missing — run `python3 -m ctx init`)")
+        print("  (state.db missing — run `python -m stead init`)")
     return 0
 
 
@@ -543,7 +543,7 @@ def _print_draft(info: dict, generate: bool, *, coding: bool = False) -> None:
               "or rerun with --generate")
     else:
         print("no model call — hand prompt.md to any agent, or rerun with --generate")
-    print(f"  python3 -m ctx run log --factory {info['factory']} --task "
+    print(f"  python -m stead run log --factory {info['factory']} --task "
           f"{info.get('contribution') or info.get('project') or 'contributions'} "
           f"--prompt-version {info['prompt_version']} --output TEXT --verdict approved|rejected")
     print("\n--- assembled prompt ---\n")
@@ -554,7 +554,7 @@ def _print_draft(info: dict, generate: bool, *, coding: bool = False) -> None:
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        prog="ctx", description="Stead — local context you own. Command: ctx. Stdlib only.")
+        prog="stead", description="Stead — local context you own. Command: stead. Stdlib only.")
     p.add_argument("--root", default=".", help="repo root (default: current directory)")
     sub = p.add_subparsers(dest="command", required=True)
 
@@ -725,9 +725,9 @@ def main(argv: list[str] | None = None) -> int:
         argv = sys.argv[1:]
     if not argv:
         print("Stead")
-        print("  python3 -m ctx ui")
-        print("  python3 -m ctx welcome --title \"My Project\"")
-        print("  python3 -m ctx --help")
+        print("  python -m stead ui")
+        print("  python -m stead welcome --title \"My Project\"")
+        print("  python -m stead --help")
         return 0
     args = build_parser().parse_args(argv)
     root = Path(args.root).resolve()
@@ -887,7 +887,7 @@ def main(argv: list[str] | None = None) -> int:
             print("  docker compose up --build")
             print("This computer stays loopback until you start that container.")
         else:
-            print("context/ is yours now. Open the cockpit with: python3 -m ctx ui")
+            print("context/ is yours now. Open the cockpit with: python -m stead ui")
         return 0
     if args.command == "onboard":
         from ctx.onboard import OnboardError, onboard

@@ -54,25 +54,25 @@ factories/
     prompts/v2.md    <- versioned prompt (production; v1 retired)
     evals/           <- test cases + pass criteria (JSON)
     runs/            <- one directory per run: bundle.md, prompt.md, run.json
-ctx/                 <- Python stdlib-only CLI package (python3 -m ctx)
-  ui.py              <- localhost cockpit (ctx ui); cockpit.html is the page
+ctx/                 <- Python stdlib-only CLI package (python -m stead)
+  ui.py              <- localhost cockpit (stead ui); cockpit.html is the page
   schema.sql         <- SQLite schema; state.db is rebuilt from this
   sync.py            <- read-only GitHub sync via gh subprocess
-state.db             <- GITIGNORED, rebuildable operational index (ctx init)
+state.db             <- GITIGNORED, rebuildable operational index (stead init)
 ```
 
 ## How to read (navigation protocol)
 
 1. Start here, then read `CONVENTIONS.md` for the frontmatter schema.
-2. "What is the status of project X?" -> `python3 -m ctx status <project-id-or-slug>`
+2. "What is the status of project X?" -> `python -m stead status <project-id-or-slug>`
    or read `context/projects/<slug>.md` plus the task files whose frontmatter
    `project:` points at it.
-3. "What needs my attention across my OSS work?" -> `python3 -m ctx contribution list`,
-   then `python3 -m ctx digest` (or `factory run --factory weekly-contribution-digest
+3. "What needs my attention across my OSS work?" -> `python -m stead contribution list`,
+   then `python -m stead digest` (or `factory run --factory weekly-contribution-digest
    --shadow`) and read the bundle under `factories/weekly-contribution-digest/runs/`.
 4. Follow frontmatter relations (`project:`, `repo:`) instead of guessing folders.
    Files are the source of truth; `state.db` is an index that can always be
-   rebuilt with `python3 -m ctx init`.
+   rebuilt with `python -m stead init`.
 
 ## How to write (safety rules)
 
@@ -81,8 +81,8 @@ state.db             <- GITIGNORED, rebuildable operational index (ctx init)
   contributions). Schema and naming rules: `CONVENTIONS.md`.
 - **One logical place** per object. If unsure where something goes, put it in
   `inbox/` and flag it for triage. Never scatter freestyle files.
-- Prefer the CLI (`ctx task|repo|contribution add/set`) so files and the SQLite
-  index stay in sync. If you edit markdown by hand, run `python3 -m ctx init`
+- Prefer the CLI (`stead task|repo|contribution add/set`) so files and the SQLite
+  index stay in sync. If you edit markdown by hand, run `python -m stead init`
   afterwards to re-index (init is a safe, idempotent rebuild).
 - Update the `updated:` date whenever you change an object. Never edit `created:`
   or `id:`.
@@ -100,37 +100,37 @@ state.db             <- GITIGNORED, rebuildable operational index (ctx init)
 ## CLI reference (run from the repo root, Python 3.11+, stdlib only)
 
 ```
-python3 -m ctx version                       # print 0.0.1
-python3 -m ctx model show                    # configured endpoint; never prints the key
-python3 -m ctx model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME
-python3 -m ctx eval run [--factory F]        # structural check, no model
-python3 -m ctx repo set ID --trigger on-demand|watch --reach shadow|draft-pr|pr|merge
-python3 -m ctx factory watch                # watched feature specs; no push
-python3 -m ctx init                          # rebuild state.db from schema.sql + files
-python3 -m ctx task add --title T --project P [--status to-do]
-python3 -m ctx task list [--project P] [--status S]
-python3 -m ctx task set ID --status S
-python3 -m ctx status PROJECT                # task rollup + recent factory runs
+python -m stead version                       # print 0.0.1
+python -m stead model show                    # configured endpoint; never prints the key
+python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME
+python -m stead eval run [--factory F]        # structural check, no model
+python -m stead repo set ID --trigger on-demand|watch --reach shadow|draft-pr|pr|merge
+python -m stead factory watch                # watched feature specs; no push
+python -m stead init                          # rebuild state.db from schema.sql + files
+python -m stead task add --title T --project P [--status to-do]
+python -m stead task list [--project P] [--status S]
+python -m stead task set ID --status S
+python -m stead status PROJECT                # task rollup + recent factory runs
 
-python3 -m ctx repo add --title T [--url URL] [--kind own|oss] [--status active|paused|archived]
-python3 -m ctx repo list [--kind own|oss]
-python3 -m ctx contribution add --title T --repo REPO --kind issue|pr --number N [--role author|assignee|reviewer] [--state open|closed|merged] [--ci pending|pass|fail|none] [--method spec-kit|builtin]
-python3 -m ctx contribution list
-python3 -m ctx contribution set ID [--state S] [--ci C] [--review R] [--role R] [--method spec-kit|builtin]
+python -m stead repo add --title T [--url URL] [--kind own|oss] [--status active|paused|archived]
+python -m stead repo list [--kind own|oss]
+python -m stead contribution add --title T --repo REPO --kind issue|pr --number N [--role author|assignee|reviewer] [--state open|closed|merged] [--ci pending|pass|fail|none] [--method spec-kit|builtin]
+python -m stead contribution list
+python -m stead contribution set ID [--state S] [--ci C] [--review R] [--role R] [--method spec-kit|builtin]
 
-python3 -m ctx sync github [--author @me] [--limit N]   # READ-ONLY refresh via gh
-python3 -m ctx sync github --offline                    # no network: re-index cache
+python -m stead sync github [--author @me] [--limit N]   # READ-ONLY refresh via gh
+python -m stead sync github --offline                    # no network: re-index cache
 
-python3 -m ctx run log --factory F --task REF --prompt-version V [--output TEXT] [--verdict V]
-python3 -m ctx prompt list --factory F
-python3 -m ctx prompt promote --factory F --version V
-python3 -m ctx factory run --factory weekly-contribution-digest [--shadow|--live]
-python3 -m ctx factory run --factory weekly-project-status --project P [--shadow|--live]
-python3 -m ctx factory run --factory feature-builder --contribution ID [--shadow|--live]
-python3 -m ctx digest                        # shortcut for the digest shadow run
-python3 -m ctx onboard --title T [--kind own|oss] [--url URL] [--path DIR] [--method spec-kit|builtin] [--no-specify]
-python3 -m ctx welcome --title T [--url URL] # first run: one project, no Spec Kit
-python3 -m ctx ui                            # local cockpit; empty checkout shows welcome
+python -m stead run log --factory F --task REF --prompt-version V [--output TEXT] [--verdict V]
+python -m stead prompt list --factory F
+python -m stead prompt promote --factory F --version V
+python -m stead factory run --factory weekly-contribution-digest [--shadow|--live]
+python -m stead factory run --factory weekly-project-status --project P [--shadow|--live]
+python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live]
+python -m stead digest                        # shortcut for the digest shadow run
+python -m stead onboard --title T [--kind own|oss] [--url URL] [--path DIR] [--method spec-kit|builtin] [--no-specify]
+python -m stead welcome --title T [--url URL] # first run: one project, no Spec Kit
+python -m stead ui                            # local cockpit; empty checkout shows welcome
 python3 -m unittest discover -s tests        # run the test suite
 ```
 
@@ -142,12 +142,12 @@ factory groups cached contributions by repo (PRs in flight / reviews awaiting
 reply / claimed issues / CI flags); the status factory bundles a project's tasks +
 documents + meetings; feature-builder bundles a feature spec + acceptance criteria
 + repo conventions. A person or an agent can still read `prompt.md` and record
-the result with `ctx run log --output ... --verdict ...`. Triggers are
+the result with `stead run log --output ... --verdict ...`. Triggers are
 scheduler-agnostic: any cron/Task Scheduler/systemd timer can invoke the CLI.
 
 ## Local cockpit
 
-`python3 -m ctx ui` opens a browser on `127.0.0.1` (`--no-browser` to serve
+`python -m stead ui` opens a browser on `127.0.0.1` (`--no-browser` to serve
 without opening one). A normal start stays on loopback even if Settings says
 shared server. `--deploy`, or the Docker image, is the shared server: it
 binds `0.0.0.0` and will not start without `STEAD_ACCESS_TOKEN`. Human docs:
@@ -164,7 +164,7 @@ external assets, so it works offline.
 
 ## GitHub sync (read-only, offline-capable)
 
-- `ctx sync github` shells out to the open-source `gh` CLI (stdlib `subprocess`)
+- `stead sync github` shells out to the open-source `gh` CLI (stdlib `subprocess`)
   and caches your open PRs (author), review-requested PRs, and assigned issues as
   contribution markdown (`visibility: public`). It owns the GitHub-derived fields
   (`title`, `url`, `state`, `ci`, `review`, `updated`); your edits to `role`,
@@ -179,7 +179,7 @@ external assets, so it works offline.
 
 A build target is a `contribution` with `kind: issue`, `role: author`, linked to a
 `repo`, tagged `feature-spec`, whose body has a description + a `## Acceptance
-criteria` checklist. `ctx factory run --factory feature-builder --contribution ID`
+criteria` checklist. `stead factory run --factory feature-builder --contribution ID`
 assembles a deterministic, LLM-free, network-free bundle (spec + criteria + repo
 conventions + related docs + sibling contributions for a duplicate sweep) and
 flags thin/large/criteria-less specs for decomposition. A pluggable coding agent
@@ -200,8 +200,8 @@ field `method` selects only the *tooling*:
 
 `ctx` never imports or invokes `specify`. Full flow, install, and own-vs-OSS
 rules: `docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`
-(`ctx init` seeds the highest version as production; switch or roll back with
-`ctx prompt promote`).
+(`stead init` seeds the highest version as production; switch or roll back with
+`stead prompt promote`).
 
 **Autonomy is two knobs, per repo.** `trigger` is `on-demand` (default) or
 `watch`. `reach` is the ceiling: `shadow` (default), `draft-pr`, `pr`, or
@@ -228,7 +228,7 @@ LLM/network/subprocess/remote writes.
    (`--shadow`, the default): outputs are drafts, a human reviews before anything
    is filed or acted on. The digest **never auto-posts** to GitHub; feature-builder
    is shadow-only today (autonomy ladder above).
-2. Promote prompts only after evals pass: `ctx prompt promote` (old production
+2. Promote prompts only after evals pass: `stead prompt promote` (old production
    version is retired, never deleted).
 3. Log every run. Review run logs; fix real observed failures, not imagined
    ones. Start simple.

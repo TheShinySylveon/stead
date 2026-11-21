@@ -1,6 +1,6 @@
 # Documentation
 
-Human docs for Stead. The command is `ctx`. The README is the front door.
+Human docs for Stead. The command is `stead`. The README is the front door.
 This folder is the rest of the house. Agent rules live in `AGENTS.md`. The
 file format lives in `CONVENTIONS.md`.
 
@@ -22,7 +22,7 @@ the copyright in code you write.
 - [CLI](cli.md) — every `ctx` command.
 - [Factories](factories.md) — the three workflows, and why a draft is not a merge.
 - [Models](models.md) — the optional OpenAI-compatible endpoint factories draft with.
-- [Spec Kit](spec-kit-workflow.md) — planning before code, and `ctx onboard`.
+- [Spec Kit](spec-kit-workflow.md) — planning before code, and `stead onboard`.
 
 ## Not in this folder
 

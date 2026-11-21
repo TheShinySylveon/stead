@@ -31,7 +31,7 @@ def connect(root: Path) -> sqlite3.Connection:
 
 def require_db(root: Path) -> None:
     if not db_path(root).exists():
-        raise SystemExit("state.db not found — run `python3 -m ctx init` first.")
+        raise SystemExit("state.db not found — run `python -m stead init` first.")
 
 
 def utcnow() -> str:
@@ -92,7 +92,7 @@ def init_db(root: Path) -> dict[str, int]:
         # Seed prompt versions from factories/*/prompts/v*.md. The HIGHEST
         # version is production — the natural, current flow (e.g. v2 for
         # feature-builder's spec-driven / planning-first prompt); lower versions
-        # are retired. Switch or roll back explicitly with `ctx prompt promote`.
+        # are retired. Switch or roll back explicitly with `stead prompt promote`.
         n_prompts = 0
         fdirs = sorted((root / "factories").iterdir()) if (root / "factories").is_dir() else []
         for fdir in fdirs:

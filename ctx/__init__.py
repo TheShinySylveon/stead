@@ -1,6 +1,6 @@
-"""ctx — command for Stead. Python standard library only, zero dependencies.
+"""Implementation package for Stead. The command is `python -m stead`.
 
-Run from the repo root:  python3 -m ctx <command>
+Run from the repo root:  python -m stead <command>
 See AGENTS.md and CONVENTIONS.md for the system contract.
 """
 

@@ -16,5 +16,5 @@ tags: [example, seed]
 
 **EXAMPLE SEED — not a real repository.** Created to demonstrate the
 `repo`/`contribution` ontology and the `weekly-contribution-digest` factory
-fully offline. Replace with real repos via `ctx repo add` or `ctx sync github`
+fully offline. Replace with real repos via `stead repo add` or `stead sync github`
 when you choose specific repos (that decision is deferred per PLAN.md).

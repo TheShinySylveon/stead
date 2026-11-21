@@ -3,10 +3,10 @@
 Run from the repository root. Python standard library only.
 
 ```bash
-python3 -m ctx
-python3 -m ctx version
-python3 -m ctx --help
-python3 -m ctx <command> --help
+python -m stead
+python -m stead version
+python -m stead --help
+python -m stead <command> --help
 ```
 
 `--root` defaults to the current directory. Point it at a checkout if you are
@@ -15,9 +15,9 @@ not standing in one.
 ## First run and setup
 
 ```bash
-python3 -m ctx ui [--no-browser] [--port N] [--deploy]
-python3 -m ctx welcome --title "My Project" [--url URL] [--deployment single|multi]
-python3 -m ctx init
+python -m stead ui [--no-browser] [--port N] [--deploy]
+python -m stead welcome --title "My Project" [--url URL] [--deployment single|multi]
+python -m stead init
 ```
 
 `ui` opens the cockpit. On an empty checkout it shows Welcome. Without
@@ -35,7 +35,7 @@ commands.
 Full project plus constitution, optional `specify init`:
 
 ```bash
-python3 -m ctx onboard --title "My App" --kind own|oss \
+python -m stead onboard --title "My App" --kind own|oss \
     [--url URL] [--path DIR] [--method spec-kit|builtin] \
     [--integration claude|copilot|gemini|codex|generic] [--no-specify]
 ```
@@ -45,20 +45,20 @@ See [Spec Kit](spec-kit-workflow.md).
 ## Tasks, repos, contributions
 
 ```bash
-python3 -m ctx task add --title T --project P [--status to-do|doing|done|blocked]
-python3 -m ctx task list [--project P] [--status S]
-python3 -m ctx task set ID --status S
+python -m stead task add --title T --project P [--status to-do|doing|done|blocked]
+python -m stead task list [--project P] [--status S]
+python -m stead task set ID --status S
 
-python3 -m ctx repo add --title T [--url URL] [--kind own|oss] \
+python -m stead repo add --title T [--url URL] [--kind own|oss] \
     [--status active|paused|archived]
-python3 -m ctx repo list [--kind own|oss]
+python -m stead repo list [--kind own|oss]
 
-python3 -m ctx contribution add --title T --repo REPO --kind issue|pr --number N \
+python -m stead contribution add --title T --repo REPO --kind issue|pr --number N \
     [--role author|assignee|reviewer] [--state open|closed|merged] \
     [--ci pending|pass|fail|none] [--review requested|approved|changes|none] \
     [--method spec-kit|builtin]
-python3 -m ctx contribution list
-python3 -m ctx contribution set ID [--state S] [--ci C] [--review R] \
+python -m stead contribution list
+python -m stead contribution set ID [--state S] [--ci C] [--review R] \
     [--role R] [--method spec-kit|builtin]
 ```
 
@@ -68,12 +68,12 @@ Omitted, it is `spec-kit`.
 ## Status and GitHub
 
 ```bash
-python3 -m ctx actor add --title "Ada" --kind human|agent
-python3 -m ctx actor list
+python -m stead actor add --title "Ada" --kind human|agent
+python -m stead actor list
 
-python3 -m ctx status PROJECT
-python3 -m ctx sync github [--author @me] [--limit N]
-python3 -m ctx sync github --offline
+python -m stead status PROJECT
+python -m stead sync github [--author @me] [--limit N]
+python -m stead sync github --offline
 ```
 
 `sync github` is read-only. It uses `gh`. `--offline` only re-indexes files
@@ -82,22 +82,22 @@ already on disk.
 ## Factories and prompts
 
 ```bash
-python3 -m ctx model show
-python3 -m ctx model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME [--base-url URL] [--key KEY]
-python3 -m ctx factory run --factory weekly-contribution-digest [--shadow|--live] [--generate]
-python3 -m ctx factory run --factory weekly-project-status --project P [--shadow|--live] [--generate]
-python3 -m ctx repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge]
-python3 -m ctx factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr]
-python3 -m ctx factory watch
-python3 -m ctx factory run --factory feature-builder --contribution ID [--shadow|--live] [--generate] [--reach REACH]
-python3 -m ctx digest [--generate]
-python3 -m ctx eval run [--factory F]
-python3 -m ctx eval judge --factory F --case ID --output PATH
+python -m stead model show
+python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME [--base-url URL] [--key KEY]
+python -m stead factory run --factory weekly-contribution-digest [--shadow|--live] [--generate]
+python -m stead factory run --factory weekly-project-status --project P [--shadow|--live] [--generate]
+python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge]
+python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr]
+python -m stead factory watch
+python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live] [--generate] [--reach REACH]
+python -m stead digest [--generate]
+python -m stead eval run [--factory F]
+python -m stead eval judge --factory F --case ID --output PATH
 
-python3 -m ctx run log --factory F --task REF --prompt-version V \
+python -m stead run log --factory F --task REF --prompt-version V \
     [--output TEXT] [--verdict approved|rejected]
-python3 -m ctx prompt list --factory F
-python3 -m ctx prompt promote --factory F --version V
+python -m stead prompt list --factory F
+python -m stead prompt promote --factory F --version V
 ```
 
 `factory run` and `digest` assemble a prompt. They call a model only with

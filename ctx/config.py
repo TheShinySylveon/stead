@@ -105,8 +105,8 @@ def save_model(root: Path, model: dict) -> None:
 def effective(root: Path, *, deploy: bool = False) -> dict:
     """What this process should do. Env and --deploy override the file.
 
-    A normal local `ctx ui` stays on loopback even if stead.json says multi.
-    The Docker image sets STEAD_DEPLOYMENT=multi. `ctx ui --deploy` is the
+    A normal local `stead ui` stays on loopback even if stead.json says multi.
+    The Docker image sets STEAD_DEPLOYMENT=multi. `stead ui --deploy` is the
     explicit local switch.
     """
     file_cfg = load(root)

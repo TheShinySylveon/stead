@@ -2,17 +2,18 @@
 
 ## Unreleased
 
+- The command is `python -m stead`. `python -m ctx` still runs and says so.
 - feature-builder trigger and reach. On demand or watch. Ceiling is per repo:
   shadow, draft-pr, pr, or merge. Merge is never inherited. A run above the
   ceiling is refused. Nothing is pushed, opened, or merged.
 - Anthropic and Grok are model choices. Grok uses chat completions.
   Anthropic uses its messages API. The key stays out of git.
-- Optional model drafts. `ctx factory run --generate` and the cockpit checkbox
+- Optional model drafts. `stead factory run --generate` and the cockpit checkbox
   call an OpenAI-compatible endpoint and write `output.md`. Assembly still
   calls nothing. Nothing is posted or pushed.
-- `ctx model set` / Settings store the endpoint. The key stays in the
+- `stead model set` / Settings store the endpoint. The key stays in the
   environment or gitignored `stead.json`.
-- `ctx eval run` checks eval files with no model. `ctx eval judge` asks the
+- `stead eval run` checks eval files with no model. `stead eval judge` asks the
   configured model about one draft. Promote does not require that yet.
 
 ## 0.0.1

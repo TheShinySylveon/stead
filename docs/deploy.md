@@ -1,6 +1,6 @@
 # Deploying for several people
 
-Single-user is the default. `ctx ui` binds to this computer and does not ask
+Single-user is the default. `stead ui` binds to this computer and does not ask
 for a password. Multi-user is a shared server: one process, one index, several
 browsers. It does not start without an access token.
 
@@ -16,7 +16,7 @@ Welcome asks:
   token once. This window does not open the port. You start Docker yourself.
 
 ```bash
-python3 -m ctx welcome --title "Team notes" --deployment multi
+python -m stead welcome --title "Team notes" --deployment multi
 ```
 
 Copy the token, then:
@@ -52,9 +52,9 @@ After the first project exists, Settings can switch deployment, rotate the
 token, and add actors (`kind: human` or `kind: agent`).
 
 ```bash
-python3 -m ctx actor add --title "Ada" --kind human
-python3 -m ctx actor add --title "Review bot" --kind agent
-python3 -m ctx actor list
+python -m stead actor add --title "Ada" --kind human
+python -m stead actor add --title "Review bot" --kind agent
+python -m stead actor list
 ```
 
 Actors are attribution. They are not logins. Anyone with the access token can

@@ -3,11 +3,11 @@
 Design rules (locked):
 - READ-ONLY: only `gh search`, `gh pr view`, `gh api user` (GET). This module
   never creates/issues/comments/labels/pushes anything. No remote writes.
-- Explicit/on-demand: sync runs only when the user invokes `ctx sync github`.
+- Explicit/on-demand: sync runs only when the user invokes `stead sync github`.
 - Local-first + offline-capable: results are cached as markdown contribution
   files (flat frontmatter, visibility: public) under context/contributions/,
   mirrored into state.db. `--offline` skips the network and re-indexes files.
-- Files are the source of truth: `ctx init` rebuilds the index without gh.
+- Files are the source of truth: `stead init` rebuilds the index without gh.
 - `gh` is an external open-source tool (like git), NOT a pip dependency.
 """
 
@@ -44,18 +44,18 @@ def _run_gh(args: list[str]) -> subprocess.CompletedProcess:
     except FileNotFoundError:
         raise SystemExit(
             "gh CLI not found on PATH. Install it (https://cli.github.com) and "
-            "run `gh auth login`, or use `ctx sync github --offline` to re-index "
+            "run `gh auth login`, or use `stead sync github --offline` to re-index "
             "the local cache without network.") from None
     except subprocess.TimeoutExpired:
         raise SystemExit(
             f"gh timed out after {GH_TIMEOUT}s ({' '.join(args[:3])}...). "
-            "Check your network, or use `ctx sync github --offline`.") from None
+            "Check your network, or use `stead sync github --offline`.") from None
     if proc.returncode != 0:
         err = (proc.stderr or proc.stdout or "").strip()
         if "auth login" in err or "not logged" in err or "authentication" in err.lower():
             raise SystemExit(
                 "gh is not authenticated. Run `gh auth login` (read-only scopes "
-                "are enough), or use `ctx sync github --offline`.")
+                "are enough), or use `stead sync github --offline`.")
         raise SystemExit(f"gh failed ({' '.join(args[:3])}...): {err[:400]}")
     return proc
 
@@ -164,7 +164,7 @@ def ensure_repo(root: Path, repo_full: str, login: str | None, today: str) -> st
             "kind": kind, "url": f"https://github.com/{repo_full}"}
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(frontmatter.dumps(
-        meta, f"# {repo_full}\n\nAuto-created by `ctx sync github` (read-only).\n"),
+        meta, f"# {repo_full}\n\nAuto-created by `stead sync github` (read-only).\n"),
         encoding="utf-8")
     return repo_id
 
@@ -183,7 +183,7 @@ def write_contribution(root: Path, item: dict, login: str | None, today: str) ->
         meta = {"id": contrib_id, "type": "contribution", "created": today}
         body = (f"# {item['title']}\n\n"
                 f"{item['kind'].upper()} #{item['number']} in {item['repo_full']} — {item['url']}\n\n"
-                f"Cached read-only from GitHub by `ctx sync github` on {today}.\n"
+                f"Cached read-only from GitHub by `stead sync github` on {today}.\n"
                 f"GitHub is authoritative for live state; this file is the local,\n"
                 f"offline-capable cache. Add private strategy notes in context/documents/,\n"
                 f"not here (contribution files are public GitHub-derived data).\n")
@@ -214,7 +214,7 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
         if shutil.which("gh") is None:
             raise SystemExit(
                 "gh CLI not found on PATH. Install it (https://cli.github.com) "
-                "and run `gh auth login`, or use `ctx sync github --offline` to "
+                "and run `gh auth login`, or use `stead sync github --offline` to "
                 "re-index the local cache without network.")
         items = fetch_contributions(author=author, limit=limit)
         login = None
