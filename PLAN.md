@@ -110,11 +110,27 @@ Rules that keep it agent-friendly (from the article's "bad context is Enemy No. 
 - **Done when:** a prompt improvement is validated by evals before promotion.
 
 ### Phase 4 — Compounding flywheel
-- More factories (each follows the same template).
+- More factories (same template), notably **`feature-builder` (issue → PR):**
+  you write an issue/feature with acceptance criteria into `context/contributions/`;
+  a pluggable coding agent (Hermes / Claude Code / Codex) implements it on a branch
+  with tests and opens a PR via `gh`; ctx tracks status + run logs + the PR link.
+  Follows the proven issue-to-PR discipline (read thread, sweep duplicates, validate
+  premise, TDD, sabotage-test the regression, quality gates, honest CI).
 - **Syncs:** `ctx sync github` for issues/PRs/reviews; import email/calendar/transcripts into `inbox/`.
 - A **context-maintenance factory**: triage inbox, dedupe, flag stale docs,
   keep relations consistent (agents maintaining the system, per the article).
 - Eventually a **factory factory** that scaffolds new factories from the template.
+
+**Autonomy ladder for code-writing factories (e.g. `feature-builder`):**
+1. **Shadow** — agent proposes a plan + diff; nothing pushed.
+2. **Draft PR** — agent opens a PR with passing tests; **you review and merge.**
+3. **Trusted** — auto-merge only after a proven track record + adversarial review +
+   branch protection. Never the default.
+
+Best for well-scoped, verifiable work (clear acceptance criteria + a test suite);
+vague/large features are decomposed first. Requires the repo locally cloneable with
+quality gates. ctx stores/tracks; the coding agent is pluggable; `gh` opens PRs; git
+branches give isolation + audit.
 
 ---
 
