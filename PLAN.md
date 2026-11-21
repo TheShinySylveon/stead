@@ -185,7 +185,8 @@ Built:
 - `stead hook set` creates a token. `POST /hook` writes one inbox note. It
   does not run a factory.
 - `stead schedule show` / `install` wire the weekly read-only sync, the
-  digest when the cache changed, and the maintenance draft.
+  digest when the cache changed, and the maintenance draft. `--project P` adds
+  that project's status draft.
 - `stead sync github --digest` is the event-driven path. It assembles only
   after a change, and it does not post.
 

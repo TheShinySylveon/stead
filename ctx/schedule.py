@@ -1,16 +1,19 @@
 """Print or install the weekly local jobs. No remote writes.
 
 Friday at 16:00 this checkout syncs GitHub read-only, assembles the digest if
-the cache changed, then assembles the maintenance note. Nothing is posted.
+the cache changed, then assembles the maintenance note. With `--project`, it
+also assembles that project's status. Nothing is posted.
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
 
 TASK_NAME = "SteadWeekly"
+_PROJECT = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
 
 
 class ScheduleError(Exception):
@@ -18,22 +21,32 @@ class ScheduleError(Exception):
         super().__init__(message)
 
 
-def weekly_command(root: Path) -> str:
+def weekly_command(root: Path, project: str | None = None) -> str:
     """One command a scheduler can run. It stays inside this checkout."""
     exe = sys.executable
     folder = str(root)
-    return (
+    command = (
         f'cd /d "{folder}" && "{exe}" -m stead sync github --limit 30 --digest '
         f'&& "{exe}" -m stead factory run --factory context-maintenance --shadow'
     )
+    if project:
+        project = project.strip()
+        if not _PROJECT.match(project):
+            raise ScheduleError("project must be a plain id, not a shell fragment")
+        command += (
+            f' && "{exe}" -m stead factory run --factory weekly-project-status '
+            f'--project {project} --shadow'
+        )
+    return command
 
 
-def show(root: Path) -> str:
-    command = weekly_command(root)
+def show(root: Path, project: str | None = None) -> str:
+    command = weekly_command(root, project)
+    extra = f", and {project}'s status" if project else ""
     return (
         f"Weekly Friday 16:00, from {root}\n"
-        "Read-only sync, then a local digest if the cache changed, then a\n"
-        "maintenance draft. Nothing is posted, pushed, or merged.\n\n"
+        f"Read-only sync, a local digest if the cache changed, a maintenance\n"
+        f"draft{extra}. Nothing is posted, pushed, or merged.\n\n"
         f"Command:\n{command}\n\n"
         "Windows:\n"
         f'schtasks /Create /TN {TASK_NAME} /SC WEEKLY /D FRI /ST 16:00 '
@@ -43,11 +56,12 @@ def show(root: Path) -> str:
     )
 
 
-def install(root: Path, *, runner=None, platform: str | None = None) -> str:
+def install(root: Path, *, runner=None, platform: str | None = None,
+            project: str | None = None) -> str:
     """Create the current user's weekly task. Does not touch GitHub."""
     if (platform or sys.platform) != "win32":
         raise ScheduleError("this install is for Windows Task Scheduler. Use `stead schedule show` for the cron line.")
-    command = weekly_command(root)
+    command = weekly_command(root, project)
     argv = [
         "schtasks", "/Create", "/TN", TASK_NAME, "/SC", "WEEKLY", "/D", "FRI",
         "/ST", "16:00", "/TR", f"cmd /c {command}", "/F",

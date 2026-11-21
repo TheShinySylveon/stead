@@ -5,7 +5,8 @@
 - `stead run file --run ID` files an approved digest or status into
   `context/documents/`. It never posts, pushes, or merges.
 - `stead schedule show` / `install` wire the weekly read-only sync, the
-  changed-cache digest, and the maintenance draft.
+  changed-cache digest, and the maintenance draft. `--project P` also drafts a
+  project status. A project id is checked before it goes into the command.
 - `stead sync github --digest` assembles only after the cache changes.
 - `context-maintenance` also sweeps duplicate titles.
 - The container package `ghcr.io/theshinysylveon/stead` is public.

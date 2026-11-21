@@ -131,6 +131,7 @@ python -m stead sync github --offline                    # no network: re-index 
 python -m stead sync github --digest                     # assemble only if the cache changed
 python -m stead schedule show                            # the Friday local jobs
 python -m stead schedule install                         # Windows current user
+python -m stead schedule show --project P                # add a status draft
 
 python -m stead run log --factory F --task REF --prompt-version V [--output TEXT] [--verdict V]
 python -m stead run file --run ID [--title T]   # approved digest/status -> context/documents/

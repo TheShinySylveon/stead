@@ -120,6 +120,13 @@ class ScheduleAndSyncTest(unittest.TestCase):
         with self.assertRaises(ScheduleError):
             install(Path("C:/notes"), runner=lambda argv: "", platform="linux")
 
+    def test_project_status_can_join_the_weekly_job(self) -> None:
+        text = show(Path("C:/notes"), "project-demo")
+        self.assertIn("weekly-project-status --project project-demo", text)
+        from ctx.schedule import ScheduleError
+        with self.assertRaises(ScheduleError):
+            show(Path("C:/notes"), "demo && rmdir /s /q C:\\")
+
     def test_digest_flag_assembles_only_after_a_change(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

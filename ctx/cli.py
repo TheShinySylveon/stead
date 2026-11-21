@@ -673,8 +673,10 @@ def build_parser() -> argparse.ArgumentParser:
     imported = inbox.add_parser("import", help="copy a local .eml, .ics, .md, or .txt file into inbox/")
     imported.add_argument("path")
     sched = sub.add_parser("schedule", help="the weekly local jobs").add_subparsers(dest="sub", required=True)
-    sched.add_parser("show", help="print the Friday command. Does not install it.")
-    sched.add_parser("install", help="Windows only. Current user, Friday 16:00. No remote writes.")
+    sshow = sched.add_parser("show", help="print the Friday command. Does not install it.")
+    sshow.add_argument("--project", help="also assemble this project's status")
+    sinst = sched.add_parser("install", help="Windows only. Current user, Friday 16:00. No remote writes.")
+    sinst.add_argument("--project", help="also assemble this project's status")
     hook = sub.add_parser("hook", help="loopback or shared-server capture webhook").add_subparsers(dest="sub", required=True)
     hook.add_parser("set", help="create a webhook token. Printed once. Stored in stead.json.")
     hook.add_parser("show", help="say whether a webhook token is set. Never prints it.")
@@ -940,10 +942,10 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "schedule":
         from ctx.schedule import ScheduleError, install, show
         if args.sub == "show":
-            print(show(root))
+            print(show(root, args.project))
             return 0
         try:
-            name = install(root)
+            name = install(root, project=args.project)
         except ScheduleError as exc:
             raise SystemExit(str(exc)) from exc
         print(f"installed {name}")

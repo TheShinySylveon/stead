@@ -9,7 +9,9 @@ for one project), **shared** (any agent/human can run it via the CLI),
 - **Scheduled (target):** weekly, e.g. Friday afternoon. Scheduler-agnostic:
   any cron / Windows Task Scheduler / Hermes cron job invokes:
   `python -m stead factory run --factory weekly-project-status --project <P> --shadow`
-- **Event-driven (later):** project marked active, or manual trigger.
+- **Event-driven (scheduled):** `stead schedule show --project P` adds this
+  project to the Friday local job. `stead factory run --project P` is the
+  manual trigger.
 - **Now (Phase 1–2):** manual invocation only.
 
 ## Inputs
