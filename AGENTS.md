@@ -6,9 +6,11 @@ specific tool, model, or vendor.
 
 > Guiding principle: **Rent the intelligence. Own the context.**
 > All knowledge lives in plain Markdown + YAML frontmatter, versioned with git.
-> All code is Python standard library only. The core is fully offline; an
-> optional **read-only** GitHub sync uses the open-source `gh` CLI (an external
-> tool, like git). No API keys, no SaaS, no hardwired LLM.
+> All code is Python standard library only. The core is fully offline. An
+> optional **read-only** GitHub sync uses the open-source `gh` CLI. An optional
+> factory draft calls the OpenAI-compatible endpoint the user configured.
+> No vendor SDK, no hardwired key, no SaaS account required to read or write
+> context.
 
 ## What this system is
 
@@ -99,6 +101,9 @@ state.db             <- GITIGNORED, rebuildable operational index (ctx init)
 
 ```
 python3 -m ctx version                       # print 0.0.1
+python3 -m ctx model show                    # configured endpoint; never prints the key
+python3 -m ctx model set --provider openai|openrouter|ollama|custom --name NAME
+python3 -m ctx eval run [--factory F]        # structural check, no model
 python3 -m ctx init                          # rebuild state.db from schema.sql + files
 python3 -m ctx task add --title T --project P [--status to-do]
 python3 -m ctx task list [--project P] [--status S]
@@ -127,15 +132,16 @@ python3 -m ctx ui                            # local cockpit; empty checkout sho
 python3 -m unittest discover -s tests        # run the test suite
 ```
 
-`factory run` is **deterministic and LLM-free**: it assembles a context bundle and
-emits the assembled prompt under `factories/<name>/runs/<run-id>/`. The digest
+`factory run` assembles a context bundle and emits the prompt under
+`factories/<name>/runs/<run-id>/`. That step is deterministic and does not
+call a model. `--generate` sends the assembled prompt to the configured
+endpoint and writes `output.md`. It does not post, push, or merge. The digest
 factory groups cached contributions by repo (PRs in flight / reviews awaiting
 reply / claimed issues / CI flags); the status factory bundles a project's tasks +
 documents + meetings; feature-builder bundles a feature spec + acceptance criteria
-+ repo conventions. Generation is pluggable: any agent (or human) reads
-`prompt.md`, produces the output, and records it with
-`ctx run log --output ... --verdict ...`. Triggers are scheduler-agnostic: any
-cron/Task Scheduler/systemd timer can invoke the CLI.
++ repo conventions. A person or an agent can still read `prompt.md` and record
+the result with `ctx run log --output ... --verdict ...`. Triggers are
+scheduler-agnostic: any cron/Task Scheduler/systemd timer can invoke the CLI.
 
 ## Local cockpit
 

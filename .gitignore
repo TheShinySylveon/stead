@@ -5,6 +5,7 @@ state.db-shm
 
 # Rebuildable factory run artifacts (deterministic assembly output)
 factories/*/runs/
+factories/*/evals/results/
 
 # Python artifacts
 __pycache__/

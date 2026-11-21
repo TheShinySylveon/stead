@@ -1,0 +1,136 @@
+"""Model drafts and eval checks. No live network."""
+
+from __future__ import annotations
+
+import json
+import tempfile
+import unittest
+import urllib.error
+from pathlib import Path
+from unittest import mock
+
+from ctx import cli, config, db, factory, frontmatter, models
+
+
+def _root() -> Path:
+    base = Path(tempfile.mkdtemp())
+    root = base / "repo"
+    for sub in ("context/projects", "factories/weekly-project-status/prompts",
+                "factories/weekly-project-status/evals"):
+        (root / sub).mkdir(parents=True)
+    meta = {"id": "project-demo", "type": "project", "title": "Demo",
+            "created": "2026-11-21", "updated": "2026-11-21", "status": "active"}
+    (root / "context/projects/demo.md").write_text(
+        frontmatter.dumps(meta, "# Demo\n"), encoding="utf-8")
+    (root / "factories/weekly-project-status/FACTORY.md").write_text("# F\n", encoding="utf-8")
+    (root / "factories/weekly-project-status/prompts/v1.md").write_text(
+        "Draft a status.\n", encoding="utf-8")
+    (root / "factories/weekly-project-status/evals/eval-ok.json").write_text(
+        json.dumps({"id": "eval-ok", "factory": "weekly-project-status",
+                    "title": "Ok", "input": "a bundle", "pass_criteria": "mentions the project"}),
+        encoding="utf-8")
+    return root
+
+
+class ModelTest(unittest.TestCase):
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        self.addCleanup(lambda: __import__("os").environ.pop(models.ENV_KEY, None))
+
+    def test_public_view_hides_the_key_and_deployment_keeps_it(self) -> None:
+        shown = models.set_model(self.root, provider="openai", name="gpt-test", api_key="sk-secret")
+        self.assertNotIn("api_key", shown)
+        self.assertTrue(shown["key_set"])
+        self.assertNotIn("sk-secret", json.dumps(shown))
+        config.choose(self.root, "single")
+        raw = (self.root / "stead.json").read_text(encoding="utf-8")
+        self.assertIn("sk-secret", raw)
+        self.assertNotIn("sk-secret", json.dumps(models.public_model(self.root)))
+
+    def test_openai_requires_a_key_and_ollama_does_not(self) -> None:
+        models.set_model(self.root, provider="openai", name="gpt-test")
+        with self.assertRaises(models.ModelError):
+            models.resolve(self.root)
+        models.set_model(self.root, provider="ollama", name="llama3.2")
+        resolved = models.resolve(self.root)
+        self.assertEqual(resolved["base_url"], "http://127.0.0.1:11434/v1")
+        self.assertEqual(resolved["api_key"], "")
+
+    def test_complete_uses_the_transport_and_hides_the_key_on_failure(self) -> None:
+        settings = {"name": "gpt-test", "base_url": "https://example.test/v1", "api_key": "sk-secret"}
+        seen = {}
+
+        def transport(body, got):
+            seen["model"] = body["model"]
+            seen["key"] = got["api_key"]
+            return {"choices": [{"message": {"content": [{"type": "text", "text": "hello draft"}]}}]}
+
+        self.assertEqual(models.complete("prompt", settings, transport=transport), "hello draft")
+        self.assertEqual(seen["model"], "gpt-test")
+        self.assertEqual(seen["key"], "sk-secret")
+
+        def boom(req, timeout=None):
+            self.assertEqual(req.get_header("Authorization"), "Bearer sk-secret")
+            raise urllib.error.URLError("timed out")
+
+        with mock.patch("urllib.request.urlopen", boom):
+            with self.assertRaises(models.ModelError) as caught:
+                models.complete("prompt", settings)
+        self.assertNotIn("sk-secret", str(caught.exception))
+
+    def test_custom_url_must_be_http(self) -> None:
+        with self.assertRaises(models.ModelError):
+            models.set_model(self.root, provider="custom", name="local", base_url="file:///tmp/model")
+
+    def test_generate_writes_a_draft_and_does_not_open_the_network(self) -> None:
+        root = _root()
+        self.addCleanup(lambda: __import__("shutil").rmtree(root.parent, ignore_errors=True))
+        db.init_db(root)
+        models.set_model(root, provider="ollama", name="llama3.2")
+
+        def fake_draft(_root, prompt):
+            self.assertIn("Draft a status.", prompt)
+            return "Status draft.\n"
+
+        with mock.patch("ctx.models.draft", fake_draft), \
+             mock.patch("urllib.request.urlopen", side_effect=AssertionError("network")):
+            self.assertEqual(cli.cmd_factory_run(root, "weekly-project-status", "demo", generate=True), 0)
+        drafts = list((root / "factories/weekly-project-status/runs").glob("*/output.md"))
+        self.assertEqual(len(drafts), 1)
+        self.assertIn("Status draft.", drafts[0].read_text(encoding="utf-8"))
+        run_json = json.loads((drafts[0].parent / "run.json").read_text(encoding="utf-8"))
+        self.assertNotIn("api_key", run_json)
+        self.assertEqual(run_json["generated"], "model")
+
+    def test_shipped_evals_and_a_judge_result(self) -> None:
+        repo = Path(__file__).resolve().parents[1]
+        checked = models.check_eval_files(repo)
+        self.assertTrue(checked["ok"], checked["problems"])
+        self.assertGreaterEqual(checked["cases"], 12)
+
+        root = _root()
+        self.addCleanup(lambda: __import__("shutil").rmtree(root.parent, ignore_errors=True))
+        models.set_model(root, provider="ollama", name="llama3.2")
+        draft = root / "draft.md"
+        draft.write_text("The project is fine.\n", encoding="utf-8")
+
+        def transport(_body, settings):
+            self.assertNotIn("api_key", json.dumps({k: settings[k] for k in settings if k != "api_key"}))
+            return {"choices": [{"message": {"content": "verdict: pass\nreason: it mentions the project"}}]}
+
+        judged = models.judge(root, "weekly-project-status", "eval-ok", str(draft), transport=transport)
+        self.assertEqual(judged["verdict"], "pass")
+        recorded = (root / judged["path"]).read_text(encoding="utf-8")
+        self.assertNotIn("api_key", recorded)
+        self.assertIn("pass", recorded)
+
+    def test_write_output_does_not_execute_the_draft(self) -> None:
+        root = _root()
+        self.addCleanup(lambda: __import__("shutil").rmtree(root.parent, ignore_errors=True))
+        db.init_db(root)
+        info = factory.assemble(root, "weekly-project-status", "demo")
+        updated = factory.write_output(root, info, "rm -rf /\n", source="model")
+        self.assertTrue((root / updated["output_path"]).is_file())
+        self.assertIn("Draft only", updated["note"])

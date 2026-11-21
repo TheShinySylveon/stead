@@ -1,9 +1,8 @@
-"""Deterministic factory runner — NO LLM call, ever.
+"""Factory runner.
 
-Assembles a project's markdown + linked tasks/documents/meetings into a
-context bundle, emits the assembled prompt (production prompt + bundle), and
-records a run row. Generation is pluggable: any agent or human reads
-prompt.md and supplies the output via `ctx run log`.
+Assembly is deterministic and does not call a model. `write_output` stores a
+draft that `ctx factory run --generate` got from the configured endpoint.
+That draft is a file. Nothing here posts, pushes, or merges.
 """
 
 from __future__ import annotations
@@ -56,6 +55,32 @@ def _run_dir(fdir: Path, stamp: str, label: str) -> Path:
         suffix += 1
     run_dir.mkdir(parents=True)
     return run_dir
+
+
+def write_output(root: Path, info: dict, output: str, *, source: str) -> dict:
+    """Store a draft next to the bundle. Does not execute it or send it anywhere."""
+    text = output if output.endswith("\n") else output + "\n"
+    run_dir = root / info["run_dir"]
+    (run_dir / "output.md").write_text(text, encoding="utf-8")
+    raw_path = run_dir / "run.json"
+    stored = json.loads(raw_path.read_text(encoding="utf-8")) if raw_path.is_file() else {}
+    stored["output_path"] = f"{info['run_dir']}/output.md"
+    stored["generated"] = source
+    stored["note"] = "Draft only. Nothing was posted, pushed, or merged."
+    raw_path.write_text(json.dumps(stored, indent=2) + "\n", encoding="utf-8")
+    updated = dict(info)
+    updated["output"] = text
+    updated["output_path"] = stored["output_path"]
+    updated["generated"] = source
+    updated["note"] = stored["note"]
+    if updated.get("run_id"):
+        conn = db.connect(root)
+        try:
+            conn.execute("UPDATE runs SET output = ? WHERE id = ?", (text, updated["run_id"]))
+            conn.commit()
+        finally:
+            conn.close()
+    return updated
 
 
 def assemble(root: Path, factory: str, project_ref: str, mode: str = "shadow") -> dict:

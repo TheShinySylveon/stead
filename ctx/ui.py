@@ -204,6 +204,15 @@ def _needs_welcome(root: Path) -> bool:
     return needs_welcome(root)
 
 
+def _model_view(root: Path) -> dict:
+    from ctx.models import public_model
+    try:
+        return public_model(root)
+    except Exception:
+        return {"configured": False, "provider": "", "name": "", "base_url": "",
+                "key_set": False, "key_from": "", "key_env": "STEAD_MODEL_API_KEY"}
+
+
 def _deployment_view(root: Path) -> dict:
     from ctx.config import ConfigError, public_view
     try:
@@ -265,6 +274,7 @@ def snapshot(root: Path) -> dict:
         "today": date.today().isoformat(),
         "first_run": _needs_welcome(root),
         "deployment": _deployment_view(root),
+        "model": _model_view(root),
         "actors": _list(root, "actor"),
         "counts": {
             "open_tasks": open_tasks,
@@ -735,6 +745,8 @@ def _public_run(info: dict) -> dict:
         "prompt_version": info.get("prompt_version"),
         "mode": "shadow",
         "flags": info.get("flags") or [],
+        "generated": bool(info.get("generated")),
+        "output_path": info.get("output_path") or "",
     }
 
 
@@ -787,6 +799,13 @@ def shadow_run(root: Path, payload: dict) -> dict:
             info = factory.assemble(root, name, payload["project"], mode="shadow")
     except SystemExit as exc:
         raise UiError(str(exc) or "could not assemble a shadow run") from exc
+    if payload.get("generate"):
+        from ctx.models import ModelError, draft
+        try:
+            text = draft(root, info["assembled_prompt"])
+            info = factory.write_output(root, info, text, source="model")
+        except ModelError as exc:
+            raise UiError(str(exc)) from exc
     return _public_run(info)
 
 
@@ -894,6 +913,19 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = delete_inbox(root, payload.get("name") or "")
         elif path == "/api/sync":
             result = sync_github(root, bool(payload.get("offline")))
+        elif path == "/api/model":
+            from ctx.models import ModelError, set_model
+            try:
+                result = set_model(
+                    root,
+                    provider=payload.get("provider") or "",
+                    name=payload.get("name") or "",
+                    base_url=payload.get("base_url") or "",
+                    api_key=payload.get("api_key"),
+                )
+                result["ok"] = True
+            except ModelError as exc:
+                raise UiError(str(exc)) from exc
         elif path == "/api/settings":
             from ctx.config import ConfigError, choose, rotate_token
             try:

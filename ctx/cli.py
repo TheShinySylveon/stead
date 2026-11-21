@@ -340,9 +340,9 @@ def cmd_sync_github(root: Path, author: str = "@me", limit: int = 30,
 
 # --- digest -----------------------------------------------------------------------
 
-def cmd_digest(root: Path, live: bool = False) -> int:
+def cmd_digest(root: Path, live: bool = False, *, generate: bool = False) -> int:
     mode = "live" if live else "shadow"
-    info = factory.assemble_digest(root, mode=mode)
+    info = _maybe_draft(root, factory.assemble_digest(root, mode=mode), generate)
     c = info["counts"]
     print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
           f"prompt {info['prompt_version']}")
@@ -350,11 +350,7 @@ def cmd_digest(root: Path, live: bool = False) -> int:
           f"(PRs in flight: {c['prs_in_flight']}, reviews awaiting: {c['reviews_awaiting']}, "
           f"claimed issues: {c['claimed_issues']}, CI flags: {c['ci_flags']})")
     print(f"run dir: {info['run_dir']}/ (bundle.md, prompt.md, run.json)")
-    print("no LLM call made, nothing posted — hand prompt.md to any agent/human, then record:")
-    print(f"  python3 -m ctx run log --factory {info['factory']} --task contributions "
-          f"--prompt-version {info['prompt_version']} --output TEXT --verdict approved|rejected")
-    print("\n--- assembled prompt ---\n")
-    print(info["assembled_prompt"])
+    _print_draft(info, generate)
     return 0
 
 
@@ -467,9 +463,10 @@ def cmd_prompt_promote(root: Path, factory_name: str, version: str) -> int:
 
 # --- factory run --------------------------------------------------------------
 
-def cmd_feature_build(root: Path, contribution: str, live: bool = False) -> int:
+def cmd_feature_build(root: Path, contribution: str, live: bool = False,
+                      *, generate: bool = False) -> int:
     mode = "live" if live else "shadow"
-    info = factory.assemble_feature_build(root, contribution, mode=mode)
+    info = _maybe_draft(root, factory.assemble_feature_build(root, contribution, mode=mode), generate)
     c = info["counts"]
     print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
           f"prompt {info['prompt_version']} for {info['contribution']}")
@@ -486,17 +483,13 @@ def cmd_feature_build(root: Path, contribution: str, live: bool = False) -> int:
     else:
         print("spec flags: none — spec looks buildable")
     print(f"run dir: {info['run_dir']}/ (bundle.md, prompt.md, run.json)")
-    print("no LLM call made, no network, no remote writes — hand prompt.md to a coding "
-          "agent (Hermes/Claude Code/Codex), then record:")
-    print(f"  python3 -m ctx run log --factory {info['factory']} --task {info['contribution']} "
-          f"--prompt-version {info['prompt_version']} --output TEXT --verdict approved|rejected")
-    print("\n--- assembled prompt ---\n")
-    print(info["assembled_prompt"])
+    _print_draft(info, generate, coding=True)
     return 0
 
 
 def cmd_factory_run(root: Path, factory_name: str, project: str | None,
-                    live: bool = False, contribution: str | None = None) -> int:
+                    live: bool = False, contribution: str | None = None,
+                    *, generate: bool = False) -> int:
     mode = "live" if live else "shadow"
     if contribution is not None and factory_name != factory.FEATURE_BUILDER_FACTORY:
         raise SystemExit("--contribution is only valid for --factory feature-builder")
@@ -505,23 +498,49 @@ def cmd_factory_run(root: Path, factory_name: str, project: str | None,
             raise SystemExit("--contribution is required for factory 'feature-builder' "
                              "(a spec contribution: kind issue, role author, "
                              "with a ## Acceptance criteria checklist)")
-        return cmd_feature_build(root, contribution, live=live)
+        return cmd_feature_build(root, contribution, live=live, generate=generate)
     if factory_name == factory.DIGEST_FACTORY or project is None:
         if factory_name != factory.DIGEST_FACTORY and project is None:
             raise SystemExit(f"--project is required for factory {factory_name!r}")
-        return cmd_digest(root, live=live)
-    info = factory.assemble(root, factory_name, project, mode=mode)
+        return cmd_digest(root, live=live, generate=generate)
+    info = _maybe_draft(root, factory.assemble(root, factory_name, project, mode=mode), generate)
     print(f"run {info['run_id']} recorded [{mode}] — {info['factory']} "
           f"prompt {info['prompt_version']} for {info['project']}")
     c = info["counts"]
     print(f"bundle: {c['tasks']} tasks, {c['documents']} documents, {c['meetings']} meetings")
     print(f"run dir: {info['run_dir']}/ (bundle.md, prompt.md, run.json)")
-    print("no LLM call made — hand prompt.md to any agent/human, then record the result:")
-    print(f"  python3 -m ctx run log --factory {info['factory']} --task {info['project']} "
+    _print_draft(info, generate)
+    return 0
+
+
+def _maybe_draft(root: Path, info: dict, generate: bool) -> dict:
+    if not generate:
+        return info
+    from ctx import models
+    try:
+        text = models.draft(root, info["assembled_prompt"])
+    except models.ModelError as exc:
+        raise SystemExit(str(exc)) from exc
+    return factory.write_output(root, info, text, source="model")
+
+
+def _print_draft(info: dict, generate: bool, *, coding: bool = False) -> None:
+    if generate and info.get("output_path"):
+        print(f"draft: {info['output_path']}")
+        print("draft only — nothing posted, pushed, or merged")
+        if info.get("mode") == "live":
+            print("recorded as live. That still does not open a pull request.")
+        return
+    if coding:
+        print("no model call, no remote writes — hand prompt.md to a coding agent, "
+              "or rerun with --generate")
+    else:
+        print("no model call — hand prompt.md to any agent, or rerun with --generate")
+    print(f"  python3 -m ctx run log --factory {info['factory']} --task "
+          f"{info.get('contribution') or info.get('project') or 'contributions'} "
           f"--prompt-version {info['prompt_version']} --output TEXT --verdict approved|rejected")
     print("\n--- assembled prompt ---\n")
     print(info["assembled_prompt"])
-    return 0
 
 
 # --- parser -------------------------------------------------------------------
@@ -599,9 +618,28 @@ def build_parser() -> argparse.ArgumentParser:
     sg.add_argument("--offline", action="store_true",
                     help="skip network; re-index existing contribution files")
 
-    dg = sub.add_parser("digest", help="assemble the weekly contribution digest (no LLM)")
+    model = sub.add_parser("model", help="the rented model factories may draft with").add_subparsers(dest="sub", required=True)
+    model.add_parser("show", help="show the configured model. Never prints the key.")
+    ms = model.add_parser("set", help="choose an OpenAI-compatible endpoint")
+    ms.add_argument("--provider", required=True, choices=("openai", "openrouter", "ollama", "custom"))
+    ms.add_argument("--name", required=True, help="model name, such as gpt-4.1-mini or llama3.2")
+    ms.add_argument("--base-url", help="defaults to the provider preset")
+    ms.add_argument("--key", help="stored in gitignored stead.json. Prefer STEAD_MODEL_API_KEY.")
+    ms.add_argument("--key-env", default="STEAD_MODEL_API_KEY")
+
+    ev = sub.add_parser("eval", help="factory eval cases").add_subparsers(dest="sub", required=True)
+    er = ev.add_parser("run", help="check eval files. No model, no network.")
+    er.add_argument("--factory")
+    ej = ev.add_parser("judge", help="ask the configured model to judge one draft")
+    ej.add_argument("--factory", required=True)
+    ej.add_argument("--case", required=True)
+    ej.add_argument("--output", required=True, help="path to the draft markdown")
+
+    dg = sub.add_parser("digest", help="assemble the weekly contribution digest")
     dg.add_argument("--shadow", action="store_true", help="shadow mode (default)")
-    dg.add_argument("--live", action="store_true", help="record as a live run (still no LLM call)")
+    dg.add_argument("--live", action="store_true", help="record as live. Still does not post.")
+    dg.add_argument("--generate", action="store_true",
+                    help="draft with the configured model. Nothing is posted.")
 
     st = sub.add_parser("status", help="project rollup: task counts + recent runs")
     st.add_argument("project")
@@ -623,13 +661,15 @@ def build_parser() -> argparse.ArgumentParser:
     pp.add_argument("--factory", required=True)
     pp.add_argument("--version", required=True)
 
-    fr = sub.add_parser("factory", help="factory runner (deterministic, no LLM)").add_subparsers(dest="sub", required=True)
-    frun = fr.add_parser("run", help="assemble context bundle + prompt, record a run")
+    fr = sub.add_parser("factory", help="factory runner").add_subparsers(dest="sub", required=True)
+    frun = fr.add_parser("run", help="assemble a bundle. --generate drafts with the configured model.")
     frun.add_argument("--factory", required=True)
     frun.add_argument("--project", help="project id (not needed for weekly-contribution-digest)")
     frun.add_argument("--contribution", help="spec contribution id (required for feature-builder)")
     frun.add_argument("--shadow", action="store_true", help="shadow mode (default)")
-    frun.add_argument("--live", action="store_true", help="record as a live run (still no LLM call)")
+    frun.add_argument("--live", action="store_true", help="record as live. Still does not push or open a PR.")
+    frun.add_argument("--generate", action="store_true",
+                      help="draft with the configured model. Nothing is posted or pushed.")
 
     welcome = sub.add_parser("welcome", help="first run: name a project and optional GitHub URL")
     welcome.add_argument("--title", required=True)
@@ -717,8 +757,44 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "sync" and args.sub == "github":
         return cmd_sync_github(root, args.author, args.limit, args.offline)
+    if args.command == "model":
+        from ctx import models
+        try:
+            if args.sub == "set":
+                shown = models.set_model(
+                    root, provider=args.provider, name=args.name,
+                    base_url=args.base_url or "", api_key=args.key,
+                    api_key_env=args.key_env)
+                print("model saved in stead.json (gitignored). The key was not printed.")
+            else:
+                shown = models.public_model(root)
+        except models.ModelError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"provider: {shown['provider'] or '(none)'}")
+        print(f"model: {shown['name'] or '(none)'}")
+        print(f"base_url: {shown['base_url'] or '(none)'}")
+        print(f"key: {'set (' + shown['key_from'] + ')' if shown['key_set'] else 'not set'} "
+              f"via {shown['key_env']}")
+        return 0
+    if args.command == "eval":
+        from ctx import models
+        if args.sub == "run":
+            checked = models.check_eval_files(root, args.factory)
+            if not checked["ok"]:
+                for problem in checked["problems"]:
+                    print(problem)
+                return 1
+            print(f"eval files ok ({checked['cases']} cases)")
+            return 0
+        try:
+            judged = models.judge(root, args.factory, args.case, args.output)
+        except (models.ModelError, OSError) as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"{judged['verdict']}: {judged['reason']}")
+        print(f"recorded: {judged['path']}")
+        return 0 if judged["verdict"] == "pass" else 1
     if args.command == "digest":
-        return cmd_digest(root, live=args.live)
+        return cmd_digest(root, live=args.live, generate=args.generate)
     if args.command == "status":
         return cmd_status(root, args.project)
     if args.command == "run" and args.sub == "log":
@@ -731,7 +807,7 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_prompt_promote(root, args.factory, args.version)
     if args.command == "factory" and args.sub == "run":
         return cmd_factory_run(root, args.factory, args.project, live=args.live,
-                               contribution=args.contribution)
+                               contribution=args.contribution, generate=args.generate)
     if args.command == "welcome":
         from ctx.onboard import OnboardError, welcome as run_welcome
         try:

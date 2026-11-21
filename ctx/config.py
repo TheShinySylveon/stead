@@ -31,16 +31,23 @@ def config_path(root: Path) -> Path:
     return root / CONFIG_NAME
 
 
-def load(root: Path) -> dict:
+def read_raw(root: Path) -> dict:
     path = config_path(root)
     if not path.is_file():
-        return {"deployment": "single", "bind": "127.0.0.1", "port": 8765}
+        return {}
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, json.JSONDecodeError) as exc:
         raise ConfigError(f"could not read {CONFIG_NAME}: {exc}") from exc
     if not isinstance(data, dict):
         raise ConfigError(f"{CONFIG_NAME} must be a JSON object")
+    return data
+
+
+def load(root: Path) -> dict:
+    data = read_raw(root)
+    if not data:
+        return {"deployment": "single", "bind": "127.0.0.1", "port": 8765}
     deployment = data.get("deployment") or "single"
     if deployment not in DEPLOYMENTS:
         raise ConfigError(f"invalid deployment {deployment!r}")
@@ -53,6 +60,7 @@ def load(root: Path) -> dict:
 
 
 def save(root: Path, data: dict) -> None:
+    current = read_raw(root)
     deployment = data.get("deployment") or "single"
     if deployment not in DEPLOYMENTS:
         raise ConfigError(f"invalid deployment {deployment!r}")
@@ -65,7 +73,21 @@ def save(root: Path, data: dict) -> None:
         "port": int(data.get("port") or 8765),
         "access_token": token,
     }
+    model = data["model"] if "model" in data else current.get("model")
+    if isinstance(model, dict) and model:
+        payload["model"] = model
     config_path(root).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+
+
+def save_model(root: Path, model: dict) -> None:
+    """Write the model block without dropping the deployment fields."""
+    current = read_raw(root)
+    current["model"] = model
+    current.setdefault("deployment", "single")
+    current.setdefault("bind", "127.0.0.1")
+    current.setdefault("port", 8765)
+    current.setdefault("access_token", "")
+    config_path(root).write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
 
 
 def effective(root: Path, *, deploy: bool = False) -> dict:

@@ -1,5 +1,15 @@
 # Changelog
 
+## Unreleased
+
+- Optional model drafts. `ctx factory run --generate` and the cockpit checkbox
+  call an OpenAI-compatible endpoint and write `output.md`. Assembly still
+  calls nothing. Nothing is posted or pushed.
+- `ctx model set` / Settings store the endpoint. The key stays in the
+  environment or gitignored `stead.json`.
+- `ctx eval run` checks eval files with no model. `ctx eval judge` asks the
+  configured model about one draft. Promote does not require that yet.
+
 ## 0.0.1
 
 First public snapshot of Stead.

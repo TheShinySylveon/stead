@@ -250,7 +250,7 @@ const TITLES = {
   repos: ["Repos", "Own projects and OSS. Sync is read-only. Contribution files stay public."],
   inbox: ["Inbox", "Unsorted capture. File it into a document, meeting, or task, or delete it."],
   factories: ["Factories", "Assemble a shadow bundle. A person or an agent still has to write the output."],
-  settings: ["Settings", "This computer, or a shared server. Actors are the people and agents who write here."],
+  settings: ["Settings", "This computer, a shared server, and the model factories may draft with."],
 };
 const state = { snap: null, view: "home", q: "", onboardResult: null };
 
@@ -541,20 +541,24 @@ function renderFactories() {
   const factories = state.snap.factories.filter(f => match({title: f.name, id: f.name}));
   return factories.map(f => {
     const prod = (f.prompts || []).find(p => p.status === "production");
-    let form = `<p class="meta">Assembles a local shadow bundle. Nothing is posted or pushed.</p>`;
+    const draftBox = `<label class="meta"><input type="checkbox" name="generate" value="1"> Draft with model</label>`;
+    let form = `<p class="meta">Assembles a local shadow bundle. Check Draft with model to write output.md. Nothing is posted or pushed.</p>`;
     if (f.needs === "project") {
       const opts = state.snap.projects.map(p => `<option value="${esc(p.id)}">${esc(p.title)}</option>`).join("");
       form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="project">
         <select name="project" aria-label="Project for ${esc(f.name)}">${opts}</select>
+        ${draftBox}
         <button class="primary" type="submit">Assemble shadow</button></form>`;
     } else if (f.needs === "contribution") {
       const specs = state.snap.contributions.filter(c => c.kind === "issue");
       const opts = specs.map(c => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
       form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="contribution">
         <select name="contribution" aria-label="Spec for ${esc(f.name)}">${opts}</select>
+        ${draftBox}
         <button class="primary" type="submit" ${specs.length ? "" : "disabled"}>Assemble shadow</button></form>`;
     } else {
       form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="none">
+        ${draftBox}
         <button class="primary" type="submit">Assemble shadow</button></form>`;
     }
     const runs = (f.recent_runs || []).map(r =>
@@ -571,10 +575,23 @@ function renderFactories() {
 
 function renderSettings() {
   const d = state.snap.deployment || {deployment: "single", token_set: false, bind: "127.0.0.1", port: 8765};
+  const m = state.snap.model || {configured: false, key_set: false, provider: "", name: "", base_url: "", key_env: "STEAD_MODEL_API_KEY"};
   const actors = (state.snap.actors || []).filter(match);
   const shown = state.settingsToken ? `<div class="banner">New access token, shown once: ${esc(state.settingsToken)}</div>` : "";
+  const opt = (value, label) => `<option value="${value}" ${m.provider === value ? "selected" : ""}>${label}</option>`;
   return `
     ${shown}
+    <div class="panel" style="padding:14px 16px;margin-bottom:16px">
+      <strong>${m.configured ? esc(m.provider) + " · " + esc(m.name) : "No model"}</strong>
+      <p class="meta">Factories stay offline until you check Draft with model. Key ${m.key_set ? "set (" + esc(m.key_from) + ")" : "not set"}. Prefer ${esc(m.key_env)}. It is not written into context/.</p>
+      <form class="stack" id="set-model">
+        <select name="provider" aria-label="Model provider">${opt("openai", "OpenAI")}${opt("openrouter", "OpenRouter")}${opt("ollama", "Ollama, this computer")}${opt("custom", "Custom")}</select>
+        <input type="text" name="name" placeholder="Model name" required aria-label="Model name" value="${esc(m.name)}">
+        <input type="text" name="base_url" placeholder="Base URL, optional" aria-label="Model base URL" value="${esc(m.base_url)}">
+        <input type="password" name="api_key" placeholder="API key, leave blank to keep" aria-label="Model API key" autocomplete="off">
+        <div><button class="primary" type="submit">Save model</button></div>
+      </form>
+    </div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>${d.deployment === "multi" ? "Shared server" : "This computer"}</strong>
       <p class="meta">Bind ${esc(d.bind)} · port ${esc(d.port)} · token ${d.token_set ? "set" : "not set"}. A normal cockpit stays on loopback until you start Docker or pass --deploy.</p>
@@ -803,7 +820,7 @@ document.body.addEventListener("submit", async (event) => {
     || form.id === "add-document" || form.id === "add-meeting" || form.id === "add-repo"
     || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
     || form.id === "add-spec" || form.id === "onboard" || form.id === "welcome"
-    || form.id === "add-actor" || form.dataset.factory || form.dataset.triage;
+    || form.id === "add-actor" || form.id === "set-model" || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
@@ -827,6 +844,11 @@ document.body.addEventListener("submit", async (event) => {
         return;
       }
       toast("Project created");
+    } else if (form.id === "set-model") {
+      const body = {provider: data.provider, name: data.name, base_url: data.base_url || ""};
+      if (data.api_key) body.api_key = data.api_key;
+      await api("/api/model", {method: "POST", body: JSON.stringify(body)});
+      toast("Model saved");
     } else if (form.id === "add-actor") {
       await api("/api/actor", {method: "POST", body: JSON.stringify(data)});
       toast("Actor added");
@@ -896,8 +918,9 @@ document.body.addEventListener("submit", async (event) => {
       const payload = {factory: form.dataset.factory};
       if (form.dataset.needs === "project") payload.project = data.project;
       if (form.dataset.needs === "contribution") payload.contribution = data.contribution;
+      if (data.generate === "1") payload.generate = true;
       const result = await api("/api/factory/run", {method: "POST", body: JSON.stringify(payload)});
-      toast("Shadow run " + result.run_id + " · " + result.run_dir);
+      toast(result.generated ? "Draft " + result.output_path : "Shadow run " + result.run_id + " · " + result.run_dir);
     }
     await load();
   } catch (err) {

@@ -5,8 +5,9 @@ A factory is a shared, named workflow. Each one lives in `factories/<name>/`:
 - `FACTORY.md` — what it is, what it may do, and what it must not do.
 - `prompts/vN.md` — versioned instructions. The highest version is production
   after `ctx init`. Switch with `ctx prompt promote`.
-- `evals/*.json` — cases and pass criteria. Tests check that the files are
-  well-formed. They do not call a model to judge a run.
+- `evals/*.json` — cases and pass criteria. `ctx eval run` checks that the
+  files are well-formed. `ctx eval judge` asks the configured model about
+  one draft. Promote does not require a recorded pass yet.
 - `runs/` — one directory per assembly. Gitignored. Safe to delete.
 
 ## What a run actually does
@@ -17,8 +18,11 @@ A factory is a shared, named workflow. Each one lives in `factories/<name>/`:
 - `prompt.md` — the production prompt plus that bundle.
 - `run.json` — counts, mode, and flags.
 
-No model is called. No network is used. You, or any agent, read `prompt.md`,
-do the work, and record a verdict:
+That step calls no model and uses no network. Add `--generate` and Stead
+sends `prompt.md` to the model you configured, then writes `output.md`.
+The draft is not executed, posted, or pushed. See [Models](models.md).
+
+You, or any agent, can still read `prompt.md` and record a verdict:
 
 ```bash
 python3 -m ctx run log --factory F --task REF --prompt-version vN \
@@ -70,7 +74,8 @@ decomposition instead of being built. `method` on the spec is `spec-kit` or
 ## Shadow, and what is not built
 
 Shadow is the only mode the cockpit offers, and the default on the CLI.
-Output stays on disk.
+Output stays on disk. Draft with model writes `output.md` in that same
+directory. It does not change the mode.
 
 A future draft-PR step would push an isolated branch and open a draft pull
 request for a human to merge. That step is not implemented. Nothing in this

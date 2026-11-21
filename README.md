@@ -22,7 +22,8 @@ See [LICENSE](LICENSE).
 - Markdown files with flat YAML frontmatter. That is the source of truth.
 - A SQLite index (`state.db`) that `ctx init` can rebuild. It is not shared.
 - A local cockpit in the browser, or the same actions from the CLI.
-- Three factories that assemble a prompt and stop. They do not call a model.
+- Three factories that assemble a prompt. `--generate` drafts with the model
+  you configure. The default still calls nothing.
 - A first-run choice: this computer, or a shared Docker server with an access token.
 
 Docs: [docs/README.md](docs/README.md).
@@ -68,7 +69,9 @@ its own index. [docs/multi-actor.md](docs/multi-actor.md).
 
 A factory is specific, shared, and scrutinized. Stead ships three. Each run
 writes `bundle.md`, `prompt.md`, and `run.json` under `factories/<name>/runs/`
-(gitignored). Hand `prompt.md` to any agent. Record the verdict yourself.
+(gitignored). Add `--generate` to also write `output.md` from your model.
+Hand `prompt.md` to any agent if you would rather not. Record the verdict
+yourself.
 
 | Factory | What it drafts |
 |---|---|
@@ -101,6 +104,7 @@ More: [docs/factories.md](docs/factories.md) and
 | [Concepts](docs/concepts.md) | Files, the index, public and private |
 | [Cockpit](docs/cockpit.md) | The browser UI |
 | [CLI](docs/cli.md) | Every command |
+| [Models](docs/models.md) | The optional endpoint a factory drafts with |
 | [Deploy](docs/deploy.md) | Docker and the access token |
 | [Several writers](docs/multi-actor.md) | Actors, git, and why SQLite stays |
 | [CONVENTIONS.md](CONVENTIONS.md) | Frontmatter schema. Read this before writing objects. |
@@ -124,7 +128,9 @@ then builds the Docker image. It does not push the image.
   public binds, and they require the token.
 - `actor:` is not stamped automatically. Add actors in Settings or with
   `ctx actor add`. Attribution is a file, not a login.
-- Factories do not call a model, open a pull request, or merge.
+- A factory calls a model only when you pass `--generate` or check Draft
+  with model. The endpoint is yours (OpenAI-compatible). The draft is a
+  file. Nothing is posted, pushed, or merged.
 - `specify` is optional. If it is missing, onboarding still writes the
   constitution in `context/documents/`.
 - Git history before the empty-context commit still contains early demo
@@ -136,7 +142,7 @@ then builds the Docker image. It does not push the image.
   human. Not auto-merge.
 - Automatic `actor:` on each write.
 - Per-person sign-in, instead of one shared token.
-- An eval runner that judges a real agent against the factory evals.
+- Promote refuses until the eval cases for that prompt have recorded passes.
 - A published container image. CI only builds it today.
 
 ## Contributing

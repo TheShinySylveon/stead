@@ -82,10 +82,14 @@ already on disk.
 ## Factories and prompts
 
 ```bash
-python3 -m ctx factory run --factory weekly-contribution-digest [--shadow|--live]
-python3 -m ctx factory run --factory weekly-project-status --project P [--shadow|--live]
-python3 -m ctx factory run --factory feature-builder --contribution ID [--shadow|--live]
-python3 -m ctx digest
+python3 -m ctx model show
+python3 -m ctx model set --provider openai|openrouter|ollama|custom --name NAME [--base-url URL] [--key KEY]
+python3 -m ctx factory run --factory weekly-contribution-digest [--shadow|--live] [--generate]
+python3 -m ctx factory run --factory weekly-project-status --project P [--shadow|--live] [--generate]
+python3 -m ctx factory run --factory feature-builder --contribution ID [--shadow|--live] [--generate]
+python3 -m ctx digest [--generate]
+python3 -m ctx eval run [--factory F]
+python3 -m ctx eval judge --factory F --case ID --output PATH
 
 python3 -m ctx run log --factory F --task REF --prompt-version V \
     [--output TEXT] [--verdict approved|rejected]
@@ -93,9 +97,10 @@ python3 -m ctx prompt list --factory F
 python3 -m ctx prompt promote --factory F --version V
 ```
 
-`factory run` and `digest` assemble a prompt. They do not call a model.
-`--live` records the run as live. It still does not push or open a pull
-request. Shadow is the default.
+`factory run` and `digest` assemble a prompt. They call a model only with
+`--generate`, and only the endpoint in Settings. The draft is `output.md`.
+Nothing is posted or pushed. `--live` records the run as live. It still
+does not open a pull request. Shadow is the default. See [Models](models.md).
 
 `prompt promote` marks one version production and retires the previous one.
 Old prompt files are kept.
