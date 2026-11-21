@@ -29,7 +29,21 @@ python3 -m ctx status shared-context-rollout           # project rollup
 python3 -m ctx factory run --factory weekly-project-status \
     --project shared-context-rollout --shadow          # assemble a shadow run
 python3 -m unittest discover -s tests                  # run tests
+python3 -m ctx ui                                  # local cockpit (browser, loopback only)
 ```
+
+### Local cockpit
+
+```bash
+python3 -m ctx ui
+```
+
+Opens a browser on `127.0.0.1`. Same writes as the CLI — change a task's
+status, add a task, capture a note into `inbox/`, adjust a contribution's
+`method` or state, assemble a **shadow** factory run. The server refuses any
+non-loopback bind. It does not call a model, and it does not push, post, or
+open a pull request. Private notes stay on this machine; contribution files
+remain the public GitHub cache.
 
 ### Open-source contributions + own projects (one cockpit)
 
@@ -153,7 +167,7 @@ consequential; vague/large specs are flagged for decomposition, not guessed.
 | `context/` | Knowledge objects: `projects/`, `tasks/`, `documents/`, `meetings/`, `repos/`, `contributions/` |
 | `inbox/` | Unsorted capture; triage into `context/` |
 | `factories/` | Workflow definitions, versioned prompts, evals, run logs |
-| `ctx/` | Stdlib-only CLI package (`python3 -m ctx`) |
+| `ctx/` | Stdlib-only CLI package (`python3 -m ctx`), including the local cockpit (`ctx ui`) |
 | `ctx/schema.sql` | SQLite schema — tracked in git |
 | `state.db` | Operational index — **gitignored**, rebuilt by `ctx init` |
 

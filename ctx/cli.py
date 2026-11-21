@@ -618,6 +618,13 @@ def build_parser() -> argparse.ArgumentParser:
     frun.add_argument("--shadow", action="store_true", help="shadow mode (default)")
     frun.add_argument("--live", action="store_true", help="record as a live run (still no LLM call)")
 
+    cockpit = sub.add_parser("ui", help="open the local cockpit in a browser (loopback only)")
+    cockpit.add_argument("--port", type=int, default=8765)
+    cockpit.add_argument("--host", default="127.0.0.1",
+                         help="loopback only: 127.0.0.1, localhost, or ::1")
+    cockpit.add_argument("--no-browser", action="store_true",
+                         help="serve without opening a browser")
+
     return p
 
 
@@ -667,4 +674,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "factory" and args.sub == "run":
         return cmd_factory_run(root, args.factory, args.project, live=args.live,
                                contribution=args.contribution)
+    if args.command == "ui":
+        from ctx import ui as cockpit
+        return cockpit.serve(root, args.host, args.port, open_browser=not args.no_browser)
     raise SystemExit(f"unhandled command: {args.command}")

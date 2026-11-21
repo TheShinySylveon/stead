@@ -1,0 +1,558 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="ctx-token" content="__CTX_TOKEN__">
+<title>Shared Context</title>
+<style>
+  :root {
+    --paper: #f3efe6;
+    --paper-2: #faf7f2;
+    --card: #fffdf9;
+    --ink: #1c1915;
+    --muted: #6f675e;
+    --line: #e3d9cc;
+    --sidebar: #221e1a;
+    --sidebar-text: #f6f1e8;
+    --sidebar-muted: #b7aa9a;
+    --accent: #1f6b4a;
+    --accent-soft: #e6f2eb;
+    --doing: #8a5a20;
+    --doing-soft: #f8edd9;
+    --blocked: #8f3d32;
+    --blocked-soft: #f8e6e2;
+    --review: #3d5a80;
+    --review-soft: #e7eef6;
+    --shadow: 0 1px 2px rgba(28, 25, 21, 0.04), 0 8px 24px rgba(28, 25, 21, 0.04);
+    --serif: "Palatino Linotype", Palatino, "Iowan Old Style", Georgia, serif;
+    --sans: "Segoe UI", system-ui, sans-serif;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    display: grid;
+    grid-template-columns: 228px 1fr;
+    background: var(--paper);
+    color: var(--ink);
+    font: 15px/1.5 var(--sans);
+  }
+  aside.nav {
+    background: var(--sidebar);
+    color: var(--sidebar-text);
+    padding: 28px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+    min-height: 100vh;
+  }
+  .brand { display: flex; gap: 10px; align-items: center; }
+  .mark {
+    width: 16px; height: 16px; border-radius: 4px;
+    border: 1.5px solid currentColor;
+    box-shadow: inset 0 -6px 0 currentColor;
+    flex: none;
+  }
+  .brand h1 {
+    font: 600 18px/1.1 var(--serif);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+  .brand p { margin: 2px 0 0; color: var(--sidebar-muted); font-size: 12px; }
+  nav { display: flex; flex-direction: column; gap: 4px; }
+  nav button {
+    appearance: none; border: 0; background: transparent; color: inherit;
+    text-align: left; font: inherit; padding: 8px 10px; border-radius: 8px;
+    cursor: pointer; color: var(--sidebar-muted);
+  }
+  nav button[aria-current="page"], nav button:hover {
+    background: rgba(246, 241, 232, 0.08);
+    color: var(--sidebar-text);
+  }
+  .nav-foot { margin-top: auto; color: var(--sidebar-muted); font-size: 12px; line-height: 1.45; }
+  main { min-width: 0; padding: 28px 36px 64px; }
+  .top {
+    display: flex; justify-content: space-between; align-items: flex-end;
+    gap: 16px; margin-bottom: 22px;
+  }
+  .top h2 { font: 500 32px/1.1 var(--serif); margin: 0; letter-spacing: -0.03em; }
+  .top p { margin: 6px 0 0; color: var(--muted); }
+  input[type="search"], input[type="text"], textarea, select {
+    font: inherit; color: inherit; background: var(--card);
+    border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px;
+  }
+  input[type="search"] { width: 240px; }
+  textarea { width: 100%; min-height: 88px; resize: vertical; }
+  button.primary, button.quiet {
+    font: inherit; border-radius: 8px; padding: 8px 12px; cursor: pointer;
+  }
+  button.primary { background: var(--accent); color: white; border: 0; }
+  button.quiet { background: transparent; border: 1px solid var(--line); color: var(--ink); }
+  button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px;
+  }
+  .stats, .grid, .board { display: grid; gap: 12px; }
+  .stats { grid-template-columns: repeat(4, 1fr); margin-bottom: 22px; }
+  .stat, .card, .panel {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    box-shadow: var(--shadow);
+  }
+  .stat { padding: 14px 16px; }
+  .stat b { display: block; font: 500 28px/1 var(--serif); }
+  .stat span { color: var(--muted); font-size: 13px; }
+  .section-title {
+    font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase;
+    color: var(--muted); margin: 22px 0 10px;
+  }
+  .list { display: flex; flex-direction: column; gap: 8px; }
+  .row, .card {
+    display: flex; justify-content: space-between; gap: 12px; align-items: center;
+    padding: 12px 14px; width: 100%; text-align: left;
+  }
+  button.row, button.card {
+    appearance: none; font: inherit; color: inherit; cursor: pointer; border: 1px solid var(--line);
+    background: var(--card); border-radius: 14px;
+  }
+  button.row:hover, button.card:hover { border-color: #cfc3b4; }
+  .row small, .card small, .meta { color: var(--muted); font-size: 13px; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; }
+  .chip {
+    font-size: 12px; padding: 2px 8px; border-radius: 999px;
+    background: var(--paper); color: var(--muted); border: 1px solid var(--line);
+  }
+  .chip.doing { background: var(--doing-soft); color: var(--doing); border-color: transparent; }
+  .chip.blocked, .chip.fail { background: var(--blocked-soft); color: var(--blocked); border-color: transparent; }
+  .chip.review, .chip.inbox { background: var(--review-soft); color: var(--review); border-color: transparent; }
+  .chip.done, .chip.pass { background: var(--accent-soft); color: var(--accent); border-color: transparent; }
+  .grid { grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+  .board { grid-template-columns: repeat(4, minmax(180px, 1fr)); align-items: start; }
+  .col { background: transparent; }
+  .col h3 { margin: 0 0 8px; font-size: 13px; color: var(--muted); font-weight: 600; }
+  .col .card { display: block; margin-bottom: 8px; }
+  .card select, .row select { max-width: 140px; }
+  form.stack { display: grid; gap: 8px; margin-bottom: 18px; }
+  form.inline { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 18px; }
+  .empty { color: var(--muted); padding: 18px; border: 1px dashed var(--line); border-radius: 14px; }
+  #reader {
+    position: fixed; inset: 0 0 0 auto; width: min(520px, 100%);
+    background: var(--paper-2); border-left: 1px solid var(--line);
+    box-shadow: -12px 0 40px rgba(28, 25, 21, 0.08);
+    padding: 24px 24px 48px; overflow: auto; z-index: 5;
+  }
+  #reader[hidden] { display: none; }
+  #reader h3 { font: 500 26px/1.2 var(--serif); margin: 8px 0; }
+  .reader-body h1, .reader-body h2, .reader-body h3 { font-family: var(--serif); line-height: 1.25; }
+  .reader-body pre {
+    background: var(--ink); color: var(--paper); padding: 12px; border-radius: 10px; overflow: auto;
+  }
+  .reader-body code { font-family: ui-monospace, Consolas, monospace; font-size: 0.92em; }
+  .reader-body p { margin: 0.6em 0; }
+  .banner {
+    background: var(--doing-soft); color: var(--doing); border-radius: 10px;
+    padding: 8px 10px; font-size: 13px; margin: 8px 0 12px;
+  }
+  #toast {
+    position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--paper); padding: 8px 14px; border-radius: 999px;
+    font-size: 13px; z-index: 6;
+  }
+  #toast[hidden] { display: none; }
+  a { color: var(--accent); }
+  @media (max-width: 900px) {
+    body { grid-template-columns: 1fr; }
+    aside.nav { min-height: auto; }
+    nav { flex-direction: row; flex-wrap: wrap; }
+    .stats, .board { grid-template-columns: 1fr 1fr; }
+    main { padding: 20px 16px 72px; }
+    input[type="search"] { width: 100%; }
+    .top { flex-direction: column; align-items: stretch; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<aside class="nav">
+  <div class="brand">
+    <span class="mark" aria-hidden="true"></span>
+    <div>
+      <h1>Shared Context</h1>
+      <p>Local cockpit</p>
+    </div>
+  </div>
+  <nav id="nav" aria-label="Sections"></nav>
+  <p class="nav-foot">Loopback only. Files are the source of truth. Nothing here calls a model or writes to GitHub.</p>
+</aside>
+<main>
+  <div class="top">
+    <div>
+      <h2 id="title">Home</h2>
+      <p id="subtitle"></p>
+    </div>
+    <input id="q" type="search" placeholder="Filter this view" aria-label="Filter this view">
+  </div>
+  <div id="main"></div>
+</main>
+<aside id="reader" hidden></aside>
+<div id="toast" hidden role="status"></div>
+<script>
+const TOKEN = document.querySelector('meta[name="ctx-token"]').content;
+const VIEWS = [
+  ["home", "Home"],
+  ["tasks", "Tasks"],
+  ["projects", "Projects"],
+  ["library", "Library"],
+  ["repos", "Repos"],
+  ["inbox", "Inbox"],
+  ["factories", "Factories"],
+];
+const TITLES = {
+  home: ["Home", "What needs you, across projects and contributions."],
+  tasks: ["Tasks", "Move work by status. The file and the index update together."],
+  projects: ["Projects", "Each project, and the tasks hanging off it."],
+  library: ["Library", "Private notes and meetings. Read here; edit the file if you need to rewrite."],
+  repos: ["Repos", "Own projects and OSS. Contribution files stay public — no private notes here."],
+  inbox: ["Inbox", "Unsorted capture. Triage it into context, or delete it."],
+  factories: ["Factories", "Assemble a shadow bundle. A person or an agent still has to write the output."],
+};
+const state = { snap: null, view: "home", q: "" };
+
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+function chip(text, tone) {
+  return `<span class="chip ${esc(tone || "")}">${esc(text)}</span>`;
+}
+function match(item) {
+  if (!state.q) return true;
+  const hay = [item.title, item.id, item.name, item.status, item.state, item.kind]
+    .filter(Boolean).join(" ").toLowerCase();
+  return hay.includes(state.q);
+}
+function options(values, selected) {
+  return values.map(v => `<option${v === selected ? " selected" : ""}>${esc(v)}</option>`).join("");
+}
+function toast(message) {
+  const el = document.getElementById("toast");
+  el.hidden = false;
+  el.textContent = message;
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => { el.hidden = true; }, 2400);
+}
+async function api(path, opts) {
+  const res = await fetch(path, {
+    ...opts,
+    headers: {
+      "Content-Type": "application/json",
+      "X-Ctx-Token": TOKEN,
+      ...(opts && opts.headers),
+    },
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.error || res.statusText);
+  return data;
+}
+async function load() {
+  state.snap = await api("/api/snapshot");
+  render();
+}
+function projectName(id) {
+  const p = (state.snap.projects || []).find(x => x.id === id);
+  return p ? p.title : (id || "—");
+}
+
+function renderNav() {
+  document.getElementById("nav").innerHTML = VIEWS.map(([id, label]) =>
+    `<button type="button" data-nav="${id}" ${state.view === id ? 'aria-current="page"' : ""}>${label}</button>`
+  ).join("");
+  const [title, sub] = TITLES[state.view];
+  document.getElementById("title").textContent = title;
+  document.getElementById("subtitle").textContent = sub;
+}
+
+function renderHome() {
+  const s = state.snap;
+  const stats = [
+    [s.counts.open_tasks, "Open tasks"],
+    [s.counts.attention, "Need attention"],
+    [s.counts.inbox, "Inbox"],
+    [s.counts.pending_runs, "Pending runs"],
+  ];
+  const attention = s.attention.filter(match);
+  const projects = s.projects.filter(match);
+  return `
+    <div class="stats">${stats.map(([n, label]) => `<div class="stat"><b>${esc(n)}</b><span>${esc(label)}</span></div>`).join("")}</div>
+    <div class="section-title">Needs you</div>
+    ${attention.length ? `<div class="list">${attention.map(item => `
+      <button type="button" class="row" data-open data-type="${esc(item.type)}" data-id="${esc(item.id)}">
+        <span><strong>${esc(item.title)}</strong><br><small>${esc(item.label)}</small></span>
+        ${chip(item.label, item.tone)}
+      </button>`).join("")}</div>` : `<div class="empty">Nothing waiting. Capture a note, or enjoy the quiet.</div>`}
+    <div class="section-title">Projects</div>
+    <div class="grid">${projects.map(projectCard).join("") || `<div class="empty">No projects yet.</div>`}</div>`;
+}
+function projectCard(p) {
+  const c = p.counts || {};
+  return `<button type="button" class="card" data-open data-type="project" data-id="${esc(p.id)}">
+    <span><strong>${esc(p.title)}</strong><br><small>${esc(p.status || "active")} · ${esc(c["doing"] || 0)} doing · ${esc(c["to-do"] || 0)} to do</small></span>
+    ${chip(p.status || "active", p.status === "active" ? "done" : "")}
+  </button>`;
+}
+function renderTasks() {
+  const choices = state.snap.choices.task_status;
+  const tasks = state.snap.tasks.filter(match);
+  const projects = state.snap.projects;
+  const cols = choices.map(status => {
+    const items = tasks.filter(t => (t.status || "to-do") === status);
+    return `<div class="col"><h3>${esc(status)} · ${items.length}</h3>${items.map(t => `
+      <div class="card">
+        <strong>${esc(t.title)}</strong>
+        <div class="meta">${esc(projectName(t.project))}</div>
+        <div style="margin-top:8px;display:flex;gap:8px;align-items:center">
+          <select data-set-status data-id="${esc(t.id)}" aria-label="Status for ${esc(t.title)}">${options(choices, t.status || "to-do")}</select>
+          <button type="button" class="quiet" data-open data-type="task" data-id="${esc(t.id)}">Open</button>
+        </div>
+      </div>`).join("")}</div>`;
+  }).join("");
+  const projectOptions = projects.map(p => `<option value="${esc(p.id)}">${esc(p.title)}</option>`).join("");
+  return `
+    <form class="inline" id="add-task">
+      <input type="text" name="title" placeholder="New task" required aria-label="Task title">
+      <select name="project" aria-label="Project" ${projects.length ? "" : "disabled"}>${projectOptions}</select>
+      <select name="status" aria-label="Status">${options(choices, "to-do")}</select>
+      <button class="primary" type="submit" ${projects.length ? "" : "disabled"}>Add task</button>
+    </form>
+    ${projects.length ? "" : `<div class="empty">Create a project in context/projects first. The cockpit will not invent one.</div>`}
+    <div class="board">${cols}</div>`;
+}
+function renderProjects() {
+  const items = state.snap.projects.filter(match);
+  return items.length
+    ? `<div class="grid">${items.map(projectCard).join("")}</div>`
+    : `<div class="empty">No projects yet.</div>`;
+}
+function renderLibrary() {
+  const docs = state.snap.documents.filter(match);
+  const meetings = state.snap.meetings.filter(match);
+  const block = (title, items, type) => `
+    <div class="section-title">${title}</div>
+    ${items.length ? `<div class="list">${items.map(item => `
+      <button type="button" class="row" data-open data-type="${type}" data-id="${esc(item.id)}">
+        <span><strong>${esc(item.title)}</strong><br><small>${esc(projectName(item.project))} · ${esc(item.updated || "")}</small></span>
+      </button>`).join("")}</div>` : `<div class="empty">None.</div>`}`;
+  return block("Documents", docs, "document") + block("Meetings", meetings, "meeting");
+}
+function renderRepos() {
+  const repos = state.snap.repos.filter(match);
+  const contribs = state.snap.contributions.filter(match);
+  const choices = state.snap.choices;
+  const rows = contribs.map(c => `
+    <div class="card" style="display:block">
+      <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
+        <div>
+          <strong>${esc(c.title)}</strong>
+          <div class="meta">${esc(c.kind)} #${esc(c.number)} · ${esc(c.role)} · ${esc(c.repo)}</div>
+        </div>
+        <div class="chips">${chip(c.state, c.state === "open" ? "doing" : "done")}${c.ci && c.ci !== "none" ? chip("ci " + c.ci, c.ci) : ""}${c.review && c.review !== "none" ? chip(c.review, "review") : ""}</div>
+      </div>
+      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <select data-set-contrib data-id="${esc(c.id)}" data-field="method" aria-label="Method for ${esc(c.title)}">${options(choices.method, c.method || "spec-kit")}</select>
+        <select data-set-contrib data-id="${esc(c.id)}" data-field="state" aria-label="State for ${esc(c.title)}">${options(choices.contrib_state, c.state || "open")}</select>
+        <button type="button" class="quiet" data-open data-type="contribution" data-id="${esc(c.id)}">Read</button>
+        ${String(c.url || "").startsWith("https://") ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">GitHub</a>` : ""}
+      </div>
+    </div>`).join("");
+  return `
+    <div class="section-title">Repos</div>
+    <div class="grid">${repos.map(r => `
+      <button type="button" class="card" data-open data-type="repo" data-id="${esc(r.id)}">
+        <span><strong>${esc(r.title)}</strong><br><small>${esc(r.kind)} · ${esc(r.status || "")}</small></span>
+        ${chip(r.kind)}
+      </button>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
+    <div class="section-title">Contributions</div>
+    ${rows || `<div class="empty">No cached issues or pull requests.</div>`}`;
+}
+function renderInbox() {
+  const items = state.snap.inbox.filter(match);
+  return `
+    <form class="stack" id="capture">
+      <input type="text" name="title" placeholder="Capture a thought" required aria-label="Capture title">
+      <textarea name="body" placeholder="Optional detail. This lands in inbox/ for triage — not in a contribution file." aria-label="Capture body"></textarea>
+      <div><button class="primary" type="submit">Drop in inbox</button></div>
+    </form>
+    ${items.length ? `<div class="list">${items.map(item => `
+      <button type="button" class="row" data-open data-type="inbox" data-id="${esc(item.name)}">
+        <span><strong>${esc(item.name)}</strong><br><small>${esc(item.updated)} · ${esc(item.bytes)} bytes</small></span>
+        ${chip("triage", "inbox")}
+      </button>`).join("")}</div>` : `<div class="empty">Inbox is clear.</div>`}`;
+}
+function renderFactories() {
+  const factories = state.snap.factories.filter(f => match({title: f.name, id: f.name}));
+  return factories.map(f => {
+    const prod = (f.prompts || []).find(p => p.status === "production");
+    let form = `<p class="meta">Assembles a local shadow bundle. Nothing is posted or pushed.</p>`;
+    if (f.needs === "project") {
+      const opts = state.snap.projects.map(p => `<option value="${esc(p.id)}">${esc(p.title)}</option>`).join("");
+      form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="project">
+        <select name="project" aria-label="Project for ${esc(f.name)}">${opts}</select>
+        <button class="primary" type="submit">Assemble shadow</button></form>`;
+    } else if (f.needs === "contribution") {
+      const specs = state.snap.contributions.filter(c => c.kind === "issue");
+      const opts = specs.map(c => `<option value="${esc(c.id)}">${esc(c.title)}</option>`).join("");
+      form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="contribution">
+        <select name="contribution" aria-label="Spec for ${esc(f.name)}">${opts}</select>
+        <button class="primary" type="submit" ${specs.length ? "" : "disabled"}>Assemble shadow</button></form>`;
+    } else {
+      form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="none">
+        <button class="primary" type="submit">Assemble shadow</button></form>`;
+    }
+    const runs = (f.recent_runs || []).map(r =>
+      `<div class="meta">${esc(r.created)} · ${esc(r.mode)} · ${esc(r.verdict)} · ${esc(r.bundle_path || "")}</div>`
+    ).join("");
+    return `<div class="panel" style="padding:14px 16px;margin-bottom:12px">
+      <strong>${esc(f.name)}</strong>
+      <div class="chips" style="margin:8px 0">${chip(prod ? prod.version + " production" : "no prompt", prod ? "done" : "")}${chip(f.evals + " evals")}</div>
+      ${form}
+      ${runs || `<div class="meta">No runs yet.</div>`}
+    </div>`;
+  }).join("") || `<div class="empty">No factories.</div>`;
+}
+
+const RENDER = {
+  home: renderHome, tasks: renderTasks, projects: renderProjects,
+  library: renderLibrary, repos: renderRepos, inbox: renderInbox, factories: renderFactories,
+};
+function render() {
+  renderNav();
+  document.getElementById("main").innerHTML = RENDER[state.view]();
+}
+
+function inline(s) {
+  return esc(s)
+    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+}
+function renderMarkdown(src) {
+  const fences = [];
+  const text = String(src || "").replace(/```[\w-]*\n?([\s\S]*?)```/g, (_, code) => {
+    fences.push("<pre><code>" + esc(code.replace(/^\n|\n$/g, "")) + "</code></pre>");
+    return "\u0000" + (fences.length - 1) + "\u0000";
+  });
+  let html = "";
+  let list = null;
+  const close = () => { if (list) { html += "</" + list + ">"; list = null; } };
+  for (const line of text.split("\n")) {
+    const fence = line.match(/^\u0000(\d+)\u0000$/);
+    if (fence) { close(); html += fences[+fence[1]]; continue; }
+    const heading = line.match(/^(#{1,3}) (.+)$/);
+    if (heading) { close(); const n = heading[1].length; html += `<h${n}>${inline(heading[2])}</h${n}>`; continue; }
+    const item = line.match(/^\s*[-*] \[[ xX]\] (.+)$/) || line.match(/^\s*[-*] (.+)$/);
+    if (item) {
+      if (list !== "ul") { close(); html += "<ul>"; list = "ul"; }
+      html += "<li>" + inline(item[1]) + "</li>";
+      continue;
+    }
+    if (!line.trim()) { close(); continue; }
+    close();
+    html += "<p>" + inline(line) + "</p>";
+  }
+  close();
+  return html;
+}
+async function openReader(type, id) {
+  const panel = document.getElementById("reader");
+  panel.hidden = false;
+  panel.innerHTML = `<button type="button" class="quiet" id="close-reader">Close</button><p class="meta">Loading…</p>`;
+  try {
+    const data = type === "inbox"
+      ? await api("/api/inbox?name=" + encodeURIComponent(id))
+      : await api("/api/object?type=" + encodeURIComponent(type) + "&id=" + encodeURIComponent(id));
+    const title = data.title || data.name;
+    const banner = type === "contribution"
+      ? `<div class="banner">Public GitHub cache. Private strategy belongs in a document, not here.</div>` : "";
+    const path = data.path ? `<div class="meta">${esc(data.path)}</div>` : "";
+    panel.innerHTML = `
+      <button type="button" class="quiet" id="close-reader">Close</button>
+      ${path}
+      <h3>${esc(title)}</h3>
+      ${banner}
+      <div class="reader-body">${renderMarkdown(data.body || "")}</div>`;
+  } catch (err) {
+    panel.innerHTML = `<button type="button" class="quiet" id="close-reader">Close</button><p>${esc(err.message)}</p>`;
+  }
+}
+function closeReader() {
+  document.getElementById("reader").hidden = true;
+}
+
+document.body.addEventListener("click", (event) => {
+  const nav = event.target.closest("[data-nav]");
+  if (nav) { state.view = nav.dataset.nav; closeReader(); render(); return; }
+  if (event.target.id === "close-reader") { closeReader(); return; }
+  const open = event.target.closest("[data-open]");
+  if (open && !event.target.closest("select")) openReader(open.dataset.type, open.dataset.id);
+});
+document.body.addEventListener("change", async (event) => {
+  const status = event.target.closest("[data-set-status]");
+  const contrib = event.target.closest("[data-set-contrib]");
+  try {
+    if (status) {
+      await api("/api/task/status", {method: "POST", body: JSON.stringify({id: status.dataset.id, status: status.value})});
+      toast("Status saved");
+      await load();
+    } else if (contrib) {
+      await api("/api/contribution", {method: "POST", body: JSON.stringify({id: contrib.dataset.id, [contrib.dataset.field]: contrib.value})});
+      toast("Contribution updated");
+      await load();
+    }
+  } catch (err) {
+    toast(err.message);
+    await load();
+  }
+});
+document.body.addEventListener("submit", async (event) => {
+  const form = event.target;
+  if (form.id === "add-task" || form.id === "capture" || form.dataset.factory) event.preventDefault();
+  else return;
+  const data = Object.fromEntries(new FormData(form).entries());
+  try {
+    if (form.id === "add-task") {
+      await api("/api/task", {method: "POST", body: JSON.stringify(data)});
+      toast("Task added");
+    } else if (form.id === "capture") {
+      await api("/api/capture", {method: "POST", body: JSON.stringify(data)});
+      toast("Dropped in inbox");
+      form.reset();
+    } else {
+      const payload = {factory: form.dataset.factory};
+      if (form.dataset.needs === "project") payload.project = data.project;
+      if (form.dataset.needs === "contribution") payload.contribution = data.contribution;
+      const result = await api("/api/factory/run", {method: "POST", body: JSON.stringify(payload)});
+      toast("Shadow run " + result.run_id + " · " + result.run_dir);
+    }
+    await load();
+  } catch (err) {
+    toast(err.message);
+  }
+});
+document.getElementById("q").addEventListener("input", (event) => {
+  state.q = event.target.value.trim().toLowerCase();
+  render();
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") closeReader();
+  if (event.key === "/" && document.activeElement.id !== "q" && document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "TEXTAREA") {
+    event.preventDefault();
+    document.getElementById("q").focus();
+  }
+});
+load().catch(err => {
+  document.getElementById("main").innerHTML = `<div class="empty">${esc(err.message)}</div>`;
+});
+</script>
+</body>
+</html>

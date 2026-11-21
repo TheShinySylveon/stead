@@ -52,6 +52,7 @@ factories/
     evals/           <- test cases + pass criteria (JSON)
     runs/            <- one directory per run: bundle.md, prompt.md, run.json
 ctx/                 <- Python stdlib-only CLI package (python3 -m ctx)
+  ui.py              <- localhost cockpit (ctx ui); cockpit.html is the page
   schema.sql         <- SQLite schema; state.db is rebuilt from this
   sync.py            <- read-only GitHub sync via gh subprocess
 state.db             <- GITIGNORED, rebuildable operational index (ctx init)
@@ -118,6 +119,7 @@ python3 -m ctx factory run --factory weekly-contribution-digest [--shadow|--live
 python3 -m ctx factory run --factory weekly-project-status --project P [--shadow|--live]
 python3 -m ctx factory run --factory feature-builder --contribution ID [--shadow|--live]
 python3 -m ctx digest                        # shortcut for the digest shadow run
+python3 -m ctx ui                            # local cockpit in a browser (loopback only)
 python3 -m unittest discover -s tests        # run the test suite
 ```
 
@@ -130,6 +132,15 @@ documents + meetings; feature-builder bundles a feature spec + acceptance criter
 `prompt.md`, produces the output, and records it with
 `ctx run log --output ... --verdict ...`. Triggers are scheduler-agnostic: any
 cron/Task Scheduler/systemd timer can invoke the CLI.
+
+## Local cockpit
+
+`python3 -m ctx ui` opens a browser on `127.0.0.1` (loopback only; `--no-browser`
+to serve without opening one). It reads the same markdown and writes through
+the same handlers as the CLI: task status, new tasks, contribution fields,
+inbox capture, and shadow factory assembly. It never binds a public interface,
+never calls an LLM, and never performs a remote write. Factory runs from the
+cockpit are shadow-only. The page has no external assets, so it works offline.
 
 ## GitHub sync (read-only, offline-capable)
 

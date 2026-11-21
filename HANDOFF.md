@@ -15,8 +15,8 @@ Python 3.14.9). Branch `main`.
 
 ## Current state
 
-- **Spec-kit SDD:** `b81cb0f`. **Prior handoff:** `f2f8155`. Docs parity (this
-  change) sits on top of those — see "What remains" item 1.
+- **Spec-kit SDD:** `b81cb0f`. Docs parity: `40e13f0`. A loopback cockpit
+  (`python3 -m ctx ui`) is the latest addition — see `ctx/ui.py`.
 - **Tests:** `python3 -m unittest discover -s tests` → **67 OK** (unchanged by docs).
 - **Three factories** (shared, scrutinized AI workflows):
   - `weekly-contribution-digest`, `weekly-project-status`, `feature-builder`.

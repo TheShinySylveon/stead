@@ -41,3 +41,11 @@ consequential actions.
 
 No people DB, no permissions layer, no multi-machine sync. Frontmatter
 relations kept so the system can grow later without a rewrite.
+
+## D6 — Local cockpit is a loopback view, not a second app (2026-11-21)
+
+`ctx ui` serves a browser page on 127.0.0.1 with stdlib only. Markdown stays
+the source of truth; writes go through the same CLI handlers. No pip
+dependencies, no CDN, no LLM call, no public bind. Factory assembly from the
+page is shadow-only. Rejected: Tkinter (hard to make pleasant) and any web
+framework (would break the stdlib rule).
