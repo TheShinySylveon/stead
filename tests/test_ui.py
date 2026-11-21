@@ -87,6 +87,38 @@ class TestSnapshot(UiTestCase):
             conn.close()
         self.assertEqual(count, 0)
 
+    def test_create_edit_and_file_inbox(self) -> None:
+        created = ui.create_object(self.root, {"type": "project", "title": "Side project",
+                                                "status": "paused"})
+        self.assertEqual(created["id"], "project-side-project")
+        ui.create_object(self.root, {"type": "document", "title": "Notes",
+                                      "project": "project-side-project", "body": "Keep this private."})
+        doc = __import__("ctx").objects.find(self.root, "document", "document-notes")
+        self.assertIn("Keep this private.", doc[2])
+        self.assertEqual(doc[1]["project"], "project-side-project")
+        ui.save_body(self.root, "document", "document-notes", "Rewritten.\n")
+        doc = __import__("ctx").objects.find(self.root, "document", "document-notes")
+        self.assertIn("Rewritten.", doc[2])
+        self.assertEqual(doc[1]["id"], "document-notes")
+        with self.assertRaises(ui.UiError):
+            ui.save_body(self.root, "contribution", "nope", "private strategy")
+        ui.set_project_status(self.root, "project-side-project", "done")
+        project = __import__("ctx").objects.find(self.root, "project", "project-side-project")
+        self.assertEqual(project[1]["status"], "done")
+
+        saved = ui.capture(self.root, "Triage me", "file this note")
+        filed = ui.triage_inbox(self.root, saved["name"], "document", "project-demo", None)
+        self.assertEqual(filed["type"], "document")
+        self.assertFalse((self.root / "inbox" / saved["name"]).exists())
+        with self.assertRaises(ui.UiError):
+            ui.triage_inbox(self.root, "missing.md", "contribution", None, "nope")
+        with self.assertRaises(ui.UiError):
+            ui.delete_inbox(self.root, "README.md")
+
+    def test_offline_sync_does_not_touch_the_network(self) -> None:
+        result = ui.sync_github(self.root, offline=True)
+        self.assertTrue(result["offline"])
+
     def test_run_verdict_updates_the_existing_row(self) -> None:
         result = ui.shadow_run(self.root, {"factory": "weekly-project-status",
                                             "project": "project-demo"})

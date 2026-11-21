@@ -19,12 +19,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from ctx import cli, db, factory, objects
+from ctx import cli, db, factory, frontmatter, objects
 
 PKG_DIR = Path(__file__).resolve().parent
 PAGE_PATH = PKG_DIR / "cockpit.html"
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
-MAX_BODY = 64 * 1024
+MAX_BODY = 512 * 1024
+MAX_NOTE = 200_000
+EDITABLE = ("project", "task", "document", "meeting")
+PROJECT_STATUSES = ("active", "paused", "done")
 
 # What a shadow assemble needs. Unknown factories ask for a project.
 FACTORY_NEEDS = {
@@ -223,6 +226,9 @@ def snapshot(root: Path) -> dict:
             "contrib_review": list(cli.CONTRIB_REVIEW),
             "contrib_role": list(cli.CONTRIB_ROLES),
             "method": list(cli.CONTRIB_METHODS),
+            "project_status": list(PROJECT_STATUSES),
+            "repo_kind": list(cli.REPO_KINDS),
+            "repo_status": list(cli.REPO_STATUSES),
         },
     }
 
@@ -253,6 +259,186 @@ def read_inbox(root: Path, name: str) -> dict:
         raise UiError("inbox file not found", 404)
     return {"name": path.name, "path": _rel(root, path),
             "body": path.read_text(encoding="utf-8")}
+
+
+def _slugify(text: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+    return slug or "item"
+
+
+def _https_or_empty(value: str | None, label: str) -> str | None:
+    value = (value or "").strip()
+    if value and not (value.startswith("https://") or value.startswith("http://localhost")):
+        raise UiError(f"{label} must be an https URL")
+    return value or None
+
+
+def _require_project(root: Path, project: str | None) -> str | None:
+    project = (project or "").strip()
+    if not project:
+        return None
+    found = objects.find(root, "project", project)
+    if found is None:
+        raise UiError(f"project not found: {project}")
+    return found[1]["id"]
+
+
+def _alloc(root: Path, otype: str, title: str) -> tuple[str, Path]:
+    slug = _slugify(title)
+    folder = root / "context" / objects.TYPE_DIRS[otype]
+    folder.mkdir(parents=True, exist_ok=True)
+    object_id, n = f"{otype}-{slug}", 2
+    while (folder / f"{object_id.removeprefix(otype + '-')}.md").exists():
+        object_id, n = f"{otype}-{slug}-{n}", n + 1
+    return object_id, folder / f"{object_id.removeprefix(otype + '-')}.md"
+
+
+def _note_body(title: str, body: str) -> str:
+    text = body if body is not None else ""
+    if len(text) > MAX_NOTE:
+        raise UiError("note is too long")
+    text = text.strip()
+    if not text:
+        text = f"# {title}"
+    return text if text.endswith("\n") else text + "\n"
+
+
+def create_object(root: Path, payload: dict) -> dict:
+    """Write a new project, document, meeting, or repo. Never a contribution."""
+    otype = payload.get("type") or ""
+    title = (payload.get("title") or "").strip()
+    if otype not in ("project", "document", "meeting", "repo"):
+        raise UiError("can create a project, document, meeting, or repo")
+    if not title or len(title) > 200:
+        raise UiError("needs a title of at most 200 characters")
+    if otype == "repo":
+        _call(cli.cmd_repo_add, root, title,
+              _https_or_empty(payload.get("url"), "url"),
+              payload.get("kind") or "oss",
+              payload.get("status") or "active",
+              None, None,
+              (payload.get("notes") or "").strip() or None)
+        return {"ok": True, "type": "repo"}
+    status = None
+    project_id = None
+    if otype == "project":
+        status = payload.get("status") or "active"
+        if status not in PROJECT_STATUSES:
+            raise UiError(f"invalid status {status!r}")
+    else:
+        project_id = _require_project(root, payload.get("project"))
+    object_id, path = _alloc(root, otype, title)
+    today = date.today().isoformat()
+    meta = {"id": object_id, "type": otype, "title": title,
+            "created": today, "updated": today}
+    if status:
+        meta["status"] = status
+    if project_id:
+        meta["project"] = project_id
+    path.write_text(frontmatter.dumps(meta, _note_body(title, payload.get("body") or "")),
+                    encoding="utf-8")
+    return {"ok": True, "id": object_id, "type": otype}
+
+
+def save_body(root: Path, otype: str, ref: str, body: str) -> dict:
+    """Replace the body of a private note. Contribution files stay read-only."""
+    if otype not in EDITABLE:
+        raise UiError("only projects, tasks, documents, and meetings can be edited here")
+    if not ref:
+        raise UiError("id is required")
+    if body is None:
+        raise UiError("body is required")
+    if len(body) > MAX_NOTE:
+        raise UiError("note is too long")
+    found = objects.find(root, otype, ref)
+    if found is None:
+        raise UiError(f"{otype} not found: {ref}", 404)
+    path, meta, _old = found
+    meta["updated"] = date.today().isoformat()
+    text = body if body.endswith("\n") or body == "" else body + "\n"
+    path.write_text(frontmatter.dumps(meta, text), encoding="utf-8")
+    if otype == "task" and db.db_path(root).exists():
+        conn = db.connect(root)
+        try:
+            conn.execute("UPDATE tasks SET updated = ? WHERE id = ?",
+                         (meta["updated"], meta["id"]))
+            conn.commit()
+        finally:
+            conn.close()
+    return {"ok": True, "id": meta.get("id"), "type": otype}
+
+
+def set_project_status(root: Path, project_id: str, status: str) -> dict:
+    if status not in PROJECT_STATUSES:
+        raise UiError(f"invalid status {status!r}")
+    found = objects.find(root, "project", project_id or "")
+    if found is None:
+        raise UiError(f"project not found: {project_id}", 404)
+    path, meta, body = found
+    meta["status"] = status
+    meta["updated"] = date.today().isoformat()
+    path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+    return {"ok": True, "id": meta["id"], "status": status}
+
+
+def _inbox_file(root: Path, name: str) -> Path:
+    if not name or name != Path(name).name or name.startswith(".") or name == "README.md":
+        raise UiError("inbox file not found", 404)
+    folder = (root / "inbox").resolve()
+    path = (folder / name).resolve()
+    if path.parent != folder or not path.is_file():
+        raise UiError("inbox file not found", 404)
+    return path
+
+
+def delete_inbox(root: Path, name: str) -> dict:
+    _inbox_file(root, name).unlink()
+    return {"ok": True}
+
+
+def _heading(body: str) -> str:
+    for line in body.splitlines():
+        if line.startswith("# "):
+            return line[2:].strip()
+    return ""
+
+
+def _strip_capture_footer(body: str) -> str:
+    return re.sub(r"\n*Captured \d{4}-\d{2}-\d{2} from the local cockpit\..*\Z",
+                  "", body, flags=re.S).strip()
+
+
+def triage_inbox(root: Path, name: str, otype: str, project: str | None,
+                 title: str | None) -> dict:
+    """File an inbox note into context, then remove the inbox copy."""
+    if otype not in ("document", "meeting", "task"):
+        raise UiError("file an inbox note as a document, meeting, or task — never a contribution")
+    item = read_inbox(root, name)
+    filed_title = (title or "").strip() or _heading(item["body"]) or Path(name).stem
+    body = _strip_capture_footer(item["body"])
+    if otype == "task":
+        if not (project or "").strip():
+            raise UiError("a task needs a project")
+        add_task(root, filed_title, project, "to-do")
+        matches = [(path, meta) for path, meta, _body in objects.iter_objects(root, "task")
+                   if meta.get("title") == filed_title]
+        if not matches:
+            raise UiError("task was added but could not be found to attach the note")
+        path, meta = max(matches, key=lambda item: item[0].stat().st_mtime)
+        meta["updated"] = date.today().isoformat()
+        path.write_text(frontmatter.dumps(meta, _note_body(filed_title, body)), encoding="utf-8")
+        result = {"ok": True, "id": meta["id"], "type": "task"}
+    else:
+        result = create_object(root, {"type": otype, "title": filed_title,
+                                       "project": project, "body": body})
+    _inbox_file(root, name).unlink()
+    return result
+
+
+def sync_github(root: Path, offline: bool = False) -> dict:
+    """Read-only GitHub refresh, or an offline re-index. Never writes remotely."""
+    _call(cli.cmd_sync_github, root, "@me", 30, bool(offline))
+    return {"ok": True, "offline": bool(offline)}
 
 
 def capture(root: Path, title: str, body: str) -> dict:
@@ -411,6 +597,22 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = shadow_run(root, payload)
         elif path == "/api/run/verdict":
             result = set_run_verdict(root, payload.get("id"), payload.get("verdict") or "")
+        elif path == "/api/object":
+            result = create_object(root, payload)
+        elif path == "/api/object/body":
+            if "body" not in payload:
+                raise UiError("body is required")
+            result = save_body(root, payload.get("type") or "", payload.get("id") or "",
+                               payload.get("body"))
+        elif path == "/api/project/status":
+            result = set_project_status(root, payload.get("id") or "", payload.get("status") or "")
+        elif path == "/api/inbox/triage":
+            result = triage_inbox(root, payload.get("name") or "", payload.get("type") or "",
+                                  payload.get("project"), payload.get("title"))
+        elif path == "/api/inbox/delete":
+            result = delete_inbox(root, payload.get("name") or "")
+        elif path == "/api/sync":
+            result = sync_github(root, bool(payload.get("offline")))
         else:
             raise UiError("not found", 404)
         return 200, _json(result), "application/json; charset=utf-8"

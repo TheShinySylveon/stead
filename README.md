@@ -38,12 +38,14 @@ python3 -m ctx ui                                  # local cockpit (browser, loo
 python3 -m ctx ui
 ```
 
-Opens a browser on `127.0.0.1`. Same writes as the CLI — change a task's
-status, add a task, capture a note into `inbox/`, adjust a contribution's
-`method` or state, assemble a **shadow** factory run. The server refuses any
+Opens a browser on `127.0.0.1`. Same writes as the CLI — add a project,
+task, document, meeting, or repo; edit a private note; change a task or
+project status; capture a note and file it out of `inbox/`; set a
+contribution's role, state, CI, review, or `method`; re-index GitHub
+read-only; assemble a **shadow** factory run. The server refuses any
 non-loopback bind. It does not call a model, and it does not push, post, or
-open a pull request. Private notes stay on this machine; contribution files
-remain the public GitHub cache.
+open a pull request. Private notes stay on this machine; contribution bodies
+stay read-only.
 
 ### Open-source contributions + own projects (one cockpit)
 

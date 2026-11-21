@@ -137,10 +137,13 @@ cron/Task Scheduler/systemd timer can invoke the CLI.
 
 `python3 -m ctx ui` opens a browser on `127.0.0.1` (loopback only; `--no-browser`
 to serve without opening one). It reads the same markdown and writes through
-the same handlers as the CLI: task status, new tasks, contribution fields,
-inbox capture, and shadow factory assembly. It never binds a public interface,
-never calls an LLM, and never performs a remote write. Factory runs from the
-cockpit are shadow-only. The page has no external assets, so it works offline.
+the same handlers as the CLI: projects, tasks, documents, meetings, and repos;
+note edits; contribution fields (including role, CI, review, and method);
+inbox capture and triage; a read-only GitHub sync; and shadow factory
+assembly. It never binds a public interface, never calls an LLM, and never
+performs a remote write. Contribution bodies stay read-only. Factory runs
+from the cockpit are shadow-only — no draft PR. The page has no external
+assets, so it works offline.
 
 ## GitHub sync (read-only, offline-capable)
 

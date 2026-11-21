@@ -234,9 +234,9 @@ const TITLES = {
   home: ["Home", "What needs you, across projects and contributions."],
   tasks: ["Tasks", "Move work by status. The file and the index update together."],
   projects: ["Projects", "Each project, and the tasks hanging off it."],
-  library: ["Library", "Private notes and meetings. Read here; edit the file if you need to rewrite."],
-  repos: ["Repos", "Own projects and OSS. Contribution files stay public — no private notes here."],
-  inbox: ["Inbox", "Unsorted capture. Triage it into context, or delete it."],
+  library: ["Library", "Private notes and meetings. Read them, or edit the note and save."],
+  repos: ["Repos", "Own projects and OSS. Sync is read-only. Contribution files stay public."],
+  inbox: ["Inbox", "Unsorted capture. File it into a document, meeting, or task, or delete it."],
   factories: ["Factories", "Assemble a shadow bundle. A person or an agent still has to write the output."],
 };
 const state = { snap: null, view: "home", q: "" };
@@ -343,12 +343,21 @@ function renderHome() {
       </section>
     </div>`;
 }
+function projectOptions(selected) {
+  const blank = selected === undefined ? `<option value="">No project</option>` : "";
+  return blank + state.snap.projects.map(p =>
+    `<option value="${esc(p.id)}"${p.id === selected ? " selected" : ""}>${esc(p.title)}</option>`).join("");
+}
 function projectCard(p) {
   const c = p.counts || {};
-  return `<button type="button" class="card" data-open data-type="project" data-id="${esc(p.id)}">
-    <span><strong>${esc(p.title)}</strong><br><small>${esc(p.status || "active")} · ${esc(c["doing"] || 0)} doing · ${esc(c["to-do"] || 0)} to do</small></span>
-    ${chip(p.status || "active", p.status === "active" ? "done" : "")}
-  </button>`;
+  const statuses = (state.snap.choices && state.snap.choices.project_status) || ["active", "paused", "done"];
+  return `<div class="card" style="display:block">
+    <button type="button" class="linkish" data-open data-type="project" data-id="${esc(p.id)}">${esc(p.title)}</button>
+    <div class="meta">${esc(c["doing"] || 0)} doing · ${esc(c["to-do"] || 0)} to do</div>
+    <div style="margin-top:8px">
+      <select data-set-project data-id="${esc(p.id)}" aria-label="Status for ${esc(p.title)}">${options(statuses, p.status || "active")}</select>
+    </div>
+  </div>`;
 }
 function renderTasks() {
   const choices = state.snap.choices.task_status;
@@ -373,14 +382,19 @@ function renderTasks() {
       <select name="status" aria-label="Status">${options(choices, "to-do")}</select>
       <button class="primary" type="submit" ${projects.length ? "" : "disabled"}>Add task</button>
     </form>
-    ${projects.length ? "" : `<div class="empty">Create a project in context/projects first. The cockpit will not invent one.</div>`}
+    ${projects.length ? "" : `<div class="empty">Add a project first. Tasks have to belong to one.</div>`}
     <div class="board">${cols}</div>`;
 }
 function renderProjects() {
   const items = state.snap.projects.filter(match);
-  return items.length
-    ? `<div class="grid">${items.map(projectCard).join("")}</div>`
-    : `<div class="empty">No projects yet.</div>`;
+  const statuses = state.snap.choices.project_status;
+  return `
+    <form class="inline" id="add-project">
+      <input type="text" name="title" placeholder="New project" required aria-label="Project title">
+      <select name="status" aria-label="Project status">${options(statuses, "active")}</select>
+      <button class="primary" type="submit">Add project</button>
+    </form>
+    ${items.length ? `<div class="grid">${items.map(projectCard).join("")}</div>` : `<div class="empty">No projects yet.</div>`}`;
 }
 function renderLibrary() {
   const docs = state.snap.documents.filter(match);
@@ -391,7 +405,16 @@ function renderLibrary() {
       <button type="button" class="row" data-open data-type="${type}" data-id="${esc(item.id)}">
         <span><strong>${esc(item.title)}</strong><br><small>${esc(projectName(item.project))} · ${esc(item.updated || "")}</small></span>
       </button>`).join("")}</div>` : `<div class="empty">None.</div>`}`;
-  return block("Documents", docs, "document") + block("Meetings", meetings, "meeting");
+  const add = (id, label, placeholder) => `
+    <form class="stack" id="${id}" style="margin-bottom:8px">
+      <div class="section-title">${label}</div>
+      <input type="text" name="title" placeholder="${placeholder}" required aria-label="${placeholder}">
+      <select name="project" aria-label="Project">${projectOptions()}</select>
+      <textarea name="body" placeholder="Optional note" aria-label="${label} body"></textarea>
+      <div><button class="primary" type="submit">Add ${label.toLowerCase()}</button></div>
+    </form>`;
+  return add("add-document", "Document", "New document") + block("Documents", docs, "document")
+    + add("add-meeting", "Meeting", "New meeting") + block("Meetings", meetings, "meeting");
 }
 function renderRepos() {
   const repos = state.snap.repos.filter(match);
@@ -407,13 +430,28 @@ function renderRepos() {
         <div class="chips">${chip(c.state, c.state === "open" ? "doing" : "done")}${c.ci && c.ci !== "none" ? chip("ci " + c.ci, c.ci) : ""}${c.review && c.review !== "none" ? chip(c.review, "review") : ""}</div>
       </div>
       <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <select data-set-contrib data-id="${esc(c.id)}" data-field="method" aria-label="Method for ${esc(c.title)}">${options(choices.method, c.method || "spec-kit")}</select>
+        <select data-set-contrib data-id="${esc(c.id)}" data-field="role" aria-label="Role for ${esc(c.title)}">${options(choices.contrib_role, c.role || "author")}</select>
         <select data-set-contrib data-id="${esc(c.id)}" data-field="state" aria-label="State for ${esc(c.title)}">${options(choices.contrib_state, c.state || "open")}</select>
+        <select data-set-contrib data-id="${esc(c.id)}" data-field="ci" aria-label="CI for ${esc(c.title)}">${options(choices.contrib_ci, c.ci || "none")}</select>
+        <select data-set-contrib data-id="${esc(c.id)}" data-field="review" aria-label="Review for ${esc(c.title)}">${options(choices.contrib_review, c.review || "none")}</select>
+        <select data-set-contrib data-id="${esc(c.id)}" data-field="method" aria-label="Method for ${esc(c.title)}">${options(choices.method, c.method || "spec-kit")}</select>
         <button type="button" class="quiet" data-open data-type="contribution" data-id="${esc(c.id)}">Read</button>
         ${String(c.url || "").startsWith("https://") ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">GitHub</a>` : ""}
       </div>
     </div>`).join("");
   return `
+    <form class="inline" id="add-repo">
+      <input type="text" name="title" placeholder="New repo" required aria-label="Repo title">
+      <input type="text" name="url" placeholder="https://github.com/owner/name" aria-label="Repo URL">
+      <select name="kind" aria-label="Repo kind">${options(choices.repo_kind, "oss")}</select>
+      <select name="status" aria-label="Repo status">${options(choices.repo_status, "active")}</select>
+      <button class="primary" type="submit">Add repo</button>
+    </form>
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+      <button type="button" class="quiet" data-sync="0">Sync GitHub</button>
+      <button type="button" class="quiet" data-sync="1">Re-index offline</button>
+      <span class="meta">Read-only. Never opens a pull request.</span>
+    </div>
     <div class="section-title">Repos</div>
     <div class="grid">${repos.map(r => `
       <button type="button" class="card" data-open data-type="repo" data-id="${esc(r.id)}">
@@ -432,10 +470,17 @@ function renderInbox() {
       <div><button class="primary" type="submit">Drop in inbox</button></div>
     </form>
     ${items.length ? `<div class="list">${items.map(item => `
-      <button type="button" class="row" data-open data-type="inbox" data-id="${esc(item.name)}">
-        <span><strong>${esc(item.name)}</strong><br><small>${esc(item.updated)} · ${esc(item.bytes)} bytes</small></span>
-        ${chip("triage", "inbox")}
-      </button>`).join("")}</div>` : `<div class="empty">Inbox is clear.</div>`}`;
+      <div class="card" style="display:block">
+        <button type="button" class="linkish" data-open data-type="inbox" data-id="${esc(item.name)}">${esc(item.name)}</button>
+        <div class="meta">${esc(item.updated)} · ${esc(item.bytes)} bytes</div>
+        <form class="inline" data-triage="${esc(item.name)}" style="margin-top:8px">
+          <select name="project" aria-label="Project for ${esc(item.name)}">${projectOptions()}</select>
+          <button class="quiet" type="submit" name="type" value="document">File as document</button>
+          <button class="quiet" type="submit" name="type" value="meeting">File as meeting</button>
+          <button class="quiet" type="submit" name="type" value="task" ${state.snap.projects.length ? "" : "disabled"}>File as task</button>
+          <button class="quiet" type="button" data-delete-inbox="${esc(item.name)}">Delete</button>
+        </form>
+      </div>`).join("")}</div>` : `<div class="empty">Inbox is clear.</div>`}`;
 }
 function renderFactories() {
   const factories = state.snap.factories.filter(f => match({title: f.name, id: f.name}));
@@ -525,13 +570,21 @@ async function openReader(type, id) {
     if (dup && dup[1].trim() === String(title).trim()) body = body.slice(dup[0].length);
     const banner = type === "contribution"
       ? `<div class="banner">Public GitHub cache. Private strategy belongs in a document, not here.</div>` : "";
+    const editable = ["project", "task", "document", "meeting"].includes(type);
+    const editor = editable ? `
+      <form id="save-body" data-type="${esc(type)}" data-id="${esc(data.id || id)}" style="margin-top:16px">
+        <div class="section-title">Edit</div>
+        <textarea name="body" aria-label="Note body">${esc(data.body || "")}</textarea>
+        <div><button class="primary" type="submit">Save note</button></div>
+      </form>` : "";
     const path = data.path ? `<div class="meta">${esc(data.path)}</div>` : "";
     panel.innerHTML = `
       <button type="button" class="quiet" id="close-reader">Close</button>
       ${path}
       <h3>${esc(title)}</h3>
       ${banner}
-      <div class="reader-body">${renderMarkdown(body)}</div>`;
+      <div class="reader-body">${renderMarkdown(body)}</div>
+      ${editor}`;
   } catch (err) {
     panel.innerHTML = `<button type="button" class="quiet" id="close-reader">Close</button><p>${esc(err.message)}</p>`;
   }
@@ -552,6 +605,30 @@ document.body.addEventListener("click", async (event) => {
     }
     return;
   }
+  const sync = event.target.closest("[data-sync]");
+  if (sync) {
+    try {
+      sync.disabled = true;
+      await api("/api/sync", {method: "POST", body: JSON.stringify({offline: sync.dataset.sync === "1"})});
+      toast(sync.dataset.sync === "1" ? "Re-indexed local cache" : "GitHub cache refreshed");
+      await load();
+    } catch (err) {
+      toast(err.message);
+    }
+    return;
+  }
+  const remove = event.target.closest("[data-delete-inbox]");
+  if (remove) {
+    if (!confirm("Delete this inbox note? This does not touch context/.")) return;
+    try {
+      await api("/api/inbox/delete", {method: "POST", body: JSON.stringify({name: remove.dataset.deleteInbox})});
+      toast("Inbox note deleted");
+      await load();
+    } catch (err) {
+      toast(err.message);
+    }
+    return;
+  }
   const nav = event.target.closest("[data-nav]");
   if (nav) { state.view = nav.dataset.nav; closeReader(); render(); return; }
   if (event.target.id === "close-reader") { closeReader(); return; }
@@ -566,6 +643,11 @@ document.body.addEventListener("change", async (event) => {
       await api("/api/task/status", {method: "POST", body: JSON.stringify({id: status.dataset.id, status: status.value})});
       toast("Status saved");
       await load();
+    } else if (event.target.closest("[data-set-project]")) {
+      const project = event.target.closest("[data-set-project]");
+      await api("/api/project/status", {method: "POST", body: JSON.stringify({id: project.dataset.id, status: project.value})});
+      toast("Project updated");
+      await load();
     } else if (contrib) {
       await api("/api/contribution", {method: "POST", body: JSON.stringify({id: contrib.dataset.id, [contrib.dataset.field]: contrib.value})});
       toast("Contribution updated");
@@ -578,13 +660,47 @@ document.body.addEventListener("change", async (event) => {
 });
 document.body.addEventListener("submit", async (event) => {
   const form = event.target;
-  if (form.id === "add-task" || form.id === "capture" || form.dataset.factory) event.preventDefault();
-  else return;
+  const handled = form.id === "add-task" || form.id === "capture" || form.id === "add-project"
+    || form.id === "add-document" || form.id === "add-meeting" || form.id === "add-repo"
+    || form.id === "save-body" || form.dataset.factory || form.dataset.triage;
+  if (!handled) return;
+  event.preventDefault();
   const data = Object.fromEntries(new FormData(form).entries());
+  if (event.submitter && event.submitter.name) data[event.submitter.name] = event.submitter.value;
   try {
     if (form.id === "add-task") {
       await api("/api/task", {method: "POST", body: JSON.stringify(data)});
       toast("Task added");
+    } else if (form.id === "add-project") {
+      await api("/api/object", {method: "POST", body: JSON.stringify({type: "project", title: data.title, status: data.status})});
+      toast("Project added");
+      form.reset();
+    } else if (form.id === "add-document" || form.id === "add-meeting") {
+      await api("/api/object", {method: "POST", body: JSON.stringify({
+        type: form.id === "add-document" ? "document" : "meeting",
+        title: data.title, project: data.project, body: data.body,
+      })});
+      toast("Saved");
+      form.reset();
+    } else if (form.id === "add-repo") {
+      await api("/api/object", {method: "POST", body: JSON.stringify({
+        type: "repo", title: data.title, url: data.url, kind: data.kind, status: data.status,
+      })});
+      toast("Repo added");
+      form.reset();
+    } else if (form.id === "save-body") {
+      await api("/api/object/body", {method: "POST", body: JSON.stringify({
+        type: form.dataset.type, id: form.dataset.id, body: data.body,
+      })});
+      toast("Note saved");
+      await load();
+      await openReader(form.dataset.type, form.dataset.id);
+      return;
+    } else if (form.dataset.triage) {
+      await api("/api/inbox/triage", {method: "POST", body: JSON.stringify({
+        name: form.dataset.triage, type: data.type, project: data.project,
+      })});
+      toast("Filed into context");
     } else if (form.id === "capture") {
       await api("/api/capture", {method: "POST", body: JSON.stringify(data)});
       toast("Dropped in inbox");
