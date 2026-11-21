@@ -61,13 +61,14 @@ python -m stead welcome --title "My Project"
 | | This computer | Shared server |
 |---|---|---|
 | Who | One person, and the agents on that machine | Several people, one process |
-| How | `python -m stead ui` | `docker compose up --build` |
+| How | `python -m stead ui` | `docker compose pull && docker compose up --no-build` |
 | Network | Loopback only | Published port, access token required |
 | Index | One `state.db` on that machine | One `state.db` inside the container |
 
 Choosing Shared server in Welcome does not open a port on your laptop. It
-writes a gitignored `stead.json` and shows a token once. Start the container
-only after you set `STEAD_ACCESS_TOKEN`. Details: [docs/deploy.md](docs/deploy.md).
+writes a gitignored `stead.json` and shows a token once. The image is
+`ghcr.io/theshinysylveon/stead`. Start it only after you set
+`STEAD_ACCESS_TOKEN`. Details: [docs/deploy.md](docs/deploy.md).
 
 Do not scale the container. Do not put `state.db` on a network share. People
 who each have a clone share the markdown through git, and each clone keeps
@@ -126,8 +127,9 @@ Samples live in `examples/context/`. They are not loaded into a fresh checkout.
 python3 -m unittest discover -s tests
 ```
 
-CI on `main` and on pull requests runs that suite on Python 3.11 and 3.12,
-then builds the Docker image. It does not push the image.
+CI on `main` and on pull requests runs that suite on Python 3.11 and 3.12.
+Pull requests build the Docker image. `main` publishes
+`ghcr.io/theshinysylveon/stead`.
 
 ## Limits of 0.0.1
 
@@ -148,7 +150,7 @@ then builds the Docker image. It does not push the image.
 - Merge. `stead factory publish` can open a draft or a normal pull request
   from an isolated branch. It will not merge.
 - Per-person sign-in, instead of one shared token.
-- A published container image. CI only builds it today.
+
 
 ## Contributing
 

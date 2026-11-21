@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The container image is published to `ghcr.io/theshinysylveon/stead` on `main`.
 - Writes stamp `actor:` when `stead actor use` or `STEAD_ACTOR` names an actor file.
 - `stead prompt promote` refuses until every eval case has a recorded pass for that version.
 - `stead factory publish` pushes an isolated branch and opens a pull request

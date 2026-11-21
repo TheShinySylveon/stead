@@ -38,10 +38,19 @@ browser. The token is not written into `context/`.
 
 ## Image
 
-`Dockerfile` is a Python 3.12 image. It sets `STEAD_DEPLOYMENT=multi` and
-`STEAD_BIND=0.0.0.0`. `context/` is a volume, so notes survive a rebuild.
-`state.db` is recreated if the container is new. That is safe. The files are
-the source of truth.
+The published image is `ghcr.io/theshinysylveon/stead`. `main` pushes `latest`
+and the commit sha after the tests pass. Pull requests build the image and
+do not push it.
+
+```bash
+docker compose pull
+docker compose up --no-build
+```
+
+`docker compose up --build` still builds this checkout. The image sets
+`STEAD_DEPLOYMENT=multi` and `STEAD_BIND=0.0.0.0`. `context/` is a volume, so
+notes survive a rebuild. `state.db` is recreated if the container is new.
+That is safe. The files are the source of truth.
 
 Do not publish port 8765 to the public internet without a TLS proxy in front.
 The token is a shared password, not a user account.

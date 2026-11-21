@@ -2,6 +2,7 @@
 # Set STEAD_ACCESS_TOKEN in the environment or a gitignored .env file.
 services:
   stead:
+    image: ghcr.io/theshinysylveon/stead:latest
     build: .
     ports:
       - "8765:8765"

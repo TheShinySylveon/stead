@@ -1,6 +1,11 @@
 # Stead multi-user image. Knowledge is the mounted context/ volume.
 # The process will not start unless STEAD_ACCESS_TOKEN is set.
+# Published as ghcr.io/theshinysylveon/stead
 FROM python:3.12-slim
+
+LABEL org.opencontainers.image.source="https://github.com/TheShinySylveon/stead" \
+      org.opencontainers.image.description="Stead local context system" \
+      org.opencontainers.image.licenses="Apache-2.0"
 
 WORKDIR /app
 COPY ctx ./ctx
