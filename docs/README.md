@@ -27,4 +27,4 @@ the copyright in code you write.
 ## Not in this folder
 
 - `examples/context/` — sample objects. Not loaded into a fresh checkout.
-- `PLAN.md` — design history. Do not treat it as a user guide.
+- `PLAN.md` — design record and the autonomy roadmap. Do not treat it as a user guide.

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `PLAN.md` now carries the autonomy roadmap: PR feedback repair, queue and
+  workers, check detection, patch edits, budgets, stale-lock recovery, and
+  post-merge cleanup.
 - `stead build` gains an autonomous repair loop: `check` returns test output,
   failed checks are fed back, and `--repair-rounds` bounds the attempts.
   The agent can also `search` and `delete`. A per-checkout lock prevents

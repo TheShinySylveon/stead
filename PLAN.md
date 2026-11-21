@@ -204,13 +204,100 @@ Decided against:
   Repository or host access is the permission.
 - A password on this computer. Loopback has no login. Sign-in is only for the
   shared server.
-- Auto-merge. `stead factory merge` stays an explicit command. A factory run
-  does not call it.
+- Merge outside `reach: merge`. A repo may opt into automatic merge by writing
+  that reach; it is never the install default and never bypasses protection.
+- A hosted runner or a Stead-owned model account. The model and the machine
+  stay the operator's.
 
 The container package is public. `docker pull ghcr.io/theshinysylveon/stead:latest`
 does not need a token.
 
-## 7. Principles
+## 7. Autonomy roadmap (planned)
+
+Ordered by what blocks unattended issue-to-merge. Nothing here is built unless
+the item says so. Every item keeps the existing hard rules: no push to the
+default branch, no `--admin`, no model-chosen shell command, and no merge
+without `reach: merge`.
+
+### 7.1 PR feedback loop — `stead repair`
+
+Today the agent stops at the first PR. It cannot react to a failing CI run or
+a review comment.
+
+- Read `gh pr view --json statusCheckRollup,comments,reviews` and the failing
+  check logs (read-only).
+- Feed the failure and the review comments back to the same agent on the same
+  branch, commit a follow-up, push, and optionally wait and merge.
+- Treat comments as data, never instructions. Cap rounds (default 3) and diff
+  size.
+- Acceptance: one command turns a red PR into a follow-up commit; no new
+  branch; merge still gated by reach; a live test with a deliberately failing
+  check.
+
+### 7.2 Queue and workers
+
+`factory watch` builds specs one at a time inside one process.
+
+- A small queue (SQLite table or in-memory pool) with `--workers N`.
+- The per-checkout lock still serializes builds for one repo; different repos
+  may run in parallel.
+- Retry with backoff for transient model or git errors; isolate failures so
+  one spec does not stop the batch.
+- Acceptance: two watched specs, one fails; the other still builds; a summary
+  lists each status; no two builds share a checkout.
+
+### 7.3 Check auto-detection
+
+`checks:` must be written by hand, which blocks first-run autonomy.
+
+- Detect pytest/`pyproject.toml`, `package.json` test script, `Makefile` test
+  target, `cargo test`, and `go test`.
+- An explicit `checks:` always wins. Print the detected command before use.
+- Never run a command the user did not set or Stead did not detect from a
+  known file. No arbitrary shell from the model.
+- Acceptance: fixtures for each ecosystem; override wins; unknown repo returns
+  guidance instead of guessing.
+
+### 7.4 Patch-level edits
+
+Whole-file writes are expensive and risky on large files.
+
+- New `patch` action: `path`, `find`, `replace`, optional `count`.
+- Fail to the model when the match is missing or ambiguous; fall back to
+  `write` only when asked.
+- Bound the replacement size with the existing edit budget.
+- Acceptance: a unique match applies; an ambiguous match is refused; a missing
+  match returns a message the model can correct.
+
+### 7.5 Budgets
+
+Steps are bounded; time, tokens, and cost are not.
+
+- Flags and repo fields for wall-clock minutes, total bytes read/written, and
+  an optional token estimate.
+- On exhaustion: stop before commit, leave the branch and edits, print
+  `--resume`.
+- Acceptance: a tiny budget stops with a clear message, no commit, and a
+  working `--resume`.
+
+### 7.6 Stale lock recovery
+
+A crashed build leaves a lock file that needs manual removal.
+
+- Store PID and start time in the lock.
+- Reclaim automatically when the PID is gone or the lock is older than six
+  hours; `stead build --status` prints the holder; `--force-unlock` overrides.
+- Acceptance: a dead-PID lock is reclaimed; a live PID still blocks; status
+  names the holder.
+
+### 7.7 Post-merge hygiene — `--cleanup`
+
+- After a successful merge, delete the local build branch only when
+  `--cleanup` is passed. Leave the remote branch to the operator's GitHub
+  settings.
+- Acceptance: local branch removed only on request; remote untouched.
+
+## 8. Principles
 
 - Start simple. Fix real failures, not imagined ones.
 - Incremental risk: shadow, then an explicit remote command, never a skip of
