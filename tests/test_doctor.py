@@ -65,3 +65,15 @@ class DoctorTest(unittest.TestCase):
         messages = " ".join(item["message"] for item in doctor.run(self.root)["errors"])
         self.assertIn("duplicate id", messages)
         self.assertIn("missing object", messages)
+
+    def test_a_synced_issue_changed_upstream_is_a_warning(self) -> None:
+        (self.root / "context/contributions").mkdir(parents=True, exist_ok=True)
+        self._write("contributions", "issue-1.md", {
+            "id": "contribution-x-issue-1", "type": "contribution",
+            "title": "X", "created": "2026-11-21", "updated": "2026-11-21",
+            "repo": "repo-x", "kind": "issue", "number": 1, "role": "author",
+            "state": "open", "visibility": "public",
+            "body_sha": "aaa", "upstream_body_sha": "bbb"})
+        report = doctor.run(self.root)
+        self.assertTrue(any("changed after" in w["message"]
+                           for w in report["warnings"]))

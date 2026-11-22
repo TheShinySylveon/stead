@@ -233,6 +233,16 @@ class ModelTest(unittest.TestCase):
         _, _, abody = models._request(anth, "hi", 0.2, response_format=_ACTION_RESPONSE_FORMAT)
         self.assertNotIn("response_format", abody)
 
+    def test_action_schema_declares_every_field_the_loop_reads(self) -> None:
+        from ctx.agent import _ACTION_FIELDS, _ACTION_RESPONSE_FORMAT
+        schema = _ACTION_RESPONSE_FORMAT["json_schema"]["schema"]
+        declared = set(schema["properties"])
+        missing = _ACTION_FIELDS - declared
+        self.assertFalse(missing, f"undeclared action fields: {missing}")
+        # additionalProperties is explicit, so a strict server (llama.cpp
+        # defaults it to false) never drops a declared field.
+        self.assertIn("additionalProperties", schema)
+
     def test_custom_url_must_be_http(self) -> None:
         with self.assertRaises(models.ModelError):
             models.set_model(self.root, provider="custom", name="local", base_url="file:///tmp/model")

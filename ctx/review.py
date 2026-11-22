@@ -97,7 +97,8 @@ def review(root: Path, contribution_ref: str, *, responder=None,
     """Run the independent reviewer on one commit's diff. Raises ReviewError.
 
     `commit` pins the review to the commit about to be merged; without it the
-    checkout's HEAD is used. A diff over the review limit is rejected, never
+    spec's build branch is reviewed (never the checkout's HEAD, which may be on
+    an unrelated branch). A diff over the review limit is rejected, never
     truncated and approved.
     """
     found = objects.find(root, "contribution", contribution_ref)
@@ -122,7 +123,7 @@ def review(root: Path, contribution_ref: str, *, responder=None,
     default = (repo_meta.get("default_branch") or "main").strip()
     from ctx.factory import split_spec
     description, criteria = split_spec(body)
-    target = (commit or "HEAD").strip()
+    target = (commit or factory.branch_for(spec)).strip()
     run = safety.safe_runner(runner or _run)
     try:
         diff = run(["git", "diff", f"{default}...{target}"], code)

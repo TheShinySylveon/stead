@@ -1091,13 +1091,16 @@ def main(argv: list[str] | None = None) -> int:
         print("triage into context/. Nothing was posted.")
         return 0
     if args.command == "spec" and args.sub == "approve":
-        from ctx.spec import SpecError, approve
+        from ctx.spec import SpecError, approve, source_changed_note
         from ctx import objects
         found = objects.find(root, "contribution", args.contribution)
         if found is not None:
             print("--- approving this body ---")
             print(found[2].strip())
             print("----------------------------")
+            note = source_changed_note(root, found[1])
+            if note:
+                print(note)
         try:
             approved = approve(root, args.contribution)
         except SpecError as exc:

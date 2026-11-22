@@ -66,13 +66,12 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
         raise MergeError("code_path must be the project checkout, not this Stead repo")
     run = safety.safe_runner(runner or _run)
     default = (repo_meta.get("default_branch") or "main").strip()
-    branch = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
-    if branch in {default, "HEAD", ""}:
-        # A worktree build leaves the checkout on the default branch.
-        branch = factory.branch_for(spec)
-    if not branch or branch == default:
+    # Always the spec's deterministic build branch, never the checkout's
+    # current branch (a worktree build leaves the checkout on another branch).
+    branch = factory.branch_for(spec)
+    if not _git(run, code, ["branch", "--list", branch]).strip():
         raise MergeError(
-            f"refusing to merge from {branch or 'an unknown branch'}. Stay off {default}.")
+            f"build branch {branch} does not exist. Run `stead build` first.")
     raw = run([
         "gh", "pr", "view", "--json",
         "number,url,state,isDraft,baseRefName,headRefName,headRefOid,statusCheckRollup",

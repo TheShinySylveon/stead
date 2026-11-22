@@ -73,6 +73,14 @@ the process environment, but it does not restrict the filesystem: host checks
 can still read any file your user can read, such as `~/.ssh` or
 `~/.config/gh`. Only the container limits them to the checkout and the image.
 
+**`checks:` must work from a clean clone.** Every build runs in a fresh worktree,
+so untracked local state (`.venv`, `node_modules`, `.env`, build output) is
+absent. A check that depends on that state fails as "the base suite is red".
+**The fail-before gate has a known limit:** a new test that merely imports a
+new module fails on the base with an `ImportError` and passes on the branch
+whatever it asserts — the gate sees that as a real fail-before. The hand check
+in the rubric covers what the gate cannot.
+
 ## Protected paths
 
 A model that can edit its own gate can pass it. By default these are refused:

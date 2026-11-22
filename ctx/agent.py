@@ -46,6 +46,9 @@ LOCK_NAME = ".stead-build.lock"
 # Structured output for the model call: pin the reply to one action object.
 # JSON-schema form (not `json_object`): LM Studio enforces `json_schema`/`text`,
 # and json_object only guarantees valid JSON, not one action of the right shape.
+# Every field the build loop reads must be declared below — llama.cpp's JSON-schema
+# converter defaults `additionalProperties` to false, so an undeclared field is
+# silently dropped and the action loses its path/content.
 _ACTION_RESPONSE_FORMAT = {
     "type": "json_schema",
     "json_schema": {
@@ -57,11 +60,23 @@ _ACTION_RESPONSE_FORMAT = {
                 "action": {"type": "string", "enum": [
                     "plan", "list", "read", "search", "write", "delete",
                     "check", "propose", "finish"]},
+                "path": {"type": "string"},
+                "content": {"type": "string"},
+                "summary": {"type": "string"},
+                "query": {"type": "string"},
+                "kind": {"type": "string"},
+                "title": {"type": "string"},
+                "text": {"type": "string"},
             },
             "required": ["action"],
+            "additionalProperties": False,
         },
     },
 }
+
+# The fields the build loop reads from an action object. A test asserts each is
+# declared in the schema above, so a strict server never drops one.
+_ACTION_FIELDS = {"action", "path", "content", "summary", "query", "kind", "title", "text"}
 
 
 class BuildError(Exception):
@@ -97,6 +112,23 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     if spec.get("kind") != "issue" or not factory.enabled(spec):
         raise BuildError("build runs from an enabled issue (stead-build label "
                          "or feature-spec tag)", reason="precondition")
+    # A draft is enabled by its own tag, but its source issue is the real
+    # opt-in: once the source is closed or no longer labelled, it stops being a
+    # build target even though the draft was already approved.
+    source_ref = spec.get("drafted_from")
+    if source_ref:
+        source = objects.find(root, "contribution", str(source_ref))
+        if source is not None:
+            _src_meta = source[1]
+            if str(_src_meta.get("state") or "open") != "open":
+                raise BuildError(
+                    "the source issue is closed; it is no longer a build target",
+                    reason="precondition")
+            _src_tags = {str(t).lower() for t in (_src_meta.get("tags") or [])}
+            if factory.BUILD_LABEL not in _src_tags:
+                raise BuildError(
+                    "the source issue no longer carries the stead-build label",
+                    reason="precondition")
     description, criteria = factory.split_spec(body)
     flags = factory.spec_flags(description, criteria)
     if flags:
@@ -190,6 +222,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     chars_sent = 0
     chars_received = 0
     latency_ms = 0
+    step_logs: list[dict] = []
     commit_base = ""
     base_tracked_cf: set[str] = set()
     branch_tracked: set[str] = set()
@@ -213,7 +246,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 rec = writeback.record_for_branch(
                     root, str(repo_meta.get("id") or ""), branch)
                 if rec is not None and str(rec.get("outcome") or "") == "failed":
-                    retired = f"stead/failed/{branch.removeprefix('stead/')}-{_stamp()}"
+                    retired = _retired_branch(run, anchor, branch)
                     _git(run, anchor, ["branch", "-m", branch, retired])
                 else:
                     raise BuildError(
@@ -301,8 +334,14 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             chars_sent += len(full_prompt)
             _step_start = time.monotonic()
             reply = responder(full_prompt)
-            latency_ms += round((time.monotonic() - _step_start) * 1000)
+            _step_latency = round((time.monotonic() - _step_start) * 1000)
+            latency_ms += _step_latency
             chars_received += len(reply) if isinstance(reply, str) else len(str(reply))
+            step_logs.append({
+                "prompt_chars": len(full_prompt),
+                "reply_chars": len(reply) if isinstance(reply, str) else len(str(reply)),
+                "latency_ms": _step_latency,
+            })
             replies.append(reply if isinstance(reply, str) else str(reply))
             if custom_responder:
                 usage["prompt_tokens"] += max(1, len(full_prompt) // 4)
@@ -644,6 +683,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     "chars_sent": chars_sent,
                     "chars_received": chars_received,
                     "latency_ms": latency_ms,
+                    "step_logs": step_logs,
                     "tokens_in": usage["prompt_tokens"],
                     "tokens_out": usage["completion_tokens"],
                     "cost_usd": round(usage["prompt_tokens"] / 1e6 * prices[0]
@@ -812,6 +852,19 @@ def _unlock(path: Path) -> None:
 
 def _stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _retired_branch(run, anchor: Path, branch: str) -> str:
+    """A unique `stead/failed/...` name for a retired build branch. The stamp has
+    second resolution, so two retirements in the same second would collide; the
+    counter keeps each name unique."""
+    base = f"stead/failed/{branch.removeprefix('stead/')}-{_stamp()}"
+    candidate = base
+    n = 2
+    while _git(run, anchor, ["branch", "--list", candidate]).strip():
+        candidate = f"{base}-{n}"
+        n += 1
+    return candidate
 
 
 def _marker_path(root: Path, body: str) -> Path:
@@ -1097,10 +1150,13 @@ def _fit_budget(prompt: str, transcript: list[str],
 
 def _failure_reason(exc) -> str:
     """Classify a failure for the record. BuildError carries its own reason;
-    anything else came from the model transport (or a bug), which is
-    infrastructure."""
+    a timeout is its own class (a small local model can exceed the call timeout
+    without being unreachable); anything else came from the model transport (or
+    a bug), which is infrastructure."""
     if isinstance(exc, BuildError):
         return exc.reason or "build"
+    if isinstance(exc, (TimeoutError, subprocess.TimeoutExpired)):
+        return "timeout"
     return "infrastructure"
 
 

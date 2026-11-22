@@ -74,6 +74,13 @@ def run(root: Path) -> dict:
                         relative, f"{relation} points at missing object {target!r}"))
             if not body.strip():
                 warnings.append(_issue(relative, "empty body"))
+            if otype == "contribution":
+                body_sha = str(meta.get("body_sha") or "")
+                upstream = str(meta.get("upstream_body_sha") or "")
+                if body_sha and upstream and body_sha != upstream:
+                    warnings.append(_issue(
+                        relative, "the synced issue changed after it was stored "
+                                  "(body_sha != upstream_body_sha)"))
     return {"checked": checked, "errors": errors, "warnings": warnings}
 
 

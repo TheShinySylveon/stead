@@ -13,6 +13,14 @@ from ctx.publish import PublishError, publish
 from tests import strip_git_hygiene
 from tests.test_feature_builder import SPEC_ID, FeatureBuilderTestCase
 
+# The deterministic build branch for the seeded spec (issue #201, "Add --json
+# output"). Merge resolves this, never the checkout's current branch.
+BRANCH = "stead/201-add-json-output"
+
+
+def _branch_list(argv) -> bool:
+    return argv[:2] == ["git", "branch"] and "--list" in argv
+
 
 def _view(**overrides) -> str:
     payload = {
@@ -21,7 +29,7 @@ def _view(**overrides) -> str:
         "state": "OPEN",
         "isDraft": False,
         "baseRefName": "main",
-        "headRefName": "feature/json",
+        "headRefName": BRANCH,
         "headRefOid": "builtsha",
         "statusCheckRollup": [
             {"name": "tests", "status": "COMPLETED", "conclusion": "SUCCESS"},
@@ -113,9 +121,9 @@ class MergeTest(FeatureBuilderTestCase):
             argv = strip_git_hygiene(argv)
             if calls is not None:
                 calls.append(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "feature/json"]:
+            if _branch_list(argv):
+                return BRANCH + "\n"
+            if argv[:3] == ["git", "rev-parse", BRANCH]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
@@ -186,8 +194,8 @@ class MergeTest(FeatureBuilderTestCase):
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
             calls.append(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
+            if _branch_list(argv):
+                return BRANCH + "\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view(statusCheckRollup=[
                     {"name": "tests", "status": "COMPLETED", "conclusion": "FAILURE"},
@@ -206,9 +214,9 @@ class MergeTest(FeatureBuilderTestCase):
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
             calls.append(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "feature/json"]:
+            if _branch_list(argv):
+                return BRANCH + "\n"
+            if argv[:3] == ["git", "rev-parse", BRANCH]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
@@ -232,9 +240,9 @@ class MergeTest(FeatureBuilderTestCase):
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
             calls.append(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "feature/json"]:
+            if _branch_list(argv):
+                return BRANCH + "\n"
+            if argv[:3] == ["git", "rev-parse", BRANCH]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view(headRefOid="human-edited-sha")
@@ -261,8 +269,8 @@ class MergeTest(FeatureBuilderTestCase):
 
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
+            if _branch_list(argv):
+                return BRANCH + "\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
             if argv[:4] == ["gh", "repo", "view", "--json"]:
@@ -283,9 +291,9 @@ class MergeTest(FeatureBuilderTestCase):
 
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "feature/json"]:
+            if _branch_list(argv):
+                return BRANCH + "\n"
+            if argv[:3] == ["git", "rev-parse", BRANCH]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
@@ -310,9 +318,9 @@ class MergeTest(FeatureBuilderTestCase):
 
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "feature/json"]:
+            if _branch_list(argv):
+                return BRANCH + "\n"
+            if argv[:3] == ["git", "rev-parse", BRANCH]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
@@ -334,8 +342,8 @@ class MergeTest(FeatureBuilderTestCase):
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
             calls.append(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
+            if _branch_list(argv):
+                return BRANCH + "\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
                 return "1\n"
             if argv[:3] == ["git", "diff", "--name-status"]:

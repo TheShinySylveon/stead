@@ -52,6 +52,14 @@ def spec_sha_of(root: Path, contribution_ref: str) -> str:
     return spec_approval.body_hash(found[2])
 
 
+def _max_step(result: dict, key: str) -> int:
+    """The largest per-step value (e.g. prompt_chars) in a build result, or 0.
+    A spike in the prompt size is the early sign of context truncation."""
+    logs = result.get("step_logs") or []
+    return max((int(s.get(key) or 0) for s in logs if isinstance(s, dict)),
+               default=0)
+
+
 def record_delivery(root: Path, contribution_ref: str, result: dict,
                     run_id: object = None) -> dict:
     """Write the factual record and update linked statuses. Returns the doc id."""
@@ -90,6 +98,8 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         "chars_sent": str(result.get("chars_sent") or 0),
         "chars_received": str(result.get("chars_received") or 0),
         "latency_ms": str(result.get("latency_ms") or 0),
+        "max_prompt_chars": str(_max_step(result, "prompt_chars")),
+        "max_reply_chars": str(_max_step(result, "reply_chars")),
         "tokens_in": str(result.get("tokens_in") or 0),
         "tokens_out": str(result.get("tokens_out") or 0),
         "cost_usd": str(result.get("cost_usd") or 0),
