@@ -53,32 +53,20 @@ Results live in [Dogfood](dogfood.md); safety gates in [Trust](trust.md).
 
 ## Milestone progress
 
-- **M0 (foundations) — done.** Builds run in their own `git worktree` (the
-  user's checkout is never touched); the builder reads the whole approved spec
-  body; failures carry a `reason` code; a spec gets one automatic build attempt
-  per approved hash (`--retry` to re-run); and a killed build's started marker
-  is reclaimed as an infrastructure failure record.
-- **M1 (build correctness harness) — done.** The builder asks for structured
-  JSON output (`response_format`), logs characters sent/received and model
-  latency per build, and enforces the fail-before/pass-after gate: the base
-  suite must pass first, the new test must fail against the base (without the
-  code change), and the branch must pass.
-- **M5 (spec draft) — done.** `stead spec draft` turns a raw issue into a
-  buildable draft spec (a new linked contribution) in one model call, without
-  touching the source issue; the plan lives inside the approved body.
-- **M3 (intake + enablement) — done.** Sync fetches issues carrying the
-  `stead-build` label and records it as a tag; the build/publish/merge/review/
-  watch gates drop the `role: author` requirement in favour of "enabled (label
-  or `feature-spec` tag) + approved hash"; and `stead schedule show --interval
-  hourly|daily` prints the shorter monitor cadence.
-- **M2 (issue comment) — done.** A gated, idempotent comment links the PR on the
-  source issue (`allow_comment: true`, `kind: own` only, never from assembly);
-  auto-runs on `build --publish` when enabled, or via `stead factory comment`.
-- **M4 / M6 / M7 (operational) — runbook ready.** M6 (reconcile-on-sync) is
-  wired into `sync github`; M4 (reach `pr` + required CI) and M7 (the fixed
-  rubric, pre-registered issue sets A/B/C + hold-out, and the sign-off
-  procedure) are documented in [Dogfood](dogfood.md) and need the human's real
-  model + CI runs, not more code.
+Two states: **code landed** (the change is merged) and **acceptance met** (the
+milestone's own measurement passed). Only the second is "done".
+
+| Milestone | Code | Acceptance |
+|---|---|---|
+| M0 foundations | landed | not run |
+| M1 harness | landed | baseline + first-attempt score **not run** |
+| M5 spec draft | landed | not run |
+| M3 intake | landed | not run |
+| M2 comment | landed | not run |
+| M4, M6, M7 | procedure written | not run |
+
+The code milestones above carry the review fixes for PRs #4–#8. Acceptance needs
+real model runs and a green PR at the `pr` ceiling, per [Dogfood](dogfood.md).
 
 ## In scope (state)
 

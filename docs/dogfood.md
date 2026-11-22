@@ -78,17 +78,47 @@ detects this by comparing the merged head SHA to the recorded build commit).
 ## Pre-registered issue sets
 
 Frozen before any tuning. None of the M7 sign-off issues may have been used for
-tuning.
+tuning. "Unseen" means not used while tuning the harness — the full text is
+written here now, and the harness is frozen before any of it is run.
 
 - **Set A — tuning (3).** The three candidate specs below. Used to tune the
   harness; NOT scored.
-- **Set B — unseen scoring (3).** Reserved for a single first-attempt score once
-  the harness is frozen: (1) `stead contribution list --json`, (2) `doctor`
-  reports an unapproved `stead-build`-labeled issue, (3) `stead status` prints a
-  build-record summary. Not listed in detail here so they stay unseen.
-- **Set C — M7 fresh end-to-end (2) + 1 hold-out.** Run the full
-  monitor→draft→approve→build→PR→comment→merge loop fresh. The hold-out is
-  scored separately and was never used in tuning or M1.
+- **Set B — unseen scoring (3).** Frozen full text below; run once on a single
+  first attempt after the harness is frozen.
+- **Set C — M7 fresh end-to-end (3) + 1 hold-out.** Frozen full text below; run
+  the full monitor→draft→approve→build→PR→comment→merge loop fresh. The
+  hold-out is scored separately and was never used in tuning or M1.
+
+### Pass bar
+
+- **Set B:** ≥2 of 3 correct on their single first attempt, per the rubric above.
+- **Set C:** all 3 fresh issues correct through the full loop, and the hold-out
+  correct. **2 of 3 is a smoke bar on n=3, not a reliability estimate.**
+
+### Set B (frozen)
+
+1. `stead contribution list --json` — add a `--json` flag to
+   `contribution list` that emits one JSON object per contribution (id, repo,
+   kind, number, role, state, ci, title) as a JSON array; the default table
+   output is unchanged; a test covers the JSON shape and the unchanged default.
+2. `doctor` flags an unapproved `stead-build`-labeled issue — `stead doctor`
+   warns when a contribution tagged `stead-build` has no `spec_sha`, warns when
+   `spec_sha` is present but the body changed, and is silent on an approved one;
+   a test covers all three.
+3. `stead status` prints a build-record summary — `stead status --project P` adds
+   a one-line summary of the most recent build record for that project's repo
+   (outcome, reason, date); a test covers a repo with and without records.
+
+### Set C (frozen, fresh end-to-end)
+
+1. Add a `--sort` option to `stead task list` (by title then status).
+2. `stead repo list --json`.
+3. `stead doctor` reports a contribution whose `repo:` relation is missing.
+
+### Hold-out (frozen)
+
+`stead metrics --json` emits `attempts`, `build_failures`, and `infra_failures`
+as top-level numbers.
 
 ## M4 — build → PR → CI (procedure)
 
@@ -99,8 +129,10 @@ To reach a real green PR at the `pr` ceiling:
    `--wait` polls its checks.
 3. Configure branch protection with CI as a **required** status check on the
    default branch (so a red PR cannot merge).
-4. Confirm the PR body carries `Closes #N`, and that `.git`/hook protection holds
-   against a real `gh` session.
+4. Confirm the PR body carries `Closes #N`, and verify the `.git`/hook protection
+   holds against a real `gh` session: run a spec whose check plants a
+   `post-commit` hook in `.git/hooks`; the build must fail with the `tamper`
+   reason and the hook must be gone afterwards.
 
 
 ## Why a separate checkout
@@ -195,6 +227,20 @@ Make the approval gate visible to a hand editor.
 - [ ] approved specs produce no warning
 - [ ] a test covers all three cases
 ```
+
+## Baseline (M1.1) and measurement record
+
+Before scoring Set B, run the baseline: the same Set A specs, each from a clean
+state, on LFM3-1.7B and on one larger local model. This separates harness limits
+from model limits. Record every published result with enough to repeat it:
+
+| Field | Value |
+|---|---|
+| model (name + quantization) | |
+| context length the model loaded with | |
+| LM Studio version | |
+| harness commit (frozen) | |
+| attempts per issue (with each failure's reason code) | |
 
 ## Results (real runs)
 
