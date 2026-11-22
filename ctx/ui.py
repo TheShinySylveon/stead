@@ -25,10 +25,12 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from ctx import autonomy, cli, db, factory, frontmatter, objects
+from ctx.tasks import TaskRunner
 
 PKG_DIR = Path(__file__).resolve().parent
 PAGE_PATH = PKG_DIR / "cockpit.html"
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
+_RUNNER = TaskRunner()
 _GATE_STYLE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Stead</title>
 <meta name="description" content="Enter the shared-server access token. It is not stored in git.">
@@ -946,9 +948,12 @@ def triage_inbox(root: Path, name: str, otype: str, project: str | None,
     return result
 
 
-def sync_github(root: Path, offline: bool = False) -> dict:
+def sync_github(root: Path, offline: bool = False, *, repos: list[str] | None = None,
+                digest: bool = False, all_repos: bool = False,
+                remember: bool = False) -> dict:
     """Read-only GitHub refresh, or an offline re-index. Never writes remotely."""
-    _call(cli.cmd_sync_github, root, "@me", 30, bool(offline))
+    _call(cli.cmd_sync_github, root, "@me", 30, bool(offline),
+          digest=digest, repos=repos or None, all_repos=all_repos, remember=remember)
     return {"ok": True, "offline": bool(offline)}
 
 
@@ -972,11 +977,15 @@ def new_factory(root: Path, name: str, title: str) -> dict:
     return {"ok": True, "name": folder.name, "path": _rel(root, folder)}
 
 
-def watch_now(root: Path, build: bool = False) -> dict:
-    """Watch from the cockpit. Local only: publish and merge stay CLI-only."""
+def watch_now(root: Path, build: bool = False, publish: bool = False,
+              merge: bool = False) -> dict:
+    """Watch from the cockpit. Publish/merge are remote writes, so they are
+    refused on a shared server."""
     if build:
         require_local_execution(root)
-    report = factory.watch_specs(root, build=build, publish=False, merge=False)
+    if publish or merge:
+        _refuse_shared_remote(root)
+    report = factory.watch_specs(root, build=build, publish=publish, merge=merge)
     return {"ok": True, **report}
 
 
@@ -1065,14 +1074,134 @@ def approve_spec(root: Path, ref: str) -> dict:
         raise UiError(str(exc)) from exc
 
 
-def build_with_model(root: Path, contribution: str) -> dict:
-    """Build locally from the cockpit. Publishing and merging stay CLI-only."""
+def _opt_int(payload: dict, key: str) -> int | None:
+    raw = payload.get(key)
+    if raw in (None, ""):
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        raise UiError(f"{key} must be a whole number")
+
+
+def _opt_float(payload: dict, key: str) -> float | None:
+    raw = payload.get(key)
+    if raw in (None, ""):
+        return None
+    try:
+        return float(raw)
+    except (TypeError, ValueError):
+        raise UiError(f"{key} must be a number")
+
+
+def _require_confirm(payload: dict, what: str) -> None:
+    if not payload.get("confirm"):
+        raise UiError(f"{what} writes to GitHub. Confirm before it runs.")
+
+
+def _refuse_shared_remote(root: Path) -> None:
+    if shared_server(root):
+        raise UiError("publish, merge, and comment are not available on a "
+                      "shared server. Run them from the machine that owns "
+                      "the checkout.")
+
+
+def build_task(root: Path, contribution: str, max_minutes: int | None,
+               tasks: TaskRunner) -> dict:
+    """Build off the request; poll /api/task. Publishing and merging stay
+    separate, explicit steps."""
+    require_local_execution(root)
     from ctx.agent import BuildError, build
     from ctx.models import ModelError
-    require_local_execution(root)
+
+    def run(progress):
+        kwargs = {"publish": False, "merge": False, "progress": progress}
+        if max_minutes:
+            kwargs["max_minutes"] = max_minutes
+        try:
+            return build(root, contribution, **kwargs)
+        except (BuildError, ModelError, TimeoutError) as exc:
+            raise UiError(str(exc)) from exc
+    return {"ok": True, "task": tasks.start("build", contribution, run)}
+
+
+def draft_spec_task(root: Path, contribution: str, redraft: bool,
+                    tasks: TaskRunner) -> dict:
+    """Draft a spec off the request; poll /api/task. Never approves."""
+    from ctx.models import ModelError
+    from ctx.spec import SpecError, draft_spec
+
+    def run(_progress):
+        try:
+            return draft_spec(root, contribution, redraft=redraft)
+        except (SpecError, ModelError, TimeoutError) as exc:
+            raise UiError(str(exc)) from exc
+    return {"ok": True, "task": tasks.start("draft", contribution, run)}
+
+
+def review_task(root: Path, contribution: str, tasks: TaskRunner) -> dict:
+    """Run the independent reviewer off the request; poll /api/task."""
+    from ctx.models import ModelError
+    from ctx.review import ReviewError, review as run_review
+
+    def run(_progress):
+        try:
+            return run_review(root, contribution)
+        except (ReviewError, ModelError, TimeoutError) as exc:
+            raise UiError(str(exc)) from exc
+    return {"ok": True, "task": tasks.start("review", contribution, run)}
+
+
+def metrics_report(root: Path, repo: str = "", since: str = "") -> dict:
+    from ctx import metrics
     try:
-        return build(root, contribution, publish=False, merge=False)
-    except (BuildError, ModelError) as exc:
+        return metrics.collect(root, repo=repo or None, since=since or None)
+    except ValueError as exc:
+        raise UiError(str(exc)) from exc
+
+
+def metrics_mark(root: Path, record: str, correct: bool) -> dict:
+    from ctx.writeback import WritebackError, mark_correct
+    try:
+        return {"ok": True, **mark_correct(root, record, correct)}
+    except WritebackError as exc:
+        raise UiError(str(exc)) from exc
+
+
+def doctor_report(root: Path) -> dict:
+    from ctx import doctor
+    return doctor.run(root)
+
+
+def set_stopped(root: Path, stopped: bool) -> dict:
+    from ctx import safety
+    return {"ok": True, **safety.set_stopped(root, stopped)}
+
+
+def publish_contribution(root: Path, contribution: str) -> dict:
+    _refuse_shared_remote(root)
+    from ctx.publish import PublishError, publish
+    try:
+        return {"ok": True, **publish(root, contribution)}
+    except PublishError as exc:
+        raise UiError(str(exc)) from exc
+
+
+def merge_contribution(root: Path, contribution: str) -> dict:
+    _refuse_shared_remote(root)
+    from ctx.merge import MergeError, merge
+    try:
+        return {"ok": True, **merge(root, contribution)}
+    except MergeError as exc:
+        raise UiError(str(exc)) from exc
+
+
+def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
+    _refuse_shared_remote(root)
+    from ctx.comment import CommentError, comment
+    try:
+        return {"ok": True, **comment(root, contribution, pr_url)}
+    except CommentError as exc:
         raise UiError(str(exc)) from exc
 
 
@@ -1134,21 +1263,30 @@ def hook_new(root: Path) -> dict:
     return {"ok": True, "token": set_hook_token(root)}
 
 
-def schedule_view(root: Path, project: str | None = None) -> dict:
-    from ctx.schedule import ScheduleError, show, weekly_command
+def schedule_view(root: Path, project: str | None = None, *, interval: str | None = None,
+                  watch: bool = False, merge: bool = False) -> dict:
+    from ctx.schedule import (ScheduleError, monitor_show, show, weekly_command)
     try:
-        text = show(root, project)
-        command = weekly_command(root, project)
+        if interval:
+            text = monitor_show(root, interval=interval, watch=watch, merge=merge)
+            command = ""
+        else:
+            text = show(root, project, watch=watch, merge=merge)
+            command = weekly_command(root, project, watch=watch, merge=merge)
     except ScheduleError as exc:
         raise UiError(str(exc)) from exc
     return {"ok": True, "text": text, "command": command,
             "platform": "windows" if sys.platform == "win32" else sys.platform}
 
 
-def schedule_install(root: Path, project: str | None = None) -> dict:
-    from ctx.schedule import ScheduleError, install
+def schedule_install(root: Path, project: str | None = None, *, interval: str | None = None,
+                     watch: bool = False, merge: bool = False) -> dict:
+    from ctx.schedule import ScheduleError, install, install_monitor
     try:
-        name = install(root, project=project)
+        if interval:
+            name = install_monitor(root, interval=interval, watch=watch, merge=merge)
+        else:
+            name = install(root, project=project, watch=watch, merge=merge)
     except ScheduleError as exc:
         raise UiError(str(exc)) from exc
     return {"ok": True, "task": name}
@@ -1316,8 +1454,10 @@ def ensure_index(root: Path) -> None:
 
 def dispatch(root: Path, method: str, path: str, query: dict,
              payload: dict | None, *, token_ok: bool, port: int | None = None,
-             session_actor: str = "") -> tuple[int, bytes, str]:
+             session_actor: str = "",
+             tasks: TaskRunner | None = None) -> tuple[int, bytes, str]:
     """Handle one cockpit request. Returns (status, body, content-type)."""
+    tasks = tasks or _RUNNER
     try:
         if method == "GET" and path == "/":
             page = PAGE_PATH.read_text(encoding="utf-8")
@@ -1335,6 +1475,16 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             return 200, _json(detail), "application/json; charset=utf-8"
         if method == "GET" and path == "/api/inbox":
             return 200, _json(read_inbox(root, query.get("name", ""))), "application/json; charset=utf-8"
+        if method == "GET" and path == "/api/task":
+            task = tasks.get(query.get("id", ""))
+            if task is None:
+                return 404, _json({"error": "task not found"}), "application/json; charset=utf-8"
+            return 200, _json(task), "application/json; charset=utf-8"
+        if method == "GET" and path == "/api/metrics":
+            return 200, _json(metrics_report(root, query.get("repo", ""), query.get("since", ""))), \
+                "application/json; charset=utf-8"
+        if method == "GET" and path == "/api/doctor":
+            return 200, _json(doctor_report(root)), "application/json; charset=utf-8"
         if method == "GET" and path == "/favicon.ico":
             return 204, b"", "image/x-icon"
         if method != "POST":
@@ -1418,7 +1568,11 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/inbox/delete":
             result = delete_inbox(root, payload.get("name") or "")
         elif path == "/api/sync":
-            result = sync_github(root, bool(payload.get("offline")))
+            result = sync_github(root, bool(payload.get("offline")),
+                                 repos=payload.get("repos"),
+                                 digest=bool(payload.get("digest")),
+                                 all_repos=bool(payload.get("all_repos")),
+                                 remember=bool(payload.get("remember")))
         elif path == "/api/factory/defaults":
             if shared_server(root):
                 raise UiError(
@@ -1432,6 +1586,10 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     root,
                     trigger=payload.get("trigger") or None,
                     reach=payload.get("reach") or None,
+                    max_builds_per_day=_opt_int(payload, "max_builds_per_day"),
+                    build_minutes=_opt_int(payload, "build_minutes"),
+                    max_tokens_per_build=_opt_int(payload, "max_tokens_per_build"),
+                    max_cost_per_build_usd=_opt_float(payload, "max_cost_per_build_usd"),
                 )
                 result["ok"] = True
             except AutonomyError as exc:
@@ -1451,6 +1609,7 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     name=payload.get("name") or "",
                     base_url=payload.get("base_url") or "",
                     api_key=payload.get("api_key"),
+                    call_timeout=_opt_int(payload, "call_timeout"),
                 )
                 result["ok"] = True
             except ModelError as exc:
@@ -1500,7 +1659,11 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/factory/new":
             result = new_factory(root, payload.get("name") or "", payload.get("title") or "")
         elif path == "/api/factory/watch":
-            result = watch_now(root, bool(payload.get("build")))
+            if payload.get("publish") or payload.get("merge"):
+                _require_confirm(payload, "watch publish")
+            result = watch_now(root, bool(payload.get("build")),
+                               publish=bool(payload.get("publish")),
+                               merge=bool(payload.get("merge")))
         elif path == "/api/eval/run":
             result = check_evals(root, payload.get("factory") or "")
         elif path == "/api/eval/status":
@@ -1512,7 +1675,8 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/spec/approve":
             result = approve_spec(root, payload.get("contribution") or "")
         elif path == "/api/build":
-            result = build_with_model(root, payload.get("contribution") or "")
+            result = build_task(root, payload.get("contribution") or "",
+                                _opt_int(payload, "max_minutes"), tasks)
         elif path == "/api/eval/judge":
             result = judge_eval(root, payload.get("factory") or "",
                                 payload.get("case") or "", payload.get("version") or "")
@@ -1527,12 +1691,39 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/hook":
             result = hook_new(root) if payload.get("create") else hook_view(root)
         elif path == "/api/schedule":
+            interval = payload.get("interval") or None
+            watch = bool(payload.get("watch"))
+            merge = bool(payload.get("merge"))
             if payload.get("install"):
-                result = schedule_install(root, payload.get("project") or None)
+                result = schedule_install(root, payload.get("project") or None,
+                                          interval=interval, watch=watch, merge=merge)
             else:
-                result = schedule_view(root, payload.get("project") or None)
+                result = schedule_view(root, payload.get("project") or None,
+                                       interval=interval, watch=watch, merge=merge)
         elif path == "/api/account/reset":
             result = reset_account(root, payload.get("name") or "")
+        elif path == "/api/spec/draft":
+            result = draft_spec_task(root, payload.get("contribution") or "",
+                                     bool(payload.get("redraft")), tasks)
+        elif path == "/api/review":
+            result = review_task(root, payload.get("contribution") or "", tasks)
+        elif path == "/api/metrics/mark":
+            result = metrics_mark(root, payload.get("record") or "",
+                                  str(payload.get("correct")).lower() == "true")
+        elif path == "/api/factory/stop":
+            result = set_stopped(root, True)
+        elif path == "/api/factory/start":
+            result = set_stopped(root, False)
+        elif path == "/api/factory/publish":
+            _require_confirm(payload, "publish")
+            result = publish_contribution(root, payload.get("contribution") or "")
+        elif path == "/api/factory/merge":
+            _require_confirm(payload, "merge")
+            result = merge_contribution(root, payload.get("contribution") or "")
+        elif path == "/api/factory/comment":
+            _require_confirm(payload, "comment")
+            result = comment_contribution(root, payload.get("contribution") or "",
+                                          payload.get("pr_url") or "")
         else:
             raise UiError("not found", 404)
         return 200, _json(result), "application/json; charset=utf-8"
@@ -1662,7 +1853,8 @@ class CockpitHandler(BaseHTTPRequestHandler):
                 self.server.root, method, parsed.path, self._query(), payload,
                 token_ok=token_ok,
                 port=self.server.server_address[1],
-                session_actor=self._session_actor())
+                session_actor=self._session_actor(),
+                tasks=getattr(self.server, "tasks", None))
             if parsed.path == "/" and status == 200:
                 body = body.replace(b"__CTX_TOKEN__", self.server.token.encode("ascii"), 1)
             self._send(status, body, content_type)
@@ -1829,6 +2021,7 @@ def make_server(root: Path, host: str | None = None, port: int | None = None,
     httpd.access_token = cfg["access_token"]
     httpd.sessions = {}
     httpd.sessions_lock = threading.Lock()
+    httpd.tasks = TaskRunner()
     return httpd
 
 

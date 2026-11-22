@@ -1,4 +1,4 @@
-"""Every local CLI action has a cockpit endpoint. Remote writes stay out."""
+"""Every local CLI action has a cockpit endpoint. Remote writes need confirmation."""
 
 from __future__ import annotations
 
@@ -88,6 +88,21 @@ class CockpitActionsTest(unittest.TestCase):
         req.add_header("Content-Type", f"multipart/form-data; boundary={boundary}")
         req.add_header("X-Ctx-Token", self.token)
         return _read(req)
+
+    def _get(self, path: str) -> tuple[int, dict]:
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}{path}")
+        req.add_header("X-Ctx-Token", self.token)
+        return _read(req)
+
+    def _poll_task(self, task_id: str) -> dict:
+        import time
+        for _ in range(200):
+            status, body = self._get(f"/api/task?id={task_id}")
+            self.assertEqual(status, 200, body)
+            if body.get("status") != "running":
+                return body
+            time.sleep(0.02)
+        return body
 
     def test_index_hook_and_schedule(self) -> None:
         self.assertEqual(self._post("/api/init", {})[0], 200)
@@ -288,7 +303,7 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("shared server", body.get("error", ""))
 
-    def test_watch_build_from_the_cockpit_is_local_only(self) -> None:
+    def test_watch_publish_requires_confirmation(self) -> None:
         import unittest.mock as mock
         from ctx import factory
         seen = {}
@@ -298,12 +313,18 @@ class CockpitActionsTest(unittest.TestCase):
             return {"ran": [], "skipped": []}
 
         with mock.patch.object(factory, "watch_specs", fake):
+            # a remote write is refused without confirmation
             status, body = self._post("/api/factory/watch", {
-                "build": True, "publish": True, "merge": True})
+                "build": True, "publish": True})
+            self.assertEqual(status, 400, body)
+            self.assertIn("Confirm", body.get("error", ""))
+            # with confirmation, publish and merge pass through
+            status, body = self._post("/api/factory/watch", {
+                "build": True, "publish": True, "merge": True, "confirm": True})
         self.assertEqual(status, 200, body)
         self.assertTrue(seen["build"])
-        self.assertFalse(seen["publish"])
-        self.assertFalse(seen["merge"])
+        self.assertTrue(seen["publish"])
+        self.assertTrue(seen["merge"])
 
     def test_watch_build_is_refused_on_a_shared_server(self) -> None:
         (self.root / "stead.json").write_text(json.dumps({
@@ -314,14 +335,24 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("shared server", body.get("error", ""))
 
-    def test_build_endpoint_wires_to_the_agent(self) -> None:
+    def test_build_endpoint_runs_async_and_reports_progress(self) -> None:
         import unittest.mock as mock
         from ctx import agent
-        with mock.patch.object(agent, "build", lambda root, contribution, **kw: {
-                "ok": True, "files": ["app.py"], "branch": "stead/1-x", "checks": ""}):
-            status, body = self._post("/api/build", {"contribution": "contribution-x"})
+
+        def fake(root, contribution, **kw):
+            kw["progress"]("one line of progress")
+            return {"ok": True, "files": ["app.py"], "branch": "stead/1-x",
+                    "checks": ""}
+
+        with mock.patch.object(agent, "build", fake):
+            status, body = self._post("/api/build", {
+                "contribution": "contribution-x", "max_minutes": 90})
         self.assertEqual(status, 200, body)
-        self.assertEqual(body["branch"], "stead/1-x")
+        self.assertIn("task", body)
+        snap = self._poll_task(body["task"])
+        self.assertEqual(snap["status"], "done", snap)
+        self.assertEqual(snap["result"]["branch"], "stead/1-x")
+        self.assertEqual(snap["progress"], ["one line of progress"])
 
     def test_eval_judge_uses_the_latest_draft(self) -> None:
         import unittest.mock as mock
@@ -373,10 +404,50 @@ class CockpitActionsTest(unittest.TestCase):
         view = ui._deployment_view(self.root, 8790)
         self.assertEqual(view["port"], 8790)
 
-    def test_no_remote_write_endpoint_exists(self) -> None:
-        for path in ("/api/factory/publish", "/api/factory/merge", "/api/git/push"):
-            status, _body = self._post(path, {})
-            self.assertEqual(status, 404, path)
+    def test_remote_writes_need_confirmation_and_no_arbitrary_endpoint(self) -> None:
+        for path in ("/api/factory/publish", "/api/factory/merge"):
+            status, body = self._post(path, {"contribution": "contribution-x"})
+            self.assertEqual(status, 400, path)
+            self.assertIn("Confirm", body.get("error", ""))
+        status, _body = self._post("/api/git/push", {})
+        self.assertEqual(status, 404)
+
+    def test_spec_draft_endpoint_starts_a_task(self) -> None:
+        import unittest.mock as mock
+        from ctx import spec
+        with mock.patch.object(spec, "draft_spec",
+                               lambda root, contribution, **kw: {"id": "d-spec",
+                                                                 "path": "d.md"}):
+            status, body = self._post("/api/spec/draft",
+                                      {"contribution": "contribution-x"})
+        self.assertEqual(status, 200, body)
+        snap = self._poll_task(body["task"])
+        self.assertEqual(snap["status"], "done", snap)
+        self.assertEqual(snap["result"]["id"], "d-spec")
+
+    def test_doctor_endpoint_reports_problems(self) -> None:
+        status, body = self._get("/api/doctor")
+        self.assertEqual(status, 200)
+        self.assertIn("errors", body)
+
+    def test_factory_stop_and_start(self) -> None:
+        status, body = self._post("/api/factory/stop", {})
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["stopped"])
+        status, body = self._post("/api/factory/start", {})
+        self.assertEqual(status, 200, body)
+        self.assertFalse(body["stopped"])
+
+    def test_publish_with_confirm_calls_publish(self) -> None:
+        import unittest.mock as mock
+        from ctx import publish
+        with mock.patch.object(publish, "publish",
+                               lambda root, contribution, **kw: {"url": "https://x",
+                                                                 "branch": "b"}):
+            status, body = self._post("/api/factory/publish", {
+                "contribution": "contribution-x", "confirm": True})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["url"], "https://x")
 
 
 def _read(req) -> tuple[int, dict]:
