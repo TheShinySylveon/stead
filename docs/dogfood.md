@@ -54,12 +54,14 @@ gets done on this repo. The full scope and definition of done are in
 
 Honest gaps in the contract today (MVP blockers):
 
-- **The build loop is not yet reliable on a small model.** We are stabilizing at
-  `shadow` (local, hand-reviewed) until a build consistently reaches a green PR.
-  The `pr` ceiling applies once it does.
-- **The monitor → ghost → approve → build path needs end-to-end validation.**
-  The pieces exist (label intake, `spec draft`, `spec approve`, worktree build,
-  publish, comment); the sign-off run below exercises them as one path.
+- **The build loop works but is not measured.** Two tuning specs built
+  correctly on a local 27B model and reached a green, human-merged PR at the
+  `pr` ceiling (#20, #30). Two runs are not a reliability estimate; Set B is
+  the first scored one.
+- **The full path has run once, not been signed off.** #25 went from label
+  intake through `spec draft`, approval, build, publish, the issue comment, and
+  merge (#30). The frozen sign-off below runs it fresh on issues the harness
+  never saw.
 
 ## Correctness rubric (fixed before the run)
 
@@ -310,14 +312,29 @@ stale record (#15); `factory publish` did not save the PR url, so the merge
 would never reconcile (#21); and `sync github` pulled every open PR the user
 had into the dogfood store (#22, `--repo` with `--remember`).
 
-Aggregate, from `stead metrics` (2026-11-22, all on `metrics --since`): 5
-builds, 1 merged, 1 correct, 1 incorrect (the LFM3 run above), 3 failed (2
-build-class, 1 infrastructure), 0 merged after a human edit.
+### Set A spec 1 on Arete 27B (2026-11-22)
 
-Set A spec 1 (`stead context search`, #25) was also built by Stead and merged
-as #30 on 2026-11-22 — the PR body was authored by Stead, a human merged, and
-the added test covers a match, a miss, and the repo filter. Tuning set, so not
-scored.
+`stead context search`, from GitHub issue #25. Tuning set, so not scored. The
+first run of every loop step on a real issue:
 
-Publish these here and link them from the README once they exist. Until then the
-honest claim is the pipeline and the gates, not a success rate.
+- `sync github --repo TheShinySylveon/stead` picked up the labelled issue.
+- `spec draft` (one model call) wrote the spec. Its plan named
+  `stead/context/search.py` and `stead/cli.py`, paths that do not exist; a
+  person fixed the plan before approving, and #26 now shows the drafter the repo
+  tree and flags such paths.
+- The build took 27 minutes, 15 model steps, and no repair rounds: it searched,
+  read `ctx/cli.py` in two ranges and `ctx/objects.py`, wrote `ctx/search.py`,
+  made two `edit`s to `cli.py`, and added six tests that fail before the change
+  and pass after it.
+- Hand-checked correct. One recorded deviation: `--repo` also counts a body line
+  that reads exactly `repo: X`, beyond "a `repo` field or `repo:` tag".
+- `factory publish` opened #30 with `Closes #25`, `factory comment` linked it
+  on the issue, CI passed on Linux and Windows, and a human merged it. `sync
+  github` recorded it as merged with `human_edits: false`.
+
+Aggregate, from `stead metrics` (2026-11-22): 6 builds, 2 merged, 2 correct, 1
+incorrect (the LFM3 run above), 3 failed (2 build-class, 1 infrastructure), 0
+merged after a human edit.
+
+Two tuning runs are not a success rate. The first published score is Set B, on a
+single first attempt each.
