@@ -128,10 +128,10 @@ def save_factory(root: Path, factory: dict) -> None:
     config_path(root).write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
 
 
-def save_model(root: Path, model: dict) -> None:
-    """Write the model block without dropping the deployment fields."""
+def save_model(root: Path, model: dict, block: str = "model") -> None:
+    """Write one model block without dropping the other settings."""
     current = read_raw(root)
-    current["model"] = model
+    current[block] = model
     current.setdefault("deployment", "single")
     current.setdefault("bind", "127.0.0.1")
     current.setdefault("port", 8765)

@@ -59,6 +59,7 @@ code execution with the permissions of your user account.
 | Commit boundary | On | `finish` requires HEAD to still be where Stead left it, stages only the model's own writes (`git add -A -- <paths>`), and refuses a tracked change the checks made; protected or secret paths fail hardest. Untracked leftovers are removed, not staged. The ledger (`tests_touched`, `ci_touched`, the file list) comes from the committed range `base..HEAD`, and a branch whose HEAD moved is reset. |
 | Wall-clock budget | 30 minutes per build | A repair loop cannot run forever. `--max-minutes` changes it; watched builds use `build_minutes`. |
 | Step, edit, and prompt caps | 30 steps, 1 MB written, 120k prompt chars | A model cannot loop, dump unbounded output, or grow the resent transcript without bound; older read outputs are trimmed first. |
+| Token and cost budget | 2M tokens per build; USD off until prices are set | Each build accumulates token usage (provider-reported, else estimated from characters) and aborts past the budget. Set prices with `stead model set --input-price/--output-price`; override per build with `--max-tokens`/`--max-cost`. |
 | Stop file | `.stead-stop` | A build and a watched run stop between steps. `stead factory stop` creates it. |
 
 The container is not available for every repo (it needs Docker and an image
@@ -137,10 +138,15 @@ in progress on the branch, and spends the budget.
 6. The pull request head still equals the commit Stead built and recorded. The
    merge passes `--match-head-commit <sha>`, so a head that moved (a human
    pushed edits) is refused rather than merged unreviewed.
+7. An **independent reviewer** approves the diff. That is a separate model
+   invocation with a fresh context (the builder's transcript is never reused),
+   given only the approved spec and the diff; it must confirm every acceptance
+   criterion and that tests/CI were not weakened. A reject blocks the merge. A
+   repo can opt out explicitly with `merge_without_review: true`; the reviewer
+   model is `stead model set --review`, falling back to the builder model.
 
 The command never passes `--admin`, never pushes the default branch, and never
-merges a draft. It does not add an independent reviewer pass; that is a known
-gap, not a claim.
+merges a draft.
 
 ## Empty work: CI and acceptance checks
 
@@ -165,12 +171,14 @@ stack, not one trick:
    person reviews; CI is the objective backstop.
 
 What CI cannot close: a model-written test can be trivially passing or test the
-wrong thing, and CI runs whatever test was written. So the stack needs an
-**acceptance check** that exercises the actual feature independent of the
-model's tests — a per-spec `acceptance:` command (for example, run the new CLI
-flag and assert the behavior) executed in CI, or an independent reviewer pass.
-That is the criterion→test mapping still to build. `stead build --wait` can poll
-PR checks and record the outcome in the ledger.
+wrong thing, and CI runs whatever test was written. The merge gate now includes
+an **independent reviewer pass** (a fresh invocation that must approve the diff
+against the spec), which raises the cost of empty work. It is not a proof. The
+remaining piece is an **acceptance check** that exercises the actual feature
+independent of the model's tests — a per-spec `acceptance:` command (for
+example, run the new CLI flag and assert the behavior) executed in CI. That
+criterion→test mapping is still to build. `stead build --wait` can poll PR
+checks and record the outcome in the ledger.
 
 ## GitHub writes beyond opening a PR
 
@@ -256,13 +264,15 @@ agent cannot quietly rewrite the context that later builds depend on.
 
 ## Known gaps
 
-- No independent reviewer pass before merge. The gates are the repo's checks,
-  the required-check rule, protected test/CI paths, and explicit `reach: merge`.
-- No token or dollar budget. Bounds are wall-clock (`--max-minutes`), a step
-  cap, a total-edit cap, a 120k-character prompt budget, and a daily
-  watched-build count that counts attempts (failures included), not just
-  successes. Each build records `chars_sent` as a cost proxy; a provider that
-  reports usage could fund a spend cap, which is not wired up.
+- The independent reviewer is a separate model invocation, not a guarantee: it
+  can be fooled by a plausible diff, and unless `stead model set --review` names
+  another model it shares the builder's endpoint. The per-spec acceptance check
+  is still to build.
+- No token or dollar budget is enforced by the provider itself. Stead counts
+  usage (provider-reported, else estimated from characters) and aborts past
+  `max_tokens_per_build` (default 2M) or `max_cost_per_build_usd` (off until
+  prices are set). A provider-side quota is still worth setting for defense in
+  depth.
 - No per-object permissions or roles on the shared server.
 - No login rate limiting, TLS, or CSRF token beyond the custom `X-Ctx-Token`
   header and `SameSite=Lax` session cookie. Use a proxy.

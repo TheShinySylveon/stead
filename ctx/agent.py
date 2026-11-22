@@ -30,7 +30,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ctx import factory, objects, safety
-from ctx.autonomy import AutonomyError, effective, permit
+from ctx.autonomy import (AutonomyError, effective, factory_defaults, permit)
 
 IGNORE_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
                ".specify", "dist", "build", ".next", "target"}
@@ -61,7 +61,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
           publish: bool = False, merge: bool = False, resume: bool = False,
           wait: bool = False, wait_minutes: int = 30,
           repair_rounds: int = 2, max_steps: int = MAX_STEPS,
-          max_minutes: int = MAX_MINUTES) -> dict:
+          max_minutes: int = MAX_MINUTES,
+          max_tokens: int | None = None,
+          max_cost: float | None = None) -> dict:
     """Plan and implement one authored feature spec. Raises BuildError."""
     found = objects.find(root, "contribution", contribution_ref)
     if found is None:
@@ -95,6 +97,18 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                          reason="precondition")
     code = code.resolve()
     policy = effective(root, repo_meta)
+    defaults = factory_defaults(root)
+    try:
+        token_budget = (max_tokens if max_tokens is not None
+                        else int(repo_meta.get("max_tokens")
+                                 or defaults["max_tokens_per_build"]))
+        cost_budget = (max_cost if max_cost is not None
+                       else float(repo_meta.get("max_cost_usd")
+                                  or defaults["max_cost_per_build_usd"]))
+    except (TypeError, ValueError) as exc:
+        raise BuildError(
+            "max_tokens and max_cost_usd must be numbers (repo frontmatter)",
+            reason="precondition") from exc
     try:
         reach = permit(policy, None)
     except AutonomyError as exc:
@@ -164,10 +178,23 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                            if line}
         branch_tracked = _tracked_files(run, code)
         git_before = safety.git_state_snapshot(code)
+        custom_responder = responder is not None
+        usage = {"prompt_tokens": 0, "completion_tokens": 0,
+                 "estimated": custom_responder}
+        try:
+            prices = (float(repo_meta.get("input_price_per_mtok") or 0),
+                      float(repo_meta.get("output_price_per_mtok") or 0))
+        except (TypeError, ValueError) as exc:
+            raise BuildError(
+                "input_price_per_mtok and output_price_per_mtok must be numbers "
+                "(repo frontmatter)", reason="precondition") from exc
         if responder is None:
             from ctx import models
             settings = models.resolve(root)
-            responder = lambda prompt: models.complete(prompt, settings, timeout=300)
+            responder = lambda prompt: models.complete(prompt, settings, timeout=300,
+                                                       usage=usage)
+            prices = (settings.get("input_price_per_mtok") or 0.0,
+                      settings.get("output_price_per_mtok") or 0.0)
         tree = _tree(code)
         context = factory.feature_build_context(root, spec, body, repo_meta, repo_body)
         prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta,
@@ -190,6 +217,21 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             reply = responder(full_prompt)
             chars_received += len(reply) if isinstance(reply, str) else len(str(reply))
             replies.append(reply if isinstance(reply, str) else str(reply))
+            if custom_responder:
+                usage["prompt_tokens"] += max(1, len(full_prompt) // 4)
+                usage["completion_tokens"] += max(1, len(replies[-1]) // 4)
+            tokens_total = usage["prompt_tokens"] + usage["completion_tokens"]
+            if token_budget and tokens_total > token_budget:
+                raise BuildError(
+                    f"the build hit its token budget ({tokens_total} > {token_budget}). "
+                    "Raise --max-tokens, or split the spec.")
+            if cost_budget and (prices[0] or prices[1]):
+                spent = (usage["prompt_tokens"] / 1e6 * prices[0]
+                         + usage["completion_tokens"] / 1e6 * prices[1])
+                if spent > cost_budget:
+                    raise BuildError(
+                        f"the build hit its cost budget (${spent:.2f} > ${cost_budget:.2f}). "
+                        "Raise --max-cost, or split the spec.")
             action = _parse(reply)
             if action is None:
                 transcript.append("Your last reply was not one JSON object. Reply with JSON only.")
@@ -489,6 +531,11 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     "elapsed_seconds": round(time.monotonic() - started, 1),
                     "chars_sent": chars_sent,
                     "chars_received": chars_received,
+                    "tokens_in": usage["prompt_tokens"],
+                    "tokens_out": usage["completion_tokens"],
+                    "cost_usd": round(usage["prompt_tokens"] / 1e6 * prices[0]
+                                      + usage["completion_tokens"] / 1e6 * prices[1], 4),
+                    "estimated_usage": bool(usage.get("estimated")),
                     "published": False,
                     "merged": False,
                 }

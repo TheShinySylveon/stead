@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from ctx import autonomy
+from ctx import autonomy, frontmatter
 from ctx.merge import MergeError, merge
 from ctx.publish import PublishError, publish
 from tests import strip_git_hygiene
@@ -31,6 +31,68 @@ def _view(**overrides) -> str:
     return json.dumps(payload)
 
 
+class ReviewerTest(FeatureBuilderTestCase):
+    """The reviewer sees the pinned commit, rejects a truncated diff, and
+    records whether it ran on an independent model."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self.seed_spec()
+        self.code = Path(tempfile.mkdtemp())
+        self.addCleanup(lambda: __import__("shutil").rmtree(self.code, ignore_errors=True))
+        autonomy.set_repo(self.root, "repo-testuser-my-app", code_path=str(self.code))
+        from ctx import spec as spec_approval
+        spec_approval.approve(self.root, SPEC_ID)
+
+    def _runner(self, diff: str):
+        def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
+            if argv[:2] == ["git", "diff"]:
+                return diff
+            raise AssertionError(argv)
+        return runner
+
+    def test_the_review_is_pinned_to_the_commit(self) -> None:
+        from ctx.review import review
+        seen = []
+
+        def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
+            seen.append(argv)
+            return "diff --git a/app.py b/app.py\n+print('x')\n"
+
+        review(self.root, SPEC_ID, runner=runner,
+               responder=lambda _p: json.dumps({"verdict": "approve", "reason": "ok"}),
+               commit="deadbeef")
+        self.assertTrue(any("main...deadbeef" in " ".join(argv) for argv in seen))
+
+    def test_a_too_large_diff_is_rejected_not_approved(self) -> None:
+        from ctx.review import DIFF_MAX_CHARS, review
+        hinted = []
+
+        def responder(prompt):
+            hinted.append(prompt)
+            return json.dumps({"verdict": "approve", "reason": "looks good"})
+
+        result = review(self.root, SPEC_ID,
+                        runner=self._runner("x" * (DIFF_MAX_CHARS + 1)),
+                        responder=responder)
+        self.assertEqual(result["verdict"], "reject")
+        self.assertTrue(result["truncated"])
+        self.assertEqual(hinted, [])  # the model was never asked to approve it
+
+    def test_the_record_says_when_the_reviewer_is_not_independent(self) -> None:
+        from ctx.review import review
+        result = review(self.root, SPEC_ID,
+                        runner=self._runner("diff --git a/app.py b/app.py\n+print('x')\n"),
+                        responder=lambda _p: json.dumps({"verdict": "approve",
+                                                         "reason": "ok"}))
+        record = self.root / result["record"]["path"]
+        meta, body = frontmatter.parse(record.read_text(encoding="utf-8"))
+        self.assertEqual(meta["reviewer_independent"], "false")
+        self.assertIn("builder's model", body)
+
+
 class MergeTest(FeatureBuilderTestCase):
     def setUp(self) -> None:
         super().setUp()
@@ -39,10 +101,73 @@ class MergeTest(FeatureBuilderTestCase):
         self.addCleanup(lambda: __import__("shutil").rmtree(self.code, ignore_errors=True))
 
     def _allow(self, **extra) -> None:
-        fields = {"trust_checks": "host", "merge_without_required_checks": True}
+        fields = {"trust_checks": "host", "merge_without_required_checks": True,
+                  "merge_without_review": True}
         fields.update(extra)
         autonomy.set_repo(self.root, "repo-testuser-my-app", reach="merge",
                           code_path=str(self.code), extra=fields)
+
+    def _review_runner(self, calls: list | None = None):
+        """A runner that reaches the reviewer: branch, head, PR view, diff."""
+        def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
+            if calls is not None:
+                calls.append(argv)
+            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+                return "feature/json\n"
+            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+                return "builtsha\n"
+            if argv[:3] == ["gh", "pr", "view"]:
+                return _view()
+            if argv[:2] == ["git", "diff"]:
+                return "diff --git a/app.py b/app.py\n+print('x')\n"
+            if argv[:4] == ["gh", "pr", "merge", "9"]:
+                return ""
+            raise AssertionError(argv)
+        return runner
+
+    def test_the_independent_reviewer_must_approve_before_merge(self) -> None:
+        from ctx import spec as spec_approval
+        spec_approval.approve(self.root, SPEC_ID)
+        self._allow(merge_without_review=False)
+        prompts = []
+
+        def reviewer(prompt):
+            prompts.append(prompt)
+            return json.dumps({"verdict": "approve", "reason": "criteria met"})
+
+        opened = merge(self.root, SPEC_ID, runner=self._review_runner(),
+                       reviewer=reviewer)
+        self.assertTrue(opened["merged"])
+        self.assertIn("Acceptance criteria", prompts[0])
+        self.assertIn("diff --git", prompts[0])
+        self.assertIn("untrusted", prompts[0])
+        reviews = list((self.root / "context/documents").glob("review-*.md"))
+        self.assertEqual(len(reviews), 1)
+
+    def test_the_independent_reviewer_can_block_the_merge(self) -> None:
+        from ctx import spec as spec_approval
+        spec_approval.approve(self.root, SPEC_ID)
+        self._allow(merge_without_review=False)
+        calls: list = []
+
+        def reviewer(_prompt):
+            return json.dumps({"verdict": "reject", "reason": "no test for the flag"})
+
+        with self.assertRaises(MergeError) as caught:
+            merge(self.root, SPEC_ID, runner=self._review_runner(calls),
+                  reviewer=reviewer)
+        self.assertIn("rejected", str(caught.exception))
+        self.assertFalse(any(argv[1:3] == ["pr", "merge"] for argv in calls
+                             if len(argv) > 2))
+
+    def test_a_merge_without_a_model_or_reviewer_is_refused(self) -> None:
+        from ctx import spec as spec_approval
+        spec_approval.approve(self.root, SPEC_ID)
+        self._allow(merge_without_review=False)
+        with self.assertRaises(MergeError) as caught:
+            merge(self.root, SPEC_ID, runner=self._review_runner())
+        self.assertIn("reviewer pass could not run", str(caught.exception))
 
     def test_inherited_merge_never_calls_gh(self) -> None:
         autonomy.set_repo(self.root, "repo-testuser-my-app", code_path=str(self.code))

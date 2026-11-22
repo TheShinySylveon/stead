@@ -64,13 +64,19 @@ def public_model(root: Path) -> dict:
         "key_set": env_set or file_set,
         "key_from": "environment" if env_set else ("file" if file_set else ""),
         "key_env": key_env,
+        "input_price_per_mtok": _price(raw.get("input_price_per_mtok")),
+        "output_price_per_mtok": _price(raw.get("output_price_per_mtok")),
     }
 
 
 def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
-              api_key: str | None = None, api_key_env: str = ENV_KEY) -> dict:
+              api_key: str | None = None, api_key_env: str = ENV_KEY,
+              block: str = "model", input_price: float | None = None,
+              output_price: float | None = None) -> dict:
     if provider not in PROVIDERS:
         raise ModelError(f"invalid provider {provider!r}")
+    if block not in {"model", "reviewer"}:
+        raise ModelError(f"invalid model block {block!r}")
     name = (name or "").strip()
     if not name or len(name) > 200 or any(c in name for c in "\r\n"):
         raise ModelError("a model needs a name")
@@ -78,16 +84,17 @@ def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
     if not url:
         raise ModelError("a custom provider needs a base URL")
     url = _check_url(url)
-    current = _block(root)
+    current = _block(root, block)
     stored = current.get("api_key") or ""
     if api_key:
         stored = api_key.strip()
     else:
-        # The stored key belongs to the old endpoint. When the host changes,
-        # drop it: a key must never ride along to a different server.
-        old_host = (urlparse(current.get("base_url") or "").hostname or "").lower()
-        new_host = (urlparse(url).hostname or "").lower()
-        if old_host and new_host and old_host != new_host:
+        # The stored key belongs to the old endpoint. When the scheme, host,
+        # or port changes, drop it: a key must never ride along to a different
+        # server.
+        old_endpoint = _endpoint(current.get("base_url") or "")
+        new_endpoint = _endpoint(url)
+        if old_endpoint[0] and old_endpoint != new_endpoint:
             stored = ""
     model = {
         "provider": provider,
@@ -97,13 +104,25 @@ def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
     }
     if stored:
         model["api_key"] = stored
-    config.save_model(root, model)
+    price_in = _price(input_price) if input_price is not None else _price(current.get("input_price_per_mtok"))
+    price_out = _price(output_price) if output_price is not None else _price(current.get("output_price_per_mtok"))
+    if price_in:
+        model["input_price_per_mtok"] = price_in
+    if price_out:
+        model["output_price_per_mtok"] = price_out
+    config.save_model(root, model, block=block)
     return public_model(root)
 
 
-def resolve(root: Path) -> dict:
-    """Settings for one call. Includes the key. Do not print or store this."""
-    raw = _block(root)
+def resolve(root: Path, block: str = "model") -> dict:
+    """Settings for one call. Includes the key. Do not print or store this.
+
+    `block="reviewer"` reads the optional independent-reviewer endpoint and
+    falls back to the builder model when none is configured.
+    """
+    raw = _block(root, block)
+    if block == "reviewer" and not (raw.get("name") and raw.get("base_url")):
+        raw = _block(root, "model")
     if not raw.get("name") or not raw.get("base_url"):
         raise ModelError(
             "no model configured. Set one with `stead model set` or in Settings.")
@@ -114,12 +133,36 @@ def resolve(root: Path) -> dict:
         "name": raw["name"],
         "base_url": _check_url(raw["base_url"]),
         "api_key": key,
+        "input_price_per_mtok": _price(raw.get("input_price_per_mtok")),
+        "output_price_per_mtok": _price(raw.get("output_price_per_mtok")),
     }
     if _needs_key(settings) and not key:
         raise ModelError(
             f"this model needs an API key. Set {key_env}, or save a key in "
             "Settings. The key is not written into context/.")
     return settings
+
+
+def _price(value) -> float:
+    try:
+        return max(0.0, float(value))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+def _endpoint(url: str) -> tuple:
+    """Scheme, host, and port. A key belongs to one endpoint."""
+    try:
+        parsed = urlparse(url or "")
+        return (parsed.scheme.lower(), (parsed.hostname or "").lower(), parsed.port)
+    except ValueError:
+        return ("", "", None)
+
+
+def reviewer_configured(root: Path) -> bool:
+    """True when a separate reviewer endpoint is set (not the builder)."""
+    raw = _block(root, "reviewer")
+    return bool(raw.get("name") and raw.get("base_url"))
 
 
 def draft(root: Path, prompt: str, *, transport=None, timeout: float = 120) -> str:
@@ -129,14 +172,36 @@ def draft(root: Path, prompt: str, *, transport=None, timeout: float = 120) -> s
 
 
 def complete(prompt: str, settings: dict, *, transport=None,
-             timeout: float = 120, temperature: float = 0.2) -> str:
+             timeout: float = 120, temperature: float = 0.2,
+             usage: dict | None = None) -> str:
     url, headers, body = _request(settings, prompt, temperature)
     key = settings.get("api_key") or ""
     if transport is None:
         raw = _post(url, body, headers, key, timeout)
     else:
         raw = transport(body, settings)
-    return _content(raw, settings.get("provider") or "")
+    text = _content(raw, settings.get("provider") or "")
+    if usage is not None:
+        _add_usage(usage, raw, prompt, text)
+    return text
+
+
+def _add_usage(usage: dict, data: dict, prompt: str, text: str) -> None:
+    """Accumulate token usage for a budget. Providers may report it (OpenAI
+    prompt_tokens/completion_tokens, Anthropic input_tokens/output_tokens);
+    otherwise estimate from characters (4 chars ≈ 1 token), so the budget
+    always has a basis and never needs provider-specific pricing to be safe."""
+    block = data.get("usage") if isinstance(data, dict) else None
+    if isinstance(block, dict):
+        inp = block.get("prompt_tokens", block.get("input_tokens"))
+        out = block.get("completion_tokens", block.get("output_tokens"))
+        if isinstance(inp, (int, float)) and isinstance(out, (int, float)):
+            usage["prompt_tokens"] = int(usage.get("prompt_tokens", 0)) + int(inp)
+            usage["completion_tokens"] = int(usage.get("completion_tokens", 0)) + int(out)
+            return
+    usage["prompt_tokens"] = int(usage.get("prompt_tokens", 0)) + max(1, len(prompt) // 4)
+    usage["completion_tokens"] = int(usage.get("completion_tokens", 0)) + max(1, len(text) // 4)
+    usage["estimated"] = True
 
 
 def test_model(root: Path, prompt: str = "Reply with exactly one word: ok",
@@ -343,8 +408,8 @@ def parse_verdict(text: str) -> tuple[str, str]:
     return verdict, reason
 
 
-def _block(root: Path) -> dict:
-    raw = config.read_raw(root).get("model") or {}
+def _block(root: Path, name: str = "model") -> dict:
+    raw = config.read_raw(root).get(name) or {}
     return raw if isinstance(raw, dict) else {}
 
 

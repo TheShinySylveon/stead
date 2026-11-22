@@ -115,21 +115,22 @@ state.db             <- GITIGNORED, rebuildable operational index (stead init)
 python -m stead version                       # print 0.1.0
 python -m stead doctor                        # lint frontmatter, ids, dates, relations
 python -m stead model show                    # configured endpoint; never prints the key
-python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME
+python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME [--review] [--input-price X --output-price Y]
 python -m stead eval run [--factory F]        # structural check, no model
 python -m stead repo set ID --trigger on-demand|watch --reach ghost|shadow|draft-pr|pr|merge
 python -m stead repo set ID --set checks_isolation=docker --set checks_image=python:3.12-slim
 python -m stead factory stop                  # .stead-stop: halt builds between steps
 python -m stead factory start                 # remove the stop file
-python -m stead factory defaults --max-builds-per-day N --build-minutes N
+python -m stead factory defaults --max-builds-per-day N --build-minutes N [--max-tokens-per-build N] [--max-cost-per-build USD]
 python -m stead factory watch                # watched feature specs; no push
 python -m stead factory new --name NAME --title T
 python -m stead inbox import PATH             # local .eml .ics .md .txt into inbox/
 python -m stead hook set                      # webhook token, printed once
 python -m stead factory publish --contribution ID  # isolated branch + pull request. Never merges.
-python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait]  # model plans, edits, checks, commits
+python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] [--max-tokens N] [--max-cost USD]  # model plans, edits, checks, commits
+python -m stead review --contribution ID        # independent reviewer pass: approve or reject the branch diff
 python -m stead spec approve --contribution ID  # bind approval to the spec body hash
-python -m stead factory merge --contribution ID    # green checks only. Repo must say reach: merge.
+python -m stead factory merge --contribution ID    # green checks + independent reviewer. Repo must say reach: merge.
 python -m stead account add --name NAME --actor ACTOR  # shared-server sign-in. Hash only.
 python -m stead init                          # rebuild state.db from schema.sql + files
 python -m stead task add --title T --project P [--status to-do]
@@ -283,11 +284,13 @@ paths by default; a repo opts in with `allow_test_edits` / `allow_ci_edits`.
 `checks_isolation: docker` + `checks_image` runs it in a container with no
 network. Merge requires isolation or an explicit `trust_checks: host`, and the
 default branch must have required status checks (or an explicit
-`merge_without_required_checks: true`). A build has a wall-clock budget
-(`--max-minutes`, watched builds use `build_minutes`), a step cap, and a stop
+`merge_without_required_checks: true`). Merge also runs an independent reviewer
+pass unless the repo sets `merge_without_review: true`. A build has a wall-clock
+budget (`--max-minutes`, watched builds use `build_minutes`), a token budget
+(default 2M, `--max-tokens`) and an optional USD budget, a step cap, and a stop
 file (`stead factory stop` / `.stead-stop`). Watched builds stop at
-`max_builds_per_day`. `stead doctor` lints the store; `docs/trust.md` is the
-threat model and egress table.
+`max_builds_per_day` and the token/cost budgets. `stead doctor` lints the store;
+`docs/trust.md` is the threat model and egress table.
 
 **Spec approval is bound to content.** `stead spec approve` stores a SHA-256 of
 the body; a build refuses an unapproved spec or one whose body changed. The

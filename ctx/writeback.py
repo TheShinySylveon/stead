@@ -22,6 +22,7 @@ from pathlib import Path
 from ctx import frontmatter, objects
 
 RECORD_TAG = "build-record"
+REVIEW_TAG = "review-record"
 
 
 class WritebackError(Exception):
@@ -74,6 +75,9 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         "repair_rounds": str(result.get("repair_rounds") or 0),
         "chars_sent": str(result.get("chars_sent") or 0),
         "chars_received": str(result.get("chars_received") or 0),
+        "tokens_in": str(result.get("tokens_in") or 0),
+        "tokens_out": str(result.get("tokens_out") or 0),
+        "cost_usd": str(result.get("cost_usd") or 0),
         "files": list(result.get("files") or []),
         "leftovers": list(result.get("leftovers") or []),
         "tests_touched": list(result.get("tests_touched") or []),
@@ -175,6 +179,55 @@ def record_failure(root: Path, contribution_ref: str, error, *,
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
     return {"id": doc_id, "path": path.relative_to(root).as_posix(),
             "outcome": "failed"}
+
+
+def record_review(root: Path, contribution_ref: str, result: dict) -> dict:
+    """Write the independent reviewer's verdict as a versioned document."""
+    contrib, repo_meta = _repo_of(root, contribution_ref)
+    repo_id = str(repo_meta.get("id") or contrib.get("repo") or "repo")
+    today = date.today().isoformat()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    slug = re.sub(r"[^a-z0-9]+", "-",
+                  (contrib.get("title") or contribution_ref).lower()).strip("-") or "review"
+    folder = root / "context" / "documents"
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"review-{slug[:40]}-{stamp}"
+    path = folder / f"{name}.md"
+    n = 2
+    while path.exists():
+        path = folder / f"{name}-{n}.md"
+        n += 1
+    doc_id = f"document-{path.stem}"
+    verdict = str(result.get("verdict") or "reject")
+    title = f"Review: {contrib.get('title') or contribution_ref} ({verdict})"
+    meta = {
+        "id": doc_id, "type": "document", "title": title[:200],
+        "created": today, "updated": today, "status": "active",
+        "tags": [REVIEW_TAG, f"repo:{repo_id}"],
+        "verdict": verdict,
+        "contribution": str(contrib.get("id") or contribution_ref),
+        "reason": str(result.get("reason") or "")[:500],
+        "reviewer_model": str(result.get("model") or ""),
+        "reviewer_independent": "true" if result.get("independent") else "false",
+        "truncated": "true" if result.get("truncated") else "false",
+    }
+    if repo_meta.get("project"):
+        meta["project"] = repo_meta["project"]
+    from ctx.actors import stamp as actor_stamp
+    actor_stamp(root, meta)
+    note = ("A separate model invocation reviewed the approved spec against the\n"
+            "branch diff. It is an independent pass, not a guarantee.\n")
+    if not result.get("independent"):
+        note = ("The review ran on the builder's model: no separate reviewer\n"
+                "endpoint is configured (`stead model set --review`). It is a\n"
+                "fresh context, not an independent model.\n")
+    body = (f"# Independent review: {contrib.get('title') or contrib.get('id')}\n\n"
+            f"Verdict: **{verdict}**.\n\n"
+            f"{str(result.get('reason') or '').strip()}\n\n"
+            + note)
+    path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+    return {"id": doc_id, "path": path.relative_to(root).as_posix(),
+            "verdict": verdict}
 
 
 def record_for_branch(root: Path, repo_id: str, branch: str) -> dict | None:

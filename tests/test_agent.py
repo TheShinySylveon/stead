@@ -938,6 +938,45 @@ class ReviewRound3Test(BuildFixture):
         self.assertTrue(result["ok"])
         self.assertIn("naïve leftover.txt", result["leftovers"])
         self.assertFalse((self.code / "naïve leftover.txt").exists())
+class BudgetTest(BuildFixture):
+    def test_a_token_budget_stops_a_runaway_build(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder, max_tokens=10)
+        self.assertIn("token budget", str(caught.exception))
+
+    def test_a_cost_budget_limits_spend_when_prices_are_configured(self) -> None:
+        self._set_repo(input_price_per_mtok="1000", output_price_per_mtok="1000")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder, max_cost=0.0001)
+        self.assertIn("cost budget", str(caught.exception))
+
+    def test_token_usage_is_recorded_on_the_build_and_record(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertGreater(result["tokens_in"], 0)
+        self.assertGreater(result["tokens_out"], 0)
+        self.assertTrue(result["estimated_usage"])
+        records = list((self.root / "context/documents").glob("build-*.md"))
+        meta, _body = frontmatter.parse(records[0].read_text(encoding="utf-8"))
+        self.assertEqual(int(meta["tokens_in"]), result["tokens_in"])
+        self.assertEqual(int(meta["tokens_out"]), result["tokens_out"])
 
 
 class GhostBuildTest(BuildFixture):
