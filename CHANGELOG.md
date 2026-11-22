@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`sync github` reconciles merged PRs, and the cockpit splits open from done.**
+  Cached open PR contributions now get their live state checked during sync, so
+  a merged or closed PR stops showing as open (before, sync only fetched open
+  PRs, so a merge left the cached copy stuck at "open"). The Repos view groups
+  open items at the top, separated from merged/closed ones.
 - **Free review tooling.** CI adds a `ruff` lint job (`ruff.toml`, starting
   with syntax errors and undefined names) and a CodeQL workflow (security and
   quality queries, weekly and on PRs). Dependabot keeps the GitHub Actions

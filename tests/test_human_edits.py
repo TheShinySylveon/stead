@@ -142,5 +142,45 @@ class PublishRecordTest(_Fixture):
         self.assertEqual(by_id[older["id"]]["outcome"], "committed")
 
 
+class ReconcilePrStateTest(unittest.TestCase):
+    def _write(self, root, stem, kind, url):
+        meta = {"id": f"contribution-me-app-{stem}", "type": "contribution",
+                "title": "PR", "created": "2026-11-21", "updated": "2026-11-21",
+                "repo": "repo-me-app", "kind": kind, "number": 7, "role": "author",
+                "state": "open", "visibility": "public", "url": url}
+        (root / "context/contributions" / f"{stem}.md").write_text(
+            frontmatter.dumps(meta, "# PR\n"), encoding="utf-8")
+        return meta["id"]
+
+    def _state(self, root, stem):
+        meta, _body = frontmatter.parse(
+            (root / "context/contributions" / f"{stem}.md").read_text(encoding="utf-8"))
+        return meta["state"]
+
+    def test_reconciles_merged_and_closed_and_leaves_open(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "context/contributions").mkdir(parents=True)
+        self._write(root, "pr-merged", "pr", "https://github.com/me/app/pull/1")
+        self._write(root, "pr-closed", "pr", "https://github.com/me/app/pull/2")
+        self._write(root, "pr-open", "pr", "https://github.com/me/app/pull/3")
+        self._write(root, "issue-open", "issue", "https://github.com/me/app/issues/4")
+
+        def view_pr(url):
+            if "pull/1" in url:
+                return {"state": "MERGED"}
+            if "pull/2" in url:
+                return {"state": "CLOSED"}
+            return {"state": "OPEN"}
+
+        result = writeback.reconcile_pr_state(root, view_pr)
+        self.assertEqual(result["reconciled"], 2)
+        self.assertEqual(self._state(root, "pr-merged"), "merged")
+        self.assertEqual(self._state(root, "pr-closed"), "closed")
+        self.assertEqual(self._state(root, "pr-open"), "open")
+        self.assertEqual(self._state(root, "issue-open"), "open")  # issues untouched
+
+
 if __name__ == "__main__":
     unittest.main()

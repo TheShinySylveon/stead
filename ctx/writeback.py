@@ -552,6 +552,37 @@ def reconcile_records(root: Path, view_pr) -> dict:
     return {"reconciled": len(reconciled), "ids": reconciled}
 
 
+def reconcile_pr_state(root: Path, view_pr) -> dict:
+    """Reconcile cached open PR contributions against live PR state. READ-ONLY:
+    view_pr(url) returns the gh pr view JSON ({state, ...}) or None. A merged or
+    closed PR stops showing as open, so the contribution list stays honest."""
+    reconciled: list[str] = []
+    for path, meta, _body in objects.iter_objects(root, "contribution"):
+        if str(meta.get("kind") or "") != "pr":
+            continue
+        if str(meta.get("state") or "") != "open":
+            continue
+        pr_url = str(meta.get("url") or "")
+        if not pr_url:
+            continue
+        try:
+            data = view_pr(pr_url)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        state = str(data.get("state") or "").upper()
+        if state == "MERGED":
+            new_state = "merged"
+        elif state == "CLOSED":
+            new_state = "closed"
+        else:
+            continue
+        _patch(root, "contribution", meta.get("id") or path.stem, {"state": new_state})
+        reconciled.append(str(meta.get("id") or path.stem))
+    return {"reconciled": len(reconciled), "ids": reconciled}
+
+
 def _patch(root: Path, otype: str, ref: str, fields: dict) -> None:
     found = objects.find(root, otype, ref)
     if found is None:

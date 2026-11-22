@@ -597,7 +597,7 @@ function renderRepos() {
   const repos = state.snap.repos.filter(match);
   const contribs = state.snap.contributions.filter(match);
   const choices = state.snap.choices;
-  const rows = contribs.map(c => `
+  const contribRow = (c) => `
     <div class="card" style="display:block">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
         <div>
@@ -615,7 +615,11 @@ function renderRepos() {
         <button type="button" class="quiet" data-open data-type="contribution" data-id="${esc(c.id)}">Read</button>
         ${String(c.url || "").startsWith("https://") ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">GitHub</a>` : ""}
       </div>
-    </div>`).join("");
+    </div>`;
+  const open = contribs.filter(c => c.state !== "merged" && c.state !== "closed");
+  const done = contribs.filter(c => c.state === "merged" || c.state === "closed");
+  const openRows = open.map(contribRow).join("");
+  const doneRows = done.map(contribRow).join("");
   return `
     <form class="inline" id="add-repo">
       <input type="text" name="title" placeholder="New repo" required aria-label="Repo title">
@@ -661,8 +665,10 @@ function renderRepos() {
       <textarea name="criteria" placeholder="One acceptance criterion per line" aria-label="Acceptance criteria"></textarea>
       <div><button class="primary" type="submit" ${repos.length ? "" : "disabled"}>Add to local cache</button></div>
     </form>
-    <div class="section-title">Contributions</div>
-    ${rows || `<div class="empty">No cached issues or pull requests.</div>`}`;
+    <div class="section-title">Open</div>
+    ${openRows || `<div class="empty">Nothing open.</div>`}
+    <div class="section-title">Done</div>
+    ${doneRows || `<div class="empty">Nothing merged or closed yet.</div>`}`;
 }
 function wikiTree(nodes, current, depth, pinned, arrange) {
   return (nodes || []).map(node => {
