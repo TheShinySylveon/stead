@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **Containment for the build agent.** Tests and CI config are protected paths
+  by default (`allow_test_edits`, `allow_ci_edits`, or `protected_paths:` to
+  opt in). Checks run with a scrubbed environment, or in a networkless
+  container with `checks_isolation: docker` + `checks_image`. Merge requires
+  the container (or an explicit `trust_checks: host`), and refuses a default
+  branch with no required status checks unless the repo acknowledges it.
+- **Bounds and a kill switch.** `stead build --max-minutes`, a stop file
+  (`stead factory stop` / `start`), a daily watched-build budget, and stale-lock
+  recovery when the owning process is gone. `stead factory defaults` sets the
+  budget and per-build minutes.
+- **The cockpit no longer writes remotely.** Build with model and Watch and
+  build commit locally only; publish and merge are CLI commands. Both refuse to
+  run a build on a shared server, where every account is an admin.
+- **`stead doctor`** lints frontmatter, required fields, duplicate ids, dates,
+  and relation targets. `repo set --set KEY=VALUE` edits any repo field.
+- **`docs/trust.md`**: the threat model, merge gates, protected paths, the
+  shared-server warning, and a table of what is sent to a model provider.
+- README opens with the user, the problem, one store / two readers / one dial,
+  and write-back. Notion moves to an inspiration line. Limits now state the
+  checks risk, merge gap, and that every shared-server account is an admin.
 - A repo **Wiki** space: home page, page tree, child pages for specs,
   decisions, glossary, and tasks, labels, metadata, and an on-page table of
   contents. Entries are real pages, not side panels.

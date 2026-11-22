@@ -1,5 +1,12 @@
 # Deploying for several people
 
+> **Every account is an admin.** There are no roles and no per-object
+> permissions. A signed-in person can edit any context object. The cockpit
+> refuses to run a model build here, because that executes code on the host,
+> but this is not a multi-tenant service. Put it behind a reverse proxy with
+> TLS and SSO if you expose it; the built-in server speaks HTTP and has no
+> login rate limit. Read [Trust](trust.md).
+
 Single-user is the default. `stead ui` binds to this computer and does not ask
 for a password. Multi-user is a shared server: one process, one index, several
 browsers. Each person signs in. The access token is only the bootstrap until

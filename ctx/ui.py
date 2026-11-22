@@ -12,6 +12,7 @@ import contextlib
 import email
 import io
 import json
+import os
 import re
 import secrets
 import sys
@@ -954,10 +955,33 @@ def new_factory(root: Path, name: str, title: str) -> dict:
     return {"ok": True, "name": folder.name, "path": _rel(root, folder)}
 
 
-def watch_now(root: Path, build: bool = False, publish: bool = False,
-              merge: bool = False) -> dict:
-    report = factory.watch_specs(root, build=build, publish=publish, merge=merge)
+def watch_now(root: Path, build: bool = False) -> dict:
+    """Watch from the cockpit. Local only: publish and merge stay CLI-only."""
+    if build:
+        require_local_execution(root)
+    report = factory.watch_specs(root, build=build, publish=False, merge=False)
     return {"ok": True, **report}
+
+
+def require_local_execution(root: Path) -> None:
+    """Refuse to run model-written code from a shared server.
+
+    A build executes code on the host, and every account on a shared server is
+    an admin. The cockpit is not the place for that.
+    """
+    from ctx import config
+    shared = os.environ.get("STEAD_DEPLOYMENT", "").strip() == "multi"
+    if not shared:
+        try:
+            shared = config.load(root).get("deployment") == "multi"
+        except config.ConfigError:
+            shared = False
+    if shared and os.environ.get("STEAD_ALLOW_SERVER_BUILD", "").strip() != "1":
+        raise UiError(
+            "the cockpit does not run builds on a shared server: a build runs "
+            "model-written code on the host, and every signed-in account is an "
+            "admin. Run `python -m stead build` on the machine that owns the "
+            "checkout.")
 
 
 def wiki_view(root: Path, repo: str, page: str = "") -> dict:
@@ -1008,12 +1032,13 @@ def _repo_id(root: Path, repo_ref: str) -> str:
     return found[1].get("id", found[0].stem)
 
 
-def build_with_model(root: Path, contribution: str, publish: bool = False,
-                     merge: bool = False) -> dict:
+def build_with_model(root: Path, contribution: str) -> dict:
+    """Build locally from the cockpit. Publishing and merging stay CLI-only."""
     from ctx.agent import BuildError, build
     from ctx.models import ModelError
+    require_local_execution(root)
     try:
-        return build(root, contribution, publish=publish, merge=merge)
+        return build(root, contribution, publish=False, merge=False)
     except (BuildError, ModelError) as exc:
         raise UiError(str(exc)) from exc
 
@@ -1413,8 +1438,7 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/factory/new":
             result = new_factory(root, payload.get("name") or "", payload.get("title") or "")
         elif path == "/api/factory/watch":
-            result = watch_now(root, bool(payload.get("build")),
-                               bool(payload.get("publish")), bool(payload.get("merge")))
+            result = watch_now(root, bool(payload.get("build")))
         elif path == "/api/eval/run":
             result = check_evals(root, payload.get("factory") or "")
         elif path == "/api/eval/status":
@@ -1423,9 +1447,8 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                                  payload.get("version") or "")
         elif path == "/api/wiki/action":
             result = wiki_action(root, payload.get("action") or "", payload)
-        elif path == "/api/build":            result = build_with_model(root, payload.get("contribution") or "",
-                                      bool(payload.get("publish")),
-                                      bool(payload.get("merge")))
+        elif path == "/api/build":
+            result = build_with_model(root, payload.get("contribution") or "")
         elif path == "/api/eval/judge":
             result = judge_eval(root, payload.get("factory") or "",
                                 payload.get("case") or "", payload.get("version") or "")

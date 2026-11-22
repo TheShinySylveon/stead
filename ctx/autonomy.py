@@ -35,10 +35,25 @@ def factory_defaults(root: Path) -> dict:
         raw = {}
     trigger = raw.get("trigger") if raw.get("trigger") in TRIGGERS else "on-demand"
     reach = raw.get("reach") if raw.get("reach") in INSTALL_REACHES else "shadow"
-    return {"trigger": trigger, "reach": reach}
+    try:
+        builds = int(raw.get("max_builds_per_day", 3))
+    except (TypeError, ValueError):
+        builds = 3
+    try:
+        minutes = int(raw.get("build_minutes", 30))
+    except (TypeError, ValueError):
+        minutes = 30
+    return {
+        "trigger": trigger,
+        "reach": reach,
+        "max_builds_per_day": max(0, min(builds, 100)),
+        "build_minutes": max(1, min(minutes, 480)),
+    }
 
 
-def set_defaults(root: Path, *, trigger: str | None = None, reach: str | None = None) -> dict:
+def set_defaults(root: Path, *, trigger: str | None = None, reach: str | None = None,
+                 max_builds_per_day: int | None = None,
+                 build_minutes: int | None = None) -> dict:
     current = factory_defaults(root)
     if trigger is not None:
         if trigger not in TRIGGERS:
@@ -51,6 +66,14 @@ def set_defaults(root: Path, *, trigger: str | None = None, reach: str | None = 
         if reach not in INSTALL_REACHES:
             raise AutonomyError(f"invalid reach {reach!r}")
         current["reach"] = reach
+    if max_builds_per_day is not None:
+        if max_builds_per_day < 0:
+            raise AutonomyError("max_builds_per_day cannot be negative")
+        current["max_builds_per_day"] = max_builds_per_day
+    if build_minutes is not None:
+        if build_minutes < 1:
+            raise AutonomyError("build_minutes must be at least 1")
+        current["build_minutes"] = build_minutes
     config.save_factory(root, current)
     return current
 
@@ -91,7 +114,8 @@ def permit(policy: dict, requested: str | None) -> str:
 
 
 def set_repo(root: Path, repo_id: str, *, trigger: str | None = None,
-             reach: str | None = None, code_path: str | None = None) -> dict:
+             reach: str | None = None, code_path: str | None = None,
+             extra: dict | None = None) -> dict:
     found = objects.find(root, "repo", repo_id)
     if found is None:
         raise AutonomyError(f"repo not found: {repo_id}")
@@ -111,7 +135,12 @@ def set_repo(root: Path, repo_id: str, *, trigger: str | None = None,
         if target.resolve() == root.resolve():
             raise AutonomyError("code_path must be the project checkout, not this Stead repo")
         meta["code_path"] = str(target)
-    if trigger is None and reach is None and code_path is None:
+    for key, value in (extra or {}).items():
+        if value is None:
+            meta.pop(key, None)
+        else:
+            meta[str(key)] = value
+    if trigger is None and reach is None and code_path is None and not extra:
         raise AutonomyError("nothing to set")
     from datetime import date
     from ctx.actors import stamp

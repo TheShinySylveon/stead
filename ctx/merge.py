@@ -1,8 +1,10 @@
 """Merge one open pull request. Explicit command. Never the default.
 
-The repo file must say `reach: merge`. Checks must already be green. GitHub
-branch protection is not bypassed: this never passes `--admin`, and it never
-pushes the default branch. Factory assembly and publish do not call this.
+The repo file must say `reach: merge`. Checks must already be green. The
+default branch must have required status checks, and the checks run must be
+trusted (a container, or an explicit host acknowledgement). GitHub branch
+protection is not bypassed: this never passes `--admin`, and it never pushes
+the default branch. Factory assembly and publish do not call this.
 """
 
 from __future__ import annotations
@@ -10,7 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ctx import objects
+from ctx import objects, safety
 from ctx.autonomy import effective
 from ctx.publish import PublishError, _git, _run
 
@@ -44,6 +46,12 @@ def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
         raise MergeError(
             "merge must be set on the repo. It is not inherited, and it is not "
             "run from publish.")
+    if not safety.checks_trusted(repo_meta):
+        raise MergeError(
+            "refusing to merge while checks run on the host. The model wrote the "
+            "code those checks execute, so they can read your environment. Set "
+            "`checks_isolation: docker` and `checks_image` on the repo, or set "
+            "`trust_checks: host` to accept that risk explicitly.")
     code = Path(repo_meta.get("code_path") or "")
     if not repo_meta.get("code_path") or not code.is_dir():
         raise MergeError("set the repo code_path to a local checkout before merging")
@@ -75,6 +83,7 @@ def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
         raise MergeError("the pull request is not open")
     if view.get("isDraft"):
         raise MergeError("draft pull requests are not merged")
+    _require_protected_default(run, code, default, repo_meta)
     _require_green(view.get("statusCheckRollup"))
     number = view.get("number")
     if not isinstance(number, int):
@@ -88,6 +97,45 @@ def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
         "base": default,
         "bypassed": False,
     }
+
+
+def _require_protected_default(run, code: Path, default: str, repo_meta: dict) -> None:
+    """Refuse merge when the default branch does not require checks.
+
+    Otherwise "branch protection is not bypassed" protects nothing: a repo with
+    no required checks merges straight away. A repo can acknowledge that with
+    `merge_without_required_checks: true`.
+    """
+    if safety.truthy(repo_meta.get("merge_without_required_checks")):
+        return
+    try:
+        name = run(["gh", "repo", "view", "--json", "nameWithOwner",
+                    "--jq", ".nameWithOwner"], code).strip()
+    except PublishError as exc:
+        raise MergeError(
+            "could not read the repository name, so required checks cannot be "
+            "confirmed. Refusing to merge.") from exc
+    if "/" not in name:
+        raise MergeError("could not read the repository name. Refusing to merge.")
+    try:
+        raw = run(["gh", "api", f"repos/{name}/branches/{default}/protection"], code)
+        protection = json.loads(raw)
+    except (PublishError, json.JSONDecodeError) as exc:
+        raise MergeError(
+            f"{default} has no required status checks, or the protection rule is "
+            "not readable. Enable branch protection with required checks, or set "
+            "`merge_without_required_checks: true` on the repo to accept that."
+        ) from exc
+    required = protection.get("required_status_checks") if isinstance(protection, dict) else None
+    if not isinstance(required, dict):
+        raise MergeError(
+            f"{default} has no required status checks. Enable branch protection "
+            "with required checks, or set `merge_without_required_checks: true`.")
+    contexts = required.get("contexts") or required.get("checks") or []
+    if not contexts:
+        raise MergeError(
+            f"{default} has no required status checks. Enable branch protection "
+            "with required checks, or set `merge_without_required_checks: true`.")
 
 
 def _require_green(rollup) -> None:

@@ -12,7 +12,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ctx import objects
+from ctx import objects, safety
 from ctx.autonomy import AutonomyError, effective, permit
 
 
@@ -70,6 +70,17 @@ def publish(root: Path, contribution_ref: str, *, runner=None) -> dict:
         "This command does not merge. `stead factory merge` is separate, and "
         "only when this repo says reach: merge."
     )
+    changed = [line.strip() for line in
+               _git(run, code, ["diff", "--name-only", f"{default}..HEAD"]).splitlines()
+               if line.strip()]
+    tests = [path for path in changed if safety.is_test_path(path)]
+    ci = [path for path in changed if safety.is_ci_path(path)]
+    if tests:
+        body += ("\n\nThis branch touches tests (the repo allows it):\n"
+                 + "\n".join(f"- {path}" for path in tests[:20]))
+    if ci:
+        body += ("\n\nThis branch touches CI config (the repo allows it):\n"
+                 + "\n".join(f"- {path}" for path in ci[:20]))
     argv = ["gh", "pr", "create", "--base", default, "--head", branch,
             "--title", title, "--body", body]
     if reach == "draft-pr":

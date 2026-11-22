@@ -17,6 +17,9 @@ stead.json
 private/
 .env
 
+# One local kill switch. Create with `stead factory stop`.
+.stead-stop
+
 # Hallmark redesign records. Not the product.
 .hallmark/
 

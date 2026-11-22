@@ -26,6 +26,17 @@ class AutonomyPolicyTest(unittest.TestCase):
         self.assertEqual(autonomy.factory_defaults(self.root)["reach"], "draft-pr")
         self.assertEqual(autonomy.factory_defaults(self.root)["trigger"], "watch")
 
+    def test_budgets_are_saved_and_bounded(self) -> None:
+        shown = autonomy.set_defaults(self.root, max_builds_per_day=4, build_minutes=20)
+        self.assertEqual(shown["max_builds_per_day"], 4)
+        self.assertEqual(shown["build_minutes"], 20)
+        config.save_model(self.root, {"provider": "ollama", "name": "llama3.2"})
+        kept = autonomy.factory_defaults(self.root)
+        self.assertEqual(kept["max_builds_per_day"], 4)
+        self.assertEqual(kept["build_minutes"], 20)
+        with self.assertRaises(autonomy.AutonomyError):
+            autonomy.set_defaults(self.root, build_minutes=0)
+
     def test_merge_is_not_inherited(self) -> None:
         policy = autonomy.effective(self.root, {})
         self.assertEqual(policy["ceiling"], "shadow")
@@ -79,3 +90,24 @@ class AutonomyRunTest(FeatureBuilderTestCase):
         self.assertTrue(any(item["id"].endswith("issue-202") for item in report["skipped"]))
         self.assertIn(SPEC_BODY.split("\n", 1)[0].lstrip("# "),
                       (self.root / report["ran"][0]["run_dir"] / "bundle.md").read_text(encoding="utf-8"))
+
+    def test_watch_respects_the_stop_file(self) -> None:
+        from ctx import safety
+        self.seed_spec()
+        autonomy.set_repo(self.root, "repo-testuser-my-app", trigger="watch")
+        safety.set_stopped(self.root, True)
+        try:
+            report = factory.watch_specs(self.root)
+        finally:
+            safety.set_stopped(self.root, False)
+        self.assertTrue(report.get("stopped"))
+        self.assertEqual(report["ran"], [])
+
+    def test_watch_stops_at_the_daily_build_budget(self) -> None:
+        self.seed_spec()
+        autonomy.set_repo(self.root, "repo-testuser-my-app", trigger="watch")
+        autonomy.set_defaults(self.root, max_builds_per_day=2)
+        with mock.patch.object(factory, "_builds_today", return_value=2):
+            report = factory.watch_specs(self.root, build=True)
+        self.assertEqual(report["ran"], [])
+        self.assertTrue(any("budget" in item["reason"] for item in report["skipped"]))

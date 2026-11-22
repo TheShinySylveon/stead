@@ -214,6 +214,41 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertEqual(body["status"], "done")
 
+    def test_build_is_refused_on_a_shared_server(self) -> None:
+        (self.root / "stead.json").write_text(json.dumps({
+            "deployment": "multi", "bind": "0.0.0.0", "port": 8765,
+            "access_token": "test-token",
+        }), encoding="utf-8")
+        status, body = self._post("/api/build", {"contribution": "missing"})
+        self.assertEqual(status, 400)
+        self.assertIn("shared server", body.get("error", ""))
+
+    def test_watch_build_from_the_cockpit_is_local_only(self) -> None:
+        import unittest.mock as mock
+        from ctx import factory
+        seen = {}
+
+        def fake(root, **kw):
+            seen.update(kw)
+            return {"ran": [], "skipped": []}
+
+        with mock.patch.object(factory, "watch_specs", fake):
+            status, body = self._post("/api/factory/watch", {
+                "build": True, "publish": True, "merge": True})
+        self.assertEqual(status, 200, body)
+        self.assertTrue(seen["build"])
+        self.assertFalse(seen["publish"])
+        self.assertFalse(seen["merge"])
+
+    def test_watch_build_is_refused_on_a_shared_server(self) -> None:
+        (self.root / "stead.json").write_text(json.dumps({
+            "deployment": "multi", "bind": "0.0.0.0", "port": 8765,
+            "access_token": "test-token",
+        }), encoding="utf-8")
+        status, body = self._post("/api/factory/watch", {"build": True})
+        self.assertEqual(status, 400)
+        self.assertIn("shared server", body.get("error", ""))
+
     def test_build_endpoint_wires_to_the_agent(self) -> None:
         import unittest.mock as mock
         from ctx import agent

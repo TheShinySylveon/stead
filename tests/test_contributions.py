@@ -284,6 +284,23 @@ class TestDigestAssembly(GithubTestCase):
         cli.cmd_contribution_add(self.root, "EXAMPLE: Docs", "repo-example-org-example-repo",
                                  "issue", 103, role="assignee")
 
+    def test_digest_does_not_include_private_notes(self) -> None:
+        self._seed()
+        (self.root / "context/documents").mkdir(parents=True, exist_ok=True)
+        private = {"id": "document-private-plan", "type": "document",
+                   "title": "Private plan", "created": "2026-11-21",
+                   "updated": "2026-11-21", "project": "project-example"}
+        (self.root / "context/documents/private-plan.md").write_text(
+            frontmatter.dumps(private,
+                              "# Private plan\n\nSECRET-STRATEGY-MARKER\n"),
+            encoding="utf-8")
+        info = factory.assemble_digest(self.root)
+        run_dir = self.root / info["run_dir"]
+        text = ((run_dir / "bundle.md").read_text(encoding="utf-8")
+                + (run_dir / "prompt.md").read_text(encoding="utf-8"))
+        self.assertNotIn("SECRET-STRATEGY-MARKER", text)
+        self.assertNotIn("Private plan", text)
+
     def test_digest_bundle_artifacts_and_ledger(self) -> None:
         self._seed()
         info = factory.assemble_digest(self.root)

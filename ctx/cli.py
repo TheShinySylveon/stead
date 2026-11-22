@@ -595,6 +595,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("version", help="print the Stead version")
     sub.add_parser("init", help="rebuild state.db from schema.sql + markdown (idempotent)")
+    doc = sub.add_parser("doctor", help="lint frontmatter, ids, dates, and relations")
+    doc.add_argument("--json", action="store_true", help="machine-readable report")
 
     task = sub.add_parser("task", help="manage the task queue").add_subparsers(dest="sub", required=True)
     ta = task.add_parser("add", help="add a task (writes markdown + index)")
@@ -624,6 +626,9 @@ def build_parser() -> argparse.ArgumentParser:
     rs.add_argument("--trigger", choices=("on-demand", "watch"))
     rs.add_argument("--reach", choices=("shadow", "draft-pr", "pr", "merge"))
     rs.add_argument("--path", help="local checkout for this repo. Not this Stead directory.")
+    rs.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
+                    help="set any repo field, e.g. checks_isolation=docker. "
+                         "true/false become booleans; commas become lists")
 
     contrib = sub.add_parser("contribution", help="manage issues/PRs you're involved with").add_subparsers(dest="sub", required=True)
     ca = contrib.add_parser("add", help="add a contribution (writes markdown + index)")
@@ -705,6 +710,8 @@ def build_parser() -> argparse.ArgumentParser:
     bld.add_argument("--wait-minutes", type=int, default=30)
     bld.add_argument("--repair-rounds", type=int, default=2,
                      help="how many failed check rounds the model may fix")
+    bld.add_argument("--max-minutes", type=int, default=30,
+                     help="wall-clock budget for this build (default 30)")
 
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
@@ -791,6 +798,12 @@ def build_parser() -> argparse.ArgumentParser:
     fdef = fr.add_parser("defaults", help="install factory preference. Cannot be merge.")
     fdef.add_argument("--trigger", choices=("on-demand", "watch"))
     fdef.add_argument("--reach", choices=("shadow", "draft-pr", "pr"))
+    fdef.add_argument("--max-builds-per-day", type=int,
+                      help="watched builds after which the scheduler stops (0 = no cap)")
+    fdef.add_argument("--build-minutes", type=int,
+                      help="wall-clock budget for each watched build")
+    fr.add_parser("stop", help="create .stead-stop: builds stop between steps")
+    fr.add_parser("start", help="remove .stead-stop and allow builds again")
 
     welcome = sub.add_parser("welcome", help="first run: name a project and optional GitHub URL")
     welcome.add_argument("--title", required=True)
@@ -839,6 +852,15 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "init":
         return cmd_init(root)
+    if args.command == "doctor":
+        from ctx import doctor
+        report = doctor.run(root)
+        if args.json:
+            import json as _json
+            print(_json.dumps(report, indent=2))
+        else:
+            print(doctor.render(report))
+        return 1 if report["errors"] else 0
     if args.command == "task":
         if args.sub == "add":
             return cmd_task_add(root, args.title, args.project, args.status)
@@ -855,8 +877,21 @@ def main(argv: list[str] | None = None) -> int:
         if args.sub == "set":
             from ctx.autonomy import AutonomyError, set_repo
             try:
+                extra = {}
+                for item in args.set:
+                    key, _sep, value = item.partition("=")
+                    key = key.strip()
+                    if not key or not _sep:
+                        raise AutonomyError(f"--set needs KEY=VALUE, got {item!r}")
+                    raw = value.strip()
+                    if raw.lower() in {"true", "false"}:
+                        extra[key] = raw.lower() == "true"
+                    elif "," in raw:
+                        extra[key] = [part.strip() for part in raw.split(",") if part.strip()]
+                    else:
+                        extra[key] = raw
                 policy = set_repo(root, args.id, trigger=args.trigger, reach=args.reach,
-                                  code_path=args.path)
+                                  code_path=args.path, extra=extra)
             except AutonomyError as exc:
                 raise SystemExit(str(exc)) from exc
             print(f"{args.id}: trigger {policy['trigger']}, ceiling {policy['ceiling']}")
@@ -978,7 +1013,8 @@ def main(argv: list[str] | None = None) -> int:
                                merge=args.merge, resume=args.resume, wait=args.wait,
                                wait_minutes=max(1, args.wait_minutes),
                                repair_rounds=max(0, args.repair_rounds),
-                               max_steps=max(1, min(args.steps, 60)))
+                               max_steps=max(1, min(args.steps, 60)),
+                               max_minutes=max(1, args.max_minutes))
         except (BuildError, ModelError) as exc:
             raise SystemExit(str(exc)) from exc
         print(f"plan: {result['plan']}")
@@ -1086,6 +1122,9 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "factory" and args.sub == "watch":
         report = factory.watch_specs(root, build=args.build,
                                      publish=args.publish, merge=args.merge)
+        if report.get("stopped"):
+            print(f"stopped: {report.get('reason')}")
+            return 0
         if not report["ran"] and not report["skipped"]:
             print("no watched feature specs. Set a repo to --trigger watch,")
             print("and tag an open authored issue feature-spec.")
@@ -1102,11 +1141,25 @@ def main(argv: list[str] | None = None) -> int:
         for item in report["skipped"]:
             print(f"skipped {item['id']}: {item['reason']}")
         return 0
+    if args.command == "factory" and args.sub in ("stop", "start"):
+        from ctx import safety
+        state = safety.set_stopped(root, args.sub == "stop")
+        if state["stopped"]:
+            print("stopped. Builds and watched runs halt between steps.")
+            print("existing processes finish their current step. Run "
+                  "`python -m stead factory start` to resume.")
+        else:
+            print("started. Builds and watched runs may run again.")
+        return 0
     if args.command == "factory" and args.sub == "defaults":
         from ctx.autonomy import AutonomyError, factory_defaults, set_defaults
         try:
-            if args.trigger or args.reach:
-                shown = set_defaults(root, trigger=args.trigger, reach=args.reach)
+            if (args.trigger or args.reach or args.max_builds_per_day is not None
+                    or args.build_minutes is not None):
+                shown = set_defaults(
+                    root, trigger=args.trigger, reach=args.reach,
+                    max_builds_per_day=args.max_builds_per_day,
+                    build_minutes=args.build_minutes)
                 print("install default saved in stead.json (gitignored)")
             else:
                 shown = factory_defaults(root)
@@ -1114,6 +1167,8 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(str(exc)) from exc
         print(f"trigger: {shown['trigger']}")
         print(f"reach: {shown['reach']}")
+        print(f"max builds per day: {shown['max_builds_per_day']}")
+        print(f"minutes per build: {shown['build_minutes']}")
         print("merge is not an install default. Set it on the repo.")
         return 0
     if args.command == "welcome":

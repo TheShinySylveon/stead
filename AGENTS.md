@@ -113,10 +113,15 @@ state.db             <- GITIGNORED, rebuildable operational index (stead init)
 
 ```
 python -m stead version                       # print 0.1.0
+python -m stead doctor                        # lint frontmatter, ids, dates, relations
 python -m stead model show                    # configured endpoint; never prints the key
 python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME
 python -m stead eval run [--factory F]        # structural check, no model
 python -m stead repo set ID --trigger on-demand|watch --reach shadow|draft-pr|pr|merge
+python -m stead repo set ID --set checks_isolation=docker --set checks_image=python:3.12-slim
+python -m stead factory stop                  # .stead-stop: halt builds between steps
+python -m stead factory start                 # remove the stop file
+python -m stead factory defaults --max-builds-per-day N --build-minutes N
 python -m stead factory watch                # watched feature specs; no push
 python -m stead factory new --name NAME --title T
 python -m stead inbox import PATH             # local .eml .ics .md .txt into inbox/
@@ -194,8 +199,11 @@ tasks, with labels, metadata, and an on-page table of contents. Arrange
 reorders and pins; Request a change files a document instead of editing a
 generated page.
 A contribution body is a public spec, not a private note.
-Factory runs from the cockpit are shadow-only — no draft PR. The page has no
-external assets, so it works offline.
+Cockpit factory runs are local-only: shadow assembly, or a build that plans,
+edits, checks, and commits. The cockpit never publishes or merges, and it
+refuses to run a build when the deployment is a shared server. Publish and
+merge are explicit CLI commands. The page has no external assets, so it works
+offline.
 
 ## GitHub sync (read-only, offline-capable)
 
@@ -262,6 +270,18 @@ draft-PR remain the safe defaults.
 3. **TRUSTED (never the install default):** build, publish, and merge only
    when the repo file says `reach: merge`, checks are green, and GitHub
    accepts the merge. No `--admin`. No push of the default branch.
+
+**Containment (what the build may touch):** tests and CI config are protected
+paths by default; a repo opts in with `allow_test_edits` / `allow_ci_edits`.
+`checks:` runs with a scrubbed environment (no model key, no `GH_TOKEN`).
+`checks_isolation: docker` + `checks_image` runs it in a container with no
+network. Merge requires isolation or an explicit `trust_checks: host`, and the
+default branch must have required status checks (or an explicit
+`merge_without_required_checks: true`). A build has a wall-clock budget
+(`--max-minutes`, watched builds use `build_minutes`), a step cap, and a stop
+file (`stead factory stop` / `.stead-stop`). Watched builds stop at
+`max_builds_per_day`. `stead doctor` lints the store; `docs/trust.md` is the
+threat model and egress table.
 
 **Hard rules (every mode):** never push to main/default branch; merge only
 when the repo says `reach: merge` and checks are green; no `--admin`; vague or

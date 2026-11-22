@@ -2,23 +2,29 @@
 
 The model is the only writer of code, through a small JSON protocol. It can
 only touch files inside the repo's ``code_path``. It cannot choose a shell
-command: the repo's ``checks:`` field is the command Stead runs. Failed checks
-are fed back so the model can repair them. Nothing is pushed unless the caller
-asks for publish and the repo ceiling allows it.
+command: the repo's ``checks:`` field is the command Stead runs, with a
+scrubbed environment and optionally inside a container. Failed checks are fed
+back so the model can repair them. Nothing is pushed unless the caller asks
+for publish and the repo ceiling allows it.
+
+Bounds: a wall-clock deadline (``max_minutes``), a step cap, a total edit cap,
+and a stop file checked between steps.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
+import socket
 import subprocess
 import tempfile
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ctx import factory, objects
+from ctx import factory, objects, safety
 from ctx.autonomy import AutonomyError, effective, permit
 
 IGNORE_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
@@ -27,6 +33,8 @@ MAX_FILE_BYTES = 200_000
 MAX_READ_CHARS = 40_000
 MAX_STEPS = 30
 MAX_TOTAL_EDITS = 1_000_000
+MAX_MINUTES = 30
+STALE_LOCK_SECONDS = 6 * 3600
 LOCK_NAME = ".stead-build.lock"
 
 
@@ -38,7 +46,8 @@ class BuildError(Exception):
 def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
           publish: bool = False, merge: bool = False, resume: bool = False,
           wait: bool = False, wait_minutes: int = 30,
-          repair_rounds: int = 2, max_steps: int = MAX_STEPS) -> dict:
+          repair_rounds: int = 2, max_steps: int = MAX_STEPS,
+          max_minutes: int = MAX_MINUTES) -> dict:
     """Plan and implement one authored feature spec. Raises BuildError."""
     found = objects.find(root, "contribution", contribution_ref)
     if found is None:
@@ -50,6 +59,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     flags = factory.spec_flags(description, criteria)
     if flags:
         raise BuildError("spec is not buildable yet: " + ", ".join(flags))
+    if safety.stopped(root):
+        raise BuildError("Stead is stopped. Remove .stead-stop or run "
+                         "`python -m stead factory start`.")
     repo = objects.find(root, "repo", spec.get("repo") or "")
     if repo is None:
         raise BuildError(f"repo not found: {spec.get('repo')!r}")
@@ -67,6 +79,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     default = (repo_meta.get("default_branch") or "main").strip()
     run = runner or _git_run
     branch = branch_for(spec)
+    started = time.monotonic()
+    deadline = started + max(1, max_minutes) * 60
     lock = _lock(code)
     try:
         current = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
@@ -86,7 +100,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             settings = models.resolve(root)
             responder = lambda prompt: models.complete(prompt, settings, timeout=300)
         tree = _tree(code)
-        prompt = _system_prompt(spec, criteria, tree, bool(checks))
+        prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta)
         transcript: list[str] = []
         plan = ""
         files: dict[str, str] = {}
@@ -94,7 +108,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         actions: list[dict] = []
         edits = 0
         failures = 0
+        checks_mode = "host" if checks else "none"
         for _step in range(max_steps):
+            _remain_running(root, deadline)
             reply = responder(prompt + "\n\n" + "\n\n".join(transcript))
             action = _parse(reply)
             if action is None:
@@ -147,6 +163,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if not isinstance(text, str):
                     transcript.append("write: content must be a string")
                     continue
+                reason = safety.protected_by(rel, repo_meta)
+                if reason:
+                    raise BuildError(
+                        f"refusing to write protected path {rel} ({reason}). "
+                        "The repo can allow it with allow_test_edits, "
+                        "allow_ci_edits, or protected_paths.")
                 data = text.encode("utf-8")
                 if len(data) > MAX_FILE_BYTES:
                     transcript.append(f"write: {rel} is over {MAX_FILE_BYTES} bytes")
@@ -171,6 +193,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if _ignored(target, code) or not target.is_file():
                     transcript.append(f"delete: no file at {rel}")
                     continue
+                reason = safety.protected_by(rel, repo_meta)
+                if reason:
+                    raise BuildError(
+                        f"refusing to delete protected path {rel} ({reason}). "
+                        "The repo can allow it with allow_test_edits, "
+                        "allow_ci_edits, or protected_paths.")
                 target.unlink()
                 files.pop(rel, None)
                 deleted.append(rel)
@@ -181,7 +209,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if not checks:
                     transcript.append("check: no checks command is configured on this repo")
                     continue
-                ok, output = _checks(code, checks)
+                ok, output, checks_mode = _run_checks(code, checks, repo_meta, deadline)
                 actions.append({"action": "check", "ok": ok})
                 transcript.append(("checks passed" if ok else "checks failed") + ":\n" +
                                   (output[-4000:] or "(no output)"))
@@ -194,7 +222,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if not files and not deleted and not (resume and dirty):
                     raise BuildError("the model finished without changing a file")
                 if checks:
-                    ok, output = _checks(code, checks)
+                    ok, output, checks_mode = _run_checks(code, checks, repo_meta, deadline)
                     if not ok:
                         failures += 1
                         if failures > repair_rounds:
@@ -211,6 +239,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     message += f" (#{spec['number']})"
                 _git(run, code, ["commit", "-m", message])
                 commit = _git(run, code, ["rev-parse", "HEAD"]).strip()
+                touched = sorted(files) + sorted(deleted)
                 result = {
                     "ok": True,
                     "branch": branch,
@@ -219,8 +248,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     "plan": plan,
                     "summary": summary,
                     "checks": checks,
+                    "checks_mode": checks_mode,
+                    "tests_touched": [path for path in touched if safety.is_test_path(path)],
+                    "ci_touched": [path for path in touched if safety.is_ci_path(path)],
                     "commit": commit,
                     "steps": len(actions),
+                    "elapsed_seconds": round(time.monotonic() - started, 1),
                     "published": False,
                     "merged": False,
                 }
@@ -254,19 +287,81 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         _unlock(lock)
 
 
-def _lock(code: Path) -> Path:
-    import hashlib
+def lock_path(code: Path) -> Path:
     digest = hashlib.sha1(str(code).encode("utf-8")).hexdigest()[:16]
-    path = Path(tempfile.gettempdir()) / f"stead-build-{digest}.lock"
+    return Path(tempfile.gettempdir()) / f"stead-build-{digest}.lock"
+
+
+def _lock(code: Path) -> Path:
+    """Take the per-checkout lock. Reclaims it when the owner is gone."""
+    path = lock_path(code)
+    for attempt in range(2):
+        try:
+            fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError as exc:
+            if attempt == 0 and _reclaimable(path):
+                _unlock(path)
+                continue
+            raise BuildError(
+                f"another build holds the lock for this checkout ({path}). "
+                "Remove it if no build is running.") from exc
+        os.write(fd, json.dumps({
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "started": datetime.now(timezone.utc).isoformat(),
+        }).encode("utf-8"))
+        os.close(fd)
+        return path
+    raise BuildError(f"could not take the build lock ({path})")
+
+
+def _reclaimable(path: Path) -> bool:
+    """A lock is stale when its process is gone, or it is hours old."""
     try:
-        fd = os.open(path, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError as exc:
-        raise BuildError(
-            f"another build holds the lock for this checkout ({path}). "
-            "Remove it if no build is running.") from exc
-    os.write(fd, str(os.getpid()).encode())
-    os.close(fd)
-    return path
+        age = time.time() - path.stat().st_mtime
+        raw = path.read_text(encoding="utf-8").strip()
+    except OSError:
+        return True
+    if age > STALE_LOCK_SECONDS:
+        return True
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        try:
+            pid = int(raw)
+        except ValueError:
+            return True
+        data = {"pid": pid, "host": socket.gethostname()}
+    if not isinstance(data, dict):
+        return True
+    if str(data.get("host") or "") != socket.gethostname():
+        return False
+    try:
+        pid = int(data.get("pid"))
+    except (TypeError, ValueError):
+        return True
+    return not _pid_alive(pid)
+
+
+def _pid_alive(pid: int) -> bool:
+    if pid <= 0:
+        return False
+    if os.name == "nt":
+        import ctypes
+        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        if not handle:
+            return False
+        ctypes.windll.kernel32.CloseHandle(handle)
+        return True
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
 
 
 def _unlock(path: Path) -> None:
@@ -276,14 +371,22 @@ def _unlock(path: Path) -> None:
         pass
 
 
-def _checks(code: Path, command: str) -> tuple[bool, str]:
+def _remain_running(root: Path, deadline: float) -> None:
+    if safety.stopped(root):
+        raise BuildError("stopped by .stead-stop. Remove it, or run "
+                         "`python -m stead factory start`.")
+    if time.monotonic() > deadline:
+        raise BuildError("the build hit its time budget. Raise --max-minutes, "
+                         "or split the spec.")
+
+
+def _run_checks(code: Path, command: str, repo_meta: dict,
+                deadline: float) -> tuple[bool, str, str]:
+    remaining = int(max(30, deadline - time.monotonic()))
     try:
-        done = subprocess.run(command, cwd=code, shell=True, capture_output=True,
-                              text=True, timeout=900)
-    except (OSError, subprocess.SubprocessError) as exc:
-        return False, f"could not run checks: {exc}"
-    output = ((done.stdout or "") + (done.stderr or "")).strip()
-    return done.returncode == 0, output
+        return safety.run_checks(code, command, repo_meta, timeout=remaining)
+    except safety.SafetyError as exc:
+        raise BuildError(str(exc)) from exc
 
 
 def _search(code: Path, query: str) -> list[str]:
@@ -354,9 +457,14 @@ def _record_run(root: Path, spec: dict, result: dict, *, mode: str) -> None:
         conn.close()
 
 
-def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool) -> str:
+def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
+                   repo_meta: dict) -> str:
     check_line = ("You may call check at any time to run the repo checks. "
                   if has_checks else "This repo has no checks command. ")
+    if str(repo_meta.get("checks_isolation") or "").strip().lower() == "docker":
+        check_line += "Checks run in a container with no network. "
+    else:
+        check_line += "Checks run on the host with a scrubbed environment. "
     return (
         "You are implementing one feature spec in a local git checkout.\n"
         "Reply with exactly one JSON object per turn. No prose, no code fences.\n"
@@ -370,6 +478,8 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool)
         + check_line +
         "write replaces the whole file. Read a file before changing it. "
         "Stay inside the repository. Do not touch .git. "
+        "Do not edit tests, CI config, or the checks definition: those paths "
+        "are protected, and an attempt fails the build. "
         "Match the repo's existing style and tests. Finish when the spec is met.\n\n"
         f"Feature: {spec.get('title')}\n"
         "Acceptance criteria:\n" + "\n".join(f"- {item}" for item in criteria) + "\n\n"

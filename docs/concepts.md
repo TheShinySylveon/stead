@@ -50,10 +50,45 @@ treat the database as a backup.
 | Project and task bodies, when they hold strategy | GitHub URLs, issue numbers, CI, review state |
 
 GitHub sync only reads. It never creates an issue, comments, labels, or pushes.
-Private notes are not copied into contribution files or into a digest.
+Private notes are not copied into contribution files or into a digest. The
+feature-builder bundle is the deliberate exception: it includes a spec's
+related private documents so the build has context. That bundle stays local
+and is sent only when you run a model step. See [Trust](trust.md).
 
 A contribution body is a **public spec**. Do not put strategy there. Put that
 in a document.
+
+## One ladder, one vocabulary
+
+Stead grants autonomy per repo with two knobs:
+
+- **trigger**: `on-demand` (a person picks a spec) or `watch` (a scheduler may
+  pick it up).
+- **reach**: the ceiling for one repo.
+
+| reach | What a run may do | Who reviews |
+|---|---|---|
+| `shadow` | Plan and propose. No remote writes. The default. | A person reads the bundle |
+| `draft-pr` | Push an isolated branch and open a draft pull request | A person promotes and merges |
+| `pr` | Push an isolated branch and open a normal pull request | A person merges |
+| `merge` | The above, then merge when the merge gates pass | The gates; no independent reviewer yet |
+
+Merge is never inherited from the install default. The lifecycle
+capture → context → spec → build → deliver is the same pipeline described in
+prose; it is not a second ladder. See [Trust](trust.md) for the merge gates.
+
+## Glossary
+
+| Term | Meaning |
+|---|---|
+| **object** | One markdown file with frontmatter: project, task, document, meeting, repo, contribution, actor |
+| **contribution** | A cached GitHub issue or PR, or a local public spec. The build target for `feature-builder` |
+| **actor** | The human or agent a write is attributed to. A label, not a permission |
+| **bundle** | The deterministic context assembled for one factory run, saved as `bundle.md` |
+| **run ledger** | The `runs` table plus `factories/<name>/runs/<id>/`. Records what happened |
+| **write-back** | A build's plan, summary, files, checks mode, and outcome recorded in the ledger |
+| **cockpit** | The local browser UI. Same handlers as the CLI; no remote writes |
+| **protected path** | A test or CI path the agent may not write without a repo opt-in |
 
 ## Relations
 

@@ -668,15 +668,42 @@ def _stale_flag(path: Path, meta: dict, today, stale: list[str]) -> None:
         stale.append(f"- {meta.get('id') or path.name}: updated {updated[:10]} ({age} days)")
 
 
+def _builds_today(root: Path) -> int:
+    """Count live feature-builder runs recorded today. Missing index means 0."""
+    import sqlite3
+    from ctx import db
+    if not db.db_path(root).exists():
+        return 0
+    conn = db.connect(root)
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*) AS n FROM runs WHERE factory = 'feature-builder' "
+            "AND mode = 'live' AND created LIKE ?",
+            (db.utcnow()[:10] + "%",)).fetchone()
+        return int(row["n"] if row else 0)
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+
+
 def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
                 merge: bool = False) -> dict:
     """Assemble or build every open authored spec whose repo trigger is watch.
 
     Flagged specs are skipped, not guessed. On-demand repos are skipped.
     With build=True the configured model plans, edits, and commits; publish
-    and merge follow the repo ceiling.
+    and merge follow the repo ceiling. A stop file ends the run; a daily build
+    budget stops new builds from starting.
     """
-    from ctx.autonomy import effective
+    from ctx import safety
+    from ctx.autonomy import effective, factory_defaults
+    if safety.stopped(root):
+        return {"ran": [], "skipped": [], "stopped": True,
+                "reason": "Stead is stopped (.stead-stop)."}
+    defaults = factory_defaults(root)
+    budget = int(defaults.get("max_builds_per_day") or 0)
+    built = _builds_today(root) if build and budget else 0
     ran: list[dict] = []
     skipped: list[dict] = []
     for _path, meta, body in objects.iter_objects(root, "contribution"):
@@ -685,6 +712,10 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
         if meta.get("state") not in (None, "", "open"):
             continue
         if "feature-spec" not in _tags(meta):
+            continue
+        if build and budget and built >= budget:
+            skipped.append({"id": meta.get("id"),
+                            "reason": f"daily build budget reached ({budget})"})
             continue
         repo = objects.find(root, "repo", meta.get("repo") or "")
         if repo is None:
@@ -716,10 +747,12 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
             from ctx.agent import BuildError, build as build_spec
             from ctx.models import ModelError
             try:
-                result = build_spec(root, meta["id"], publish=publish, merge=merge)
+                result = build_spec(root, meta["id"], publish=publish, merge=merge,
+                                    max_minutes=int(defaults.get("build_minutes") or 30))
             except (BuildError, ModelError) as exc:
                 skipped.append({"id": meta.get("id"), "reason": str(exc)})
                 continue
+            built += 1
             ran.append({
                 "id": meta.get("id"),
                 "run_id": None,

@@ -15,6 +15,7 @@ the copyright in code you write.
 3. [Concepts](concepts.md) — files, the index, and our twist on Notion's model.
 4. [Several people and agents](multi-actor.md) — git shares the files. SQLite stays local.
 5. [Deploy](deploy.md) — this computer, or a Docker shared server.
+6. [Trust](trust.md) — what is trusted, what merge requires, what leaves the machine.
 
 The long-range design is [Vision](vision.md): the autonomy slider, opt-in
 repo context, and one context graph across repos.

@@ -1,34 +1,79 @@
 # Stead
 
+**Local context you own. Rent the model. Keep the files.**
+
 [![CI](https://github.com/TheShinySylveon/stead/actions/workflows/ci.yml/badge.svg)](https://github.com/TheShinySylveon/stead/actions/workflows/ci.yml)
 [![License](https://img.shields.io/github/license/TheShinySylveon/stead)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](docs/getting-started.md)
 
-Stead takes the shape of Notion's guidebook
-[*A New Shape for Work*](https://www.notion.com/nsfw) — a **context system**
-plus **factories** — and adds one deliberate twist: a factory does not stop at
-drafting. With a model configured it can plan, write the code, run the repo's
-checks, open the pull request, and merge when that repo explicitly allows it.
+Stead is one store of markdown files with two readers. Agents get scoped
+bundles; people get a wiki over the same files. Each repo has one dial for how
+far a factory may act on that context: draft, open a pull request, or merge.
+Every build writes its plan, summary, and outcome back to the store, so the
+next one starts with more context than the last.
 
-> Rent the intelligence. Own the context.
+It is built for the solo open-source contributor first: the person with a
+dozen repos, a weekly review queue, and no wish to hand a vendor their notes.
+The same files work for a small team behind one shared container.
 
-The files stay yours and the model can be swapped. The command is `stead`.
 Version **0.1.0**. Licensed under Apache-2.0. Copyright 2026 Tyler Rathbone.
-See [LICENSE](LICENSE).
+See [LICENSE](LICENSE). The command is `stead`.
 
-## The twist
+## How it fits together
 
-- **Factories execute.** `stead build` runs a model agent that plans first,
-  edits the checkout, runs the repo's `checks:`, and commits. `--publish` and
-  `--merge` carry it to delivery.
-- **Autonomy is per repo, not per install.** `reach` is `shadow`, `draft-pr`,
-  `pr`, or `merge`. The safe rungs stay the default; `merge` is never
-  inherited and never bypasses branch protection.
-- **The context stays local and portable.** Markdown and git are the truth.
-  The index is rebuildable. The cockpit is one offline file. A shared server
-  is your own container, not a hosted account.
-- **Scrutiny is built in.** Versioned prompts, eval cases, run logs, and a
-  promote gate keep the autonomous path from becoming an unexamined one.
+1. **Capture and context.** Notes, meetings, specs, tasks, repos, and cached
+   GitHub issues live as markdown with flat YAML frontmatter. Git is the audit
+   trail. `state.db` is an index you can rebuild at any time.
+2. **Two readers.** An agent reads a scoped bundle for one job. A person reads
+   the same objects as a Confluence-style wiki. There is no second store to
+   drift.
+3. **One dial per repo.** A factory can stop at a shadow plan, open a draft pull
+   request, open a normal one, or merge. Merge is never inherited from the
+   install default, and never bypasses branch protection.
+4. **Write-back.** A delivered build records its plan, summary, files, checks
+   mode, and outcome in the run ledger; the wiki shows that history next to the
+   spec. The build is not a dead end.
+
+The shape is inspired by Notion's guidebook
+[*A New Shape for Work*](https://www.notion.com/nsfw). The deliberate twist is
+execution: a factory does not stop at drafting. With a model configured it
+plans, writes the code, runs the repo's checks, and can deliver under that
+repo's ceiling.
+
+## Safety, stated plainly
+
+Stead can run code and merge it. The full threat model, the merge gates, and
+exactly what leaves the machine are in **[docs/trust.md](docs/trust.md)**.
+Three things worth saying on the front page:
+
+- **Checks run code the model wrote.** With no container, they run on your host
+  with a scrubbed environment — not in a sandbox. Set `checks_isolation: docker`
+  and `checks_image` for real isolation; merge requires that, or an explicit
+  `trust_checks: host`.
+- **The agent cannot edit its own gate by default.** Tests and CI config are
+  protected paths. A repo can opt in per group.
+- **Merge requires more than a green build.** The repo must say `reach: merge`,
+  every check must be green, the default branch must have required status
+  checks, and Stead never passes `--admin`. There is no independent reviewer
+  pass yet; that is a known gap.
+
+## What you get
+
+- Markdown files with flat YAML frontmatter. That is the source of truth. The
+  frontmatter is a **YAML subset**, not full YAML: scalars and lists only.
+  `stead doctor` fails loudly on a hand edit that breaks it.
+- A SQLite index (`state.db`) that `stead init` can rebuild. It is not shared.
+- A local cockpit in the browser, or the same actions from the CLI.
+- Four factories that plan, assemble, and — with a model — execute a pipeline.
+  `--generate` drafts text; `stead build` edits code, runs checks, and commits.
+- A model-driven build under explicit bounds: `--max-minutes`, a step cap, a
+  stop file (`stead factory stop`), and a daily watched-build budget.
+- A weekly local job that syncs read-only and drafts, plus `stead run file` to
+  keep an approved draft as a private document.
+- A repo wiki as a Confluence-style space: home page, page tree, child pages,
+  labels, metadata, and an on-page table of contents. Generated from files;
+  people arrange it and request changes instead of editing generated pages.
+- A first-run choice: this computer, or a shared Docker server where each person signs in.
 
 ![Stead cockpit](docs/images/cockpit.png)
 
@@ -38,22 +83,7 @@ The cockpit, after the first project exists. The shot is a sample named Field no
 
 A fresh checkout shows Welcome instead.
 
-## What you get
-
-- Markdown files with flat YAML frontmatter. That is the source of truth.
-- A SQLite index (`state.db`) that `stead init` can rebuild. It is not shared.
-- A local cockpit in the browser, or the same actions from the CLI.
-- Four factories that plan, assemble, and — with a model — execute a pipeline.
-  `--generate` drafts text; `stead build` edits code, runs checks, and commits.
-- A model-driven build: `stead build` plans, edits the repo, runs its checks,
-  commits, and can publish or merge under that repo's reach.
-- A weekly local job that syncs read-only and drafts, plus `stead run file` to
-  keep an approved draft as a private document.
-- A repo wiki as a Confluence-style space: home page, page tree, child pages,
-  labels, metadata, and an on-page table of contents. Generated from files.
-- A first-run choice: this computer, or a shared Docker server where each person signs in.
-
-Docs: [docs/README.md](docs/README.md).
+Docs: [docs/README.md](docs/README.md). Roadmap: [PLAN.md §7](PLAN.md).
 
 ## Quick start
 
@@ -118,7 +148,9 @@ a model and never pushes.
 Shadow is the only mode the cockpit offers, and the CLI default. Assembly
 does not push. `stead factory publish` opens a pull request from an isolated
 branch when that repo's ceiling allows it. `stead factory merge` is separate,
-and only when the repo file says `reach: merge` and the checks are green.
+and only when the repo file says `reach: merge`, the checks are green, the
+checks run is isolated (or explicitly trusted), and the default branch has
+required status checks.
 
 ```bash
 python -m stead sync github --limit 30    # read-only, needs gh
@@ -142,13 +174,15 @@ More: [docs/factories.md](docs/factories.md) and
 |---|---|
 | [Getting started](docs/getting-started.md) | Requirements, clone, first command |
 | [First run](docs/first-run.md) | Welcome, and what it refuses to do |
-| [Concepts](docs/concepts.md) | Files, the index, public and private |
+| [Concepts](docs/concepts.md) | Files, the index, public and private, the glossary |
+| [Trust](docs/trust.md) | Threat model, merge gates, and what leaves the machine |
 | [Vision](docs/vision.md) | The autonomy slider, shared repo context, one context graph |
 | [Cockpit](docs/cockpit.md) | The browser UI |
 | [CLI](docs/cli.md) | Every command |
 | [Models](docs/models.md) | The optional endpoint a factory drafts with |
 | [Deploy](docs/deploy.md) | Docker, the image, and sign-in |
 | [Several writers](docs/multi-actor.md) | Actors, git, and why SQLite stays |
+| [Roadmap](PLAN.md) | Design history and the §7 roadmap |
 | [CONVENTIONS.md](CONVENTIONS.md) | Frontmatter schema. Read this before writing objects. |
 | [AGENTS.md](AGENTS.md) | Entry point for coding agents |
 
@@ -166,8 +200,17 @@ Pull requests build the Docker image. `main` publishes
 
 ## Limits of 0.1.0
 
-- A shared server asks each person to sign in. This computer does not.
-  The access token only starts a server that has no accounts yet.
+- **Every account on a shared server is an admin.** Accounts are names with
+  scrypt password hashes; there are no roles and no per-object permissions.
+  The cockpit refuses to start a build there, but any signed-in person can edit
+  any context object. Put it behind an SSO/TLS proxy if you expose it. There is
+  no login rate limit. [docs/trust.md](docs/trust.md).
+- **Checks are not sandboxed unless you ask.** The default is the host with a
+  scrubbed environment. `checks_isolation: docker` gives a container with no
+  network. Merge requires one of those, or an explicit `trust_checks: host`.
+- **There is no independent reviewer pass before merge.** The controls are the
+  repo's checks, the required-check rule, protected test/CI paths, and the
+  explicit `reach: merge`.
 - A normal `stead ui` stays on loopback. `--deploy` and Docker are the only
   public binds. They start with an account, or with the token until the first
   account exists.
@@ -175,9 +218,15 @@ Pull requests build the Docker image. `main` publishes
   signed in on a shared server. It is not a permission check.
 - A factory calls a model only when you pass `--generate` or check Draft
   with model. The endpoint is yours: OpenAI, Anthropic, Grok, or another
-  chat server. The draft is a file. Nothing is posted, pushed, or merged.
+  chat server. Prompt contents and the egress table:
+  [docs/trust.md](docs/trust.md).
+- Write-back today is the run ledger: plan, summary, files, checks mode, and
+  outcome. It does not yet write decisions or glossary entries back
+  automatically, and it does not close tasks.
 - `specify` is optional. If it is missing, onboarding still writes the
   constitution in `context/documents/`.
+- Frontmatter is a flat YAML subset, not full YAML. `stead doctor` reports a
+  broken hand edit; it does not repair it.
 - Git history before the empty-context commit still contains early demo
   files. A clone of `main` does not load them.
 

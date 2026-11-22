@@ -33,6 +33,11 @@ the container. It does not open the port on this computer.
 `init` rebuilds `state.db`. If there are no projects, it prints the welcome
 commands.
 
+`python -m stead doctor` lints the markdown store without touching it: broken
+frontmatter, missing required fields, duplicate ids, dates that are not dates,
+and `project:` / `repo:` relations that point at nothing. It exits 1 when there
+are errors. Add `--json` for a machine-readable report.
+
 Full project plus constitution, optional `specify init`:
 
 ```bash
@@ -113,8 +118,12 @@ python -m stead factory run --factory feature-builder --contribution ID [--shado
 python -m stead digest [--generate]
 python -m stead factory new --name NAME --title "What it drafts"
 python -m stead factory watch [--build] [--publish] [--merge]
-python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr]
-python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge] [--path DIR]
+python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr] \
+    [--max-builds-per-day N] [--build-minutes N]
+python -m stead factory stop
+python -m stead factory start
+python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge] \
+    [--path DIR] [--set KEY=VALUE ...]
 
 python -m stead eval run [--factory F]
 python -m stead eval judge --factory F --case ID --output PATH [--prompt-version V]
@@ -129,6 +138,23 @@ install default. See [Models](models.md).
 
 `factory new` writes `FACTORY.md`, `prompts/v1.md`, and one eval. Run
 `stead init` after that so the prompt is indexed.
+
+`factory stop` writes `.stead-stop`; a build and a watched run check it
+between steps. `factory start` removes it. `factory defaults` also stores the
+daily watched-build budget (`0` means no cap) and the per-build wall clock.
+`repo set --set` edits any repo field; the containment fields are:
+
+| Field | Effect |
+|---|---|
+| `checks_isolation: docker` + `checks_image` | Run checks in a container with no network |
+| `trust_checks: host` | Accept host checks for merge (explicit) |
+| `allow_test_edits: true` | Let the agent write test paths |
+| `allow_ci_edits: true` | Let the agent write `.github/` and CI config |
+| `protected_paths:` | Extra paths the agent may not write (comma list) |
+| `merge_without_required_checks: true` | Merge even when the default branch requires nothing |
+
+See [Trust](trust.md) for the full set.
+
 ## Capture and schedule
 
 ```bash
@@ -156,7 +182,8 @@ digest if the cache changed, a maintenance draft, and the status of
 ```bash
 python -m stead factory publish --contribution ID
 python -m stead factory merge --contribution ID
-python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] [--steps N]
+python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] \
+    [--steps N] [--repair-rounds N] [--max-minutes N]
 ```
 
 `factory publish` pushes the checkout's current branch and opens a pull
@@ -165,18 +192,24 @@ default. Set `code_path` with `repo set --path` first. The ceiling must be
 `draft-pr`, `pr`, or `merge`. This command does not merge.
 
 `factory merge` is separate. The repo file must say `reach: merge`. The pull
-request must be open, and the checks must be green. It does not pass
-`--admin`, and it does not push the default branch. A factory run does not
+request must be open, and the checks must be green. The checks run must be
+isolated (`checks_isolation: docker`) or explicitly trusted
+(`trust_checks: host`), and the default branch must have required status
+checks unless the repo says `merge_without_required_checks: true`. It does not
+pass `--admin`, and it does not push the default branch. A factory run does not
 call it.
 
 `build` is the model-driven implementation step. It needs a configured model,
 a repo `code_path`, a clean checkout on the default branch, and a buildable
 spec. The model must first write a plan, then it may list, read, search, write,
 delete, and run the configured checks inside that checkout. It cannot touch
-`.git`, leave the repo, or choose a shell command. Failed checks are fed back
-so it can repair them (`--repair-rounds`, default 2). A lock prevents two
-builds on one checkout. Stead commits on a new `stead/<issue>-<slug>` branch
-and records the plan, summary, and actions under
+`.git`, leave the repo, choose a shell command, or write a protected test or CI
+path unless the repo opts in. Checks run with a scrubbed environment, or in a
+container. Failed checks are fed back so it can repair them
+(`--repair-rounds`, default 2). A lock prevents two builds on one checkout and
+is reclaimed when its process is gone. `--max-minutes` bounds the build.
+Stead commits on a new `stead/<issue>-<slug>` branch and records the plan,
+summary, checks mode, tests touched, and actions under
 `factories/feature-builder/runs/`. `--publish` pushes and opens a pull request
 when the ceiling allows it. `--wait` polls PR checks before `--merge`, and
 `--merge` runs only when the repo says `reach: merge`. `--resume` continues a

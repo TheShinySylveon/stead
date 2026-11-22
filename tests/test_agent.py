@@ -218,3 +218,89 @@ class BuildTest(unittest.TestCase):
             agent.build(self.root, "contribution-me-app-issue-42",
                         responder=lambda _p: "{}")
         self.assertIn("not buildable", str(caught.exception))
+
+    def _set_repo(self, **fields) -> None:
+        path = self.root / "context/repos/app.md"
+        meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
+        meta.update(fields)
+        path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+
+    def test_tests_and_ci_are_protected(self) -> None:
+        for relative in ("tests/test_app.py", ".github/workflows/ci.yml"):
+            responder = self._responder([
+                {"action": "plan", "summary": "Weaken the gate."},
+                {"action": "write", "path": relative, "content": "pass\n"},
+            ])
+            with self.assertRaises(agent.BuildError) as caught:
+                agent.build(self.root, "contribution-me-app-issue-42",
+                            responder=responder)
+            self.assertIn("protected path", str(caught.exception))
+            self.assertFalse((self.code / relative).exists())
+            _git(self.code, "checkout", "main")
+            _git(self.code, "branch", "-D", "stead/42-add-a-name-flag")
+
+    def test_a_repo_can_allow_test_edits_and_the_build_records_it(self) -> None:
+        self._set_repo(allow_test_edits="true")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add a test."},
+            {"action": "write", "path": "tests/test_app.py", "content": "def test_ok():\n    assert True\n"},
+            {"action": "finish", "summary": "Test added."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertEqual(result["tests_touched"], ["tests/test_app.py"])
+
+    def test_stop_file_halts_a_build(self) -> None:
+        from ctx import safety
+        safety.set_stopped(self.root, True)
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=lambda _p: "{}")
+        self.assertIn("stopped", str(caught.exception))
+        safety.set_stopped(self.root, False)
+
+    def test_a_dead_owner_lock_is_reclaimed(self) -> None:
+        import socket
+        path = agent.lock_path(self.code)
+        path.write_text(json.dumps({
+            "pid": 999999,
+            "host": socket.gethostname(),
+            "started": "2026-01-01T00:00:00Z",
+        }), encoding="utf-8")
+        responder = self._responder([
+            {"action": "plan", "summary": "Work after a crash."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+        self.assertFalse(path.exists())
+
+    def test_checks_get_a_scrubbed_environment(self) -> None:
+        import os
+        import unittest.mock as mock
+        from ctx import safety
+        command = ('python -c "import os,sys; '
+                   "sys.exit(1 if os.environ.get('GH_TOKEN') or "
+                   "os.environ.get('STEAD_MODEL_API_KEY') else 0)\"")
+        with mock.patch.dict(os.environ, {"GH_TOKEN": "ghs_secret",
+                                          "STEAD_MODEL_API_KEY": "sk_secret"}):
+            ok, output, mode = safety.run_checks(self.code, command, {})
+        self.assertTrue(ok, output)
+        self.assertEqual(mode, "host")
+
+    def test_checks_env_is_passed_through(self) -> None:
+        from ctx import safety
+        command = ('python -c "import os,sys; '
+                   "sys.exit(0 if os.environ.get('MY_FLAG') == 'yes' else 1)\"")
+        ok, output, _mode = safety.run_checks(
+            self.code, command, {"checks_env": "MY_FLAG=yes"})
+        self.assertTrue(ok, output)
+
+    def test_docker_isolation_needs_an_image(self) -> None:
+        from ctx import safety
+        with self.assertRaises(safety.SafetyError) as caught:
+            safety.run_checks(self.code, "true",
+                              {"checks_isolation": "docker"})
+        self.assertIn("checks_image", str(caught.exception))
