@@ -75,6 +75,7 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         "chars_sent": str(result.get("chars_sent") or 0),
         "chars_received": str(result.get("chars_received") or 0),
         "files": list(result.get("files") or []),
+        "leftovers": list(result.get("leftovers") or []),
         "tests_touched": list(result.get("tests_touched") or []),
         "tests_deleted": list(result.get("tests_deleted") or []),
     }
@@ -113,6 +114,9 @@ def _record_body(contrib: dict, result: dict, outcome: str) -> str:
         lines.append("- files: " + ", ".join(f"`{p}`" for p in result["files"]))
     if result.get("deleted"):
         lines.append("- deleted: " + ", ".join(f"`{p}`" for p in result["deleted"]))
+    if result.get("leftovers"):
+        lines.append("- removed untracked leftovers: "
+                     + ", ".join(f"`{p}`" for p in result["leftovers"]))
     if result.get("tests_touched"):
         lines.append("- tests touched: " + ", ".join(f"`{p}`" for p in result["tests_touched"]))
     if result.get("tests_deleted"):
@@ -126,7 +130,7 @@ def _record_body(contrib: dict, result: dict, outcome: str) -> str:
 
 def record_failure(root: Path, contribution_ref: str, error, *,
                    branch: str = "", elapsed: float = 0.0,
-                   checks_mode: str = "none") -> dict:
+                   checks_mode: str = "none", reason: str = "build") -> dict:
     """A failed build writes a record too, so metrics has a failure rate and
     the watch loop can tell a delivered branch from a failed one."""
     contrib, repo_meta = _repo_of(root, contribution_ref)
@@ -152,6 +156,7 @@ def record_failure(root: Path, contribution_ref: str, error, *,
         "outcome": "failed",
         "contribution": str(contrib.get("id") or contribution_ref),
         "error_class": type(error).__name__,
+        "reason": reason,
         "checks_mode": str(checks_mode or "none"),
         "elapsed_seconds": str(elapsed or 0),
     }
@@ -162,7 +167,7 @@ def record_failure(root: Path, contribution_ref: str, error, *,
     from ctx.actors import stamp as actor_stamp
     actor_stamp(root, meta)
     body = (f"# Build record: {contrib.get('title') or contrib.get('id')}\n\n"
-            f"Outcome: **failed** ({type(error).__name__}).\n\n"
+            f"Outcome: **failed** ({reason}).\n\n"
             f"```\n{str(error)[:2000]}\n```\n\n"
             "The model's work in progress, if any, was committed to the build "
             "branch and the checkout returned to the default branch. The full "
@@ -298,11 +303,15 @@ def _patch(root: Path, otype: str, ref: str, fields: dict) -> None:
 
 
 def prior_records(root: Path, repo_id: str, limit: int = 5) -> list[tuple[Path, dict, str]]:
-    """Recent build records for one repo, newest first. Used by the bundle."""
+    """Recent *delivered* build records for one repo, newest first. Failed
+    records are excluded: their raw error and check output must not become
+    trusted-looking context for the next build."""
     found = []
     for path, meta, body in objects.iter_objects(root, "document"):
         tags = {str(t).lower() for t in (meta.get("tags") or [])}
         if RECORD_TAG not in tags or f"repo:{repo_id}".lower() not in tags:
+            continue
+        if str(meta.get("outcome") or "") == "failed":
             continue
         found.append((path, meta, body))
     found.sort(key=lambda item: str(item[1].get("created") or ""), reverse=True)

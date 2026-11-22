@@ -120,7 +120,8 @@ def _git(run, code: Path, args: list[str]) -> str:
 def _run(argv: list[str], cwd: Path) -> str:
     try:
         done = subprocess.run(
-            argv, cwd=cwd, check=True, capture_output=True, text=True,
+            argv, cwd=cwd, check=True, capture_output=True,
+            text=True, encoding="utf-8", errors="replace",
         )
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()

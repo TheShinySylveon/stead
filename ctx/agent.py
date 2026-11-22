@@ -45,8 +45,16 @@ LOCK_NAME = ".stead-build.lock"
 
 
 class BuildError(Exception):
-    def __init__(self, message: str):
+    """A build failure, tagged with a reason code for the record.
+
+    Reasons: precondition (nothing was built), infrastructure (the model could
+    not be reached), protocol (the model broke the action protocol), gate
+    (protected path), checks, budget, tamper (checks changed things), build.
+    """
+
+    def __init__(self, message: str, reason: str = "build"):
         super().__init__(message)
+        self.reason = reason
 
 
 def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
@@ -57,39 +65,45 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     """Plan and implement one authored feature spec. Raises BuildError."""
     found = objects.find(root, "contribution", contribution_ref)
     if found is None:
-        raise BuildError(f"contribution not found: {contribution_ref}")
+        raise BuildError(f"contribution not found: {contribution_ref}",
+                         reason="precondition")
     _path, spec, body = found
     if spec.get("kind") != "issue" or spec.get("role") != "author":
-        raise BuildError("build runs from an issue you authored")
+        raise BuildError("build runs from an issue you authored",
+                         reason="precondition")
     description, criteria = factory.split_spec(body)
     flags = factory.spec_flags(description, criteria)
     if flags:
-        raise BuildError("spec is not buildable yet: " + ", ".join(flags))
+        raise BuildError("spec is not buildable yet: " + ", ".join(flags),
+                         reason="precondition")
     from ctx import spec as spec_approval
     try:
         spec_approval.require_approval(spec, body)
     except spec_approval.SpecError as exc:
-        raise BuildError(str(exc)) from exc
+        raise BuildError(str(exc), reason="precondition") from exc
     if safety.stopped(root):
         raise BuildError("Stead is stopped. Remove .stead-stop or run "
-                         "`python -m stead factory start`.")
+                         "`python -m stead factory start`.", reason="precondition")
     repo = objects.find(root, "repo", spec.get("repo") or "")
     if repo is None:
-        raise BuildError(f"repo not found: {spec.get('repo')!r}")
+        raise BuildError(f"repo not found: {spec.get('repo')!r}",
+                         reason="precondition")
     _repo_path, repo_meta, repo_body = repo
     code = Path(repo_meta.get("code_path") or "")
     if not repo_meta.get("code_path") or not code.is_dir():
-        raise BuildError("set the repo code_path to a local checkout before building")
+        raise BuildError("set the repo code_path to a local checkout before building",
+                         reason="precondition")
     code = code.resolve()
     policy = effective(root, repo_meta)
     try:
         reach = permit(policy, None)
     except AutonomyError as exc:
-        raise BuildError(str(exc)) from exc
+        raise BuildError(str(exc), reason="precondition") from exc
     ghost = reach == "ghost"
     if ghost and (publish or merge):
         raise BuildError("ghost writes the plan and spec/doc changes only, for "
-                         "approval. Publish and merge need a higher reach on the repo.")
+                         "approval. Publish and merge need a higher reach on the repo.",
+                         reason="precondition")
     checks = (repo_meta.get("checks") or "").strip()
     default = (repo_meta.get("default_branch") or "main").strip()
     base_run = runner or _git_run
@@ -116,22 +130,39 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     checks_mode = "none"
     chars_sent = 0
     chars_received = 0
+    commit_base = ""
+    base_tracked_cf: set[str] = set()
+    branch_tracked: set[str] = set()
     try:
         current = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
         if resume:
             if current != branch:
-                raise BuildError(f"--resume needs the build branch checked out ({branch}), now on {current}.")
+                raise BuildError(f"--resume needs the build branch checked out ({branch}), now on {current}.",
+                                 reason="precondition")
             initial_dirty = set(_porcelain_paths(run, code))
             on_branch = True
         else:
-            if _git(run, code, ["status", "--porcelain"]).strip():
-                raise BuildError("the checkout has uncommitted changes. Commit, stash, or use --resume.")
+            dirty_paths = _dirty_paths(run, code)
+            if dirty_paths:
+                raise BuildError("the checkout has uncommitted changes. Commit, stash, or use --resume.",
+                                 reason="precondition")
             if current != default:
-                raise BuildError(f"check out {default} before building (now on {current}).")
+                raise BuildError(f"check out {default} before building (now on {current}).",
+                                 reason="precondition")
             if _git(run, code, ["branch", "--list", branch]).strip():
-                raise BuildError(f"branch {branch} already exists. Use --resume or remove it.")
+                raise BuildError(f"branch {branch} already exists. Use --resume or remove it.",
+                                 reason="precondition")
             _git(run, code, ["checkout", "-b", branch])
             on_branch = True
+        # Where this run starts, what the default branch tracks, and what the
+        # branch already tracks (for --resume). The commit guard uses these:
+        # HEAD must still be commit_base, and the committed range must be the
+        # model's own write set.
+        commit_base = _git(run, code, ["rev-parse", "HEAD"]).strip()
+        base_tracked_cf = {line.casefold() for line in
+                           _git(run, code, ["ls-tree", "-r", "--name-only", default]).splitlines()
+                           if line}
+        branch_tracked = _tracked_files(run, code)
         git_before = safety.git_state_snapshot(code)
         if responder is None:
             from ctx import models
@@ -223,12 +254,14 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 continue
             if kind == "write":
                 if not plan:
-                    raise BuildError("the model tried to write before a plan. Planning comes first.")
+                    raise BuildError("the model tried to write before a plan. Planning comes first.",
+                                     reason="protocol")
                 rel = _safe_rel(action.get("path") or "")
                 if ghost and not _is_doc_path(rel):
                     raise BuildError(
                         f"ghost writes the plan and spec/doc changes only: refusing {rel}. "
-                        "Zero code. Only markdown (.md, .markdown, .mdx) may change.")
+                        "Zero code. Only markdown (.md, .markdown, .mdx) may change.",
+                        reason="gate")
                 text = action.get("content")
                 if not isinstance(text, str):
                     transcript.append("write: content must be a string")
@@ -238,28 +271,37 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 protected = safety.protected_by(rel, repo_meta)
                 if protected is None and resolved_rel != rel:
                     protected = safety.protected_by(resolved_rel, repo_meta)
-                # Adding a brand-new test file is the discipline require_tests
-                # asks for; editing or deleting existing tests stays refused.
-                new_test = (protected in safety.TEST_GLOBS
-                            and not target.exists()
-                            and safety.test_addition_allowed(rel, repo_meta)
-                            and safety.test_addition_allowed(resolved_rel, repo_meta))
-                if protected and not new_test:
+                # A build may add a test, then revise or delete what it created
+                # (write-test, see-it-fail, fix-it). Editing a test that
+                # existed at the base commit stays refused. A case variant that
+                # would collide with a tracked path on macOS/Windows is refused
+                # everywhere, so Linux does not create it either.
+                not_in_base = rel.casefold() not in base_tracked_cf
+                allowed_test = (protected in safety.TEST_GLOBS
+                                and not_in_base
+                                and (not target.exists()
+                                     or rel in files or rel in branch_tracked)
+                                and safety.test_addition_allowed(rel, repo_meta)
+                                and safety.test_addition_allowed(resolved_rel, repo_meta))
+                if protected and not allowed_test:
                     raise BuildError(
                         f"refusing to write protected path {rel} ({protected}). "
                         "The repo can allow it with allow_test_edits, "
-                        "allow_ci_edits, or protected_paths.")
+                        "allow_ci_edits, or protected_paths.", reason="gate")
                 if safety.secret_by(rel) or safety.secret_by(resolved_rel):
-                    raise BuildError(f"refusing to write {rel}: it looks like a secret file")
+                    raise BuildError(f"refusing to write {rel}: it looks like a secret file",
+                                     reason="gate")
                 data = text.encode("utf-8")
                 if len(data) > MAX_FILE_BYTES:
                     transcript.append(f"write: {rel} is over {MAX_FILE_BYTES} bytes")
                     continue
                 edits += len(data)
                 if edits > MAX_TOTAL_EDITS:
-                    raise BuildError("the model tried to write too much in one build")
+                    raise BuildError("the model tried to write too much in one build",
+                                     reason="budget")
                 if _ignored(target, code):
-                    raise BuildError(f"refusing to write an ignored path: {rel}")
+                    raise BuildError(f"refusing to write an ignored path: {rel}",
+                                     reason="gate")
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(text, encoding="utf-8")
                 files[rel] = text
@@ -268,12 +310,14 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 continue
             if kind == "delete":
                 if not plan:
-                    raise BuildError("the model tried to delete before a plan.")
+                    raise BuildError("the model tried to delete before a plan.",
+                                     reason="protocol")
                 rel = _safe_rel(action.get("path") or "")
                 if ghost and not _is_doc_path(rel):
                     raise BuildError(
                         f"ghost writes the plan and spec/doc changes only: refusing to delete {rel}. "
-                        "Zero code. Only markdown (.md, .markdown, .mdx) may change.")
+                        "Zero code. Only markdown (.md, .markdown, .mdx) may change.",
+                        reason="gate")
                 target = code / rel
                 if _ignored(target, code) or not target.is_file():
                     transcript.append(f"delete: no file at {rel}")
@@ -283,12 +327,17 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if reason is None and resolved_rel != rel:
                     reason = safety.protected_by(resolved_rel, repo_meta)
                 if reason:
-                    raise BuildError(
-                        f"refusing to delete protected path {rel} ({reason}). "
-                        "The repo can allow it with allow_test_edits, "
-                        "allow_ci_edits, or protected_paths.")
+                    owned = (reason in safety.TEST_GLOBS
+                             and rel.casefold() not in base_tracked_cf
+                             and (rel in files or rel in branch_tracked))
+                    if not owned:
+                        raise BuildError(
+                            f"refusing to delete protected path {rel} ({reason}). "
+                            "The repo can allow it with allow_test_edits, "
+                            "allow_ci_edits, or protected_paths.", reason="gate")
                 if safety.secret_by(rel) or safety.secret_by(resolved_rel):
-                    raise BuildError(f"refusing to delete {rel}: it looks like a secret file")
+                    raise BuildError(f"refusing to delete {rel}: it looks like a secret file",
+                                     reason="gate")
                 target.unlink()
                 files.pop(rel, None)
                 deleted.append(rel)
@@ -309,7 +358,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 continue
             if kind == "propose":
                 if not plan:
-                    raise BuildError("the model proposed a note before a plan.")
+                    raise BuildError("the model proposed a note before a plan.",
+                                     reason="protocol")
                 from ctx import writeback
                 try:
                     note = writeback.propose_note(
@@ -325,11 +375,13 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             if kind == "finish":
                 summary = str(action.get("summary") or "").strip()
                 if not plan:
-                    raise BuildError("the model finished without a plan")
-                dirty = _git(run, code, ["status", "--porcelain"]).strip()
+                    raise BuildError("the model finished without a plan",
+                                     reason="protocol")
+                dirty = _dirty_paths(run, code)
                 changed = bool(files or deleted or (resume and dirty))
                 if not changed and not ghost:
-                    raise BuildError("the model finished without changing a file")
+                    raise BuildError("the model finished without changing a file",
+                                     reason="protocol")
                 if criteria and not ghost and safety.truthy(repo_meta.get("require_tests", "true")):
                     touched_tests = [p for p in list(files) + deleted
                                      if safety.is_test_path(p)]
@@ -339,7 +391,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                             raise BuildError(
                                 "the spec has acceptance criteria but no test was added. "
                                 "A build must add a test that fails without the change and "
-                                "passes with it.")
+                                "passes with it.", reason="gate")
                         transcript.append(
                             "The spec has acceptance criteria, but you changed no test. "
                             "Add a test under tests/ that fails without your change and "
@@ -353,7 +405,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         failures += 1
                         if failures > repair_rounds:
                             raise BuildError("checks kept failing after repair attempts:\n" +
-                                             (output[-4000:] or "(no output)"))
+                                             (output[-4000:] or "(no output)"),
+                                             reason="checks")
                         actions.append({"action": "finish", "checks": "fail"})
                         transcript.append(
                             "checks failed. Read the failure, fix it, and finish again:\n" +
@@ -362,41 +415,66 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 commit = ""
                 changed_actual: list[str] = []
                 deleted_actual: list[str] = []
+                leftovers: list[str] = []
                 if changed:
-                    # Checks execute model-written code. Anything it changed
-                    # beyond the model's own writes is a side effect, not work:
-                    # refuse it, and never let `git add -A` launder it into the
-                    # commit. Protected or secret paths fail hardest.
                     expected = set(files) | set(deleted) | initial_dirty
-                    unexpected = _unexpected_changes(run, code, expected)
-                    if unexpected:
-                        bad = [p for p in unexpected
+                    # Checks execute model-written code. They must not commit
+                    # for themselves or move HEAD: the branch must still be
+                    # where Stead left it, so the committed range is the
+                    # model's own writes and nothing else.
+                    if _git(run, code, ["rev-parse", "HEAD"]).strip() != commit_base:
+                        raise BuildError(
+                            "the branch HEAD moved during the build (checks may "
+                            "have committed). Refusing to commit on top.",
+                            reason="tamper")
+                    fatal, leftovers = _side_effects(run, code, expected, repo_meta)
+                    if fatal:
+                        bad = [p for p in fatal
                                if safety.protected_by(p, repo_meta) or safety.secret_by(p)]
                         if bad:
                             raise BuildError(
                                 "checks changed protected or secret paths: "
                                 + ", ".join(sorted(bad))
-                                + ". The repo did not allow this. Refusing to commit.")
+                                + ". The repo did not allow this. Refusing to commit.",
+                                reason="tamper")
                         raise BuildError(
                             "checks changed files the model did not write: "
-                            + ", ".join(sorted(unexpected)) + ". Refusing to commit.")
+                            + ", ".join(sorted(fatal)) + ". Refusing to commit.",
+                            reason="tamper")
+                    # Untracked leftovers (a coverage file, say) are not work:
+                    # do not stage them, list them, remove them.
+                    for path in leftovers:
+                        _remove_path(code / path)
                     tracked = _tracked_files(run, code)
                     stage = sorted(p for p in expected
                                    if (code / p).exists() or p in tracked)
                     if stage:
                         _git(run, code, ["add", "-A", "--", *stage])
                     changed_actual, deleted_actual = _staged_changes(run, code)
+                    if not (set(changed_actual) | set(deleted_actual)) <= expected:
+                        raise BuildError(
+                            "the staged diff includes paths the model did not "
+                            "write. Refusing to commit.", reason="tamper")
                     message = f"{spec.get('title') or spec.get('id')}"
                     if spec.get("number"):
                         message += f" (#{spec['number']})"
                     _git(run, code, ["commit", "-m", message])
                     commit = _git(run, code, ["rev-parse", "HEAD"]).strip()
+                    # The committed range is the source of truth for the ledger.
+                    range_changed, range_deleted = _range_changes(run, code, commit_base)
+                    if (set(range_changed) | set(range_deleted)
+                            != set(changed_actual) | set(deleted_actual)):
+                        raise BuildError(
+                            "the committed range does not match what was staged. "
+                            "Refusing to record this build.", reason="tamper")
+                    changed_actual, deleted_actual = range_changed, range_deleted
                 result = {
                     "ok": True,
                     "reach": reach,
                     "branch": branch,
                     "files": changed_actual,
                     "deleted": deleted_actual,
+                    "leftovers": sorted(leftovers),
                     "plan": plan,
                     "summary": summary,
                     "checks": checks,
@@ -447,22 +525,29 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             transcript.append(
                 'action must be plan, list, read, search, write, delete, check, '
                 'propose, or finish.')
-        raise BuildError(f"the model did not finish within {max_steps} steps")
+        raise BuildError(f"the model did not finish within {max_steps} steps",
+                         reason="protocol")
     except Exception as exc:
-        _record_failure(root, spec, replies, transcript, actions, exc)
-        # A failed build must not wedge the checkout for the next watched
-        # spec: quarantine the model's own work on the branch, discard check
-        # side effects, and return to the default branch.
+        reason = _failure_reason(exc)
+        model_worked = bool(replies)
+        # Only a build that actually reached the model is a build attempt: it
+        # gets a record and spends the budget. A precondition failure (dirty
+        # checkout, no approval) or an unreachable model does not, and its
+        # empty branch is removed so the spec stays eligible.
+        if model_worked:
+            _record_failure(root, spec, replies, transcript, actions, exc, reason)
         _cleanup_failure(run, code, branch, default, files, deleted,
-                         initial_dirty, git_before, on_branch)
-        from ctx import writeback
-        try:
-            writeback.record_failure(
-                root, contribution_ref, exc, branch=branch,
-                elapsed=round(time.monotonic() - started, 1),
-                checks_mode=checks_mode)
-        except Exception:
-            pass
+                         initial_dirty, git_before, on_branch, commit_base,
+                         model_worked, repo_meta, reason)
+        if model_worked:
+            from ctx import writeback
+            try:
+                writeback.record_failure(
+                    root, contribution_ref, exc, branch=branch,
+                    elapsed=round(time.monotonic() - started, 1),
+                    checks_mode=checks_mode, reason=reason)
+            except Exception:
+                pass
         raise
     finally:
         _unlock(lock)
@@ -556,10 +641,10 @@ def _unlock(path: Path) -> None:
 def _remain_running(root: Path, deadline: float) -> None:
     if safety.stopped(root):
         raise BuildError("stopped by .stead-stop. Remove it, or run "
-                         "`python -m stead factory start`.")
+                         "`python -m stead factory start`.", reason="precondition")
     if time.monotonic() > deadline:
         raise BuildError("the build hit its time budget. Raise --max-minutes, "
-                         "or split the spec.")
+                         "or split the spec.", reason="budget")
 
 
 def _run_checks(code: Path, command: str, repo_meta: dict,
@@ -569,46 +654,105 @@ def _run_checks(code: Path, command: str, repo_meta: dict,
     try:
         ok, output, mode = safety.run_checks(code, command, repo_meta, timeout=remaining)
     except safety.SafetyError as exc:
-        raise BuildError(str(exc)) from exc
+        raise BuildError(str(exc), reason="infrastructure") from exc
     if safety.git_state_snapshot(code) != before:
         raise BuildError(
             "checks changed .git (config or hooks). A check run must not rewrite "
             "git's own execution surface: hooks and config would run on the host "
-            "with Stead's environment. Refusing to continue.")
+            "with Stead's environment. Refusing to continue.", reason="tamper")
     return ok, output, mode
 
 
-def _porcelain_paths(run, code: Path) -> list[str]:
-    """Repo-relative paths git reports as changed (staged or not). -uall lists
-    untracked files individually, not as collapsed directory entries."""
-    paths: list[str] = []
-    for line in _git(run, code, ["status", "--porcelain", "-uall"]).splitlines():
-        if len(line) < 4:
+def _porcelain(run, code: Path) -> list[tuple[str, str]]:
+    """(path, XY) from `git status --porcelain -z -uall`. Null fields keep
+    non-ASCII and quoted paths intact, unlike the line parser."""
+    raw = _git(run, code, ["status", "--porcelain", "-z", "-uall"])
+    fields = raw.split("\0")
+    entries: list[tuple[str, str]] = []
+    i = 0
+    while i < len(fields):
+        entry = fields[i]
+        i += 1
+        if len(entry) < 4:
             continue
-        path = line[3:]
-        if " -> " in path:  # rename: report the destination
-            path = path.split(" -> ")[-1]
-        path = path.strip().strip('"')
-        if path:
-            paths.append(path)
-    return paths
+        status, path = entry[:2], entry[3:]
+        entries.append((path, status))
+        if status[0] in "RC" or status[1] in "RC":
+            i += 1  # a rename/copy is followed by its original path
+    return entries
 
 
-def _unexpected_changes(run, code: Path, expected: set[str]) -> list[str]:
-    """Changed paths outside the model's writes, ignoring build artifacts."""
-    unexpected: list[str] = []
+def _porcelain_paths(run, code: Path) -> list[str]:
+    return [path for path, _status in _porcelain(run, code)]
+
+
+def _dirty_paths(run, code: Path) -> list[str]:
+    """Changed paths that matter for a clean-checkout check. Build caches and
+    the Stead lock are ignored, as they are at the commit step."""
+    dirty: list[str] = []
     for path in _porcelain_paths(run, code):
         parts = Path(path).parts
         if any(p.casefold() in IGNORE_DIRS or p.casefold() == LOCK_NAME for p in parts):
             continue
-        if path not in expected:
-            unexpected.append(path)
-    return unexpected
+        dirty.append(path)
+    return dirty
+
+
+def _side_effects(run, code: Path, expected: set[str],
+                  repo_meta: dict) -> tuple[list[str], list[str]]:
+    """Changes beyond the model's own writes. Returns (fatal, untracked
+    leftovers). A tracked change, or any change to a protected/secret path, is
+    fatal. An untracked leftover (a coverage file, say) is not work: the
+    caller removes it and records it instead of failing the build."""
+    fatal: list[str] = []
+    leftovers: list[str] = []
+    for path, status in _porcelain(run, code):
+        if path in expected:
+            continue
+        parts = Path(path).parts
+        if any(p.casefold() in IGNORE_DIRS or p.casefold() == LOCK_NAME for p in parts):
+            continue
+        if status == "??" and not (safety.protected_by(path, repo_meta)
+                                   or safety.secret_by(path)):
+            leftovers.append(path)
+        else:
+            fatal.append(path)
+    return fatal, leftovers
+
+
+def _remove_path(path: Path) -> None:
+    try:
+        if path.is_dir() and not path.is_symlink():
+            shutil.rmtree(path, ignore_errors=True)
+        elif path.exists() or path.is_symlink():
+            path.unlink()
+    except OSError:
+        pass
 
 
 def _tracked_files(run, code: Path) -> set[str]:
     return {line.strip().strip('"')
             for line in _git(run, code, ["ls-files"]).splitlines() if line.strip()}
+
+
+def _range_changes(run, code: Path, base: str) -> tuple[list[str], list[str]]:
+    """The committed range from the base commit: (changed, deleted) paths."""
+    changed: list[str] = []
+    deleted: list[str] = []
+    raw = _git(run, code, ["diff", "--name-status", base, "HEAD"])
+    for line in raw.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        status = parts[0].strip()
+        if status.startswith("D"):
+            deleted.append(parts[-1].strip())
+        elif status.startswith("R") and len(parts) >= 3:
+            deleted.append(parts[1].strip())
+            changed.append(parts[-1].strip())
+        else:
+            changed.append(parts[-1].strip())
+    return sorted(set(changed)), sorted(set(deleted))
 
 
 def _staged_changes(run, code: Path) -> tuple[list[str], list[str]]:
@@ -665,15 +809,29 @@ def _fit_budget(prompt: str, transcript: list[str],
     return entries
 
 
+def _failure_reason(exc) -> str:
+    """Classify a failure for the record. BuildError carries its own reason;
+    anything else came from the model transport (or a bug), which is
+    infrastructure."""
+    if isinstance(exc, BuildError):
+        return exc.reason or "build"
+    return "infrastructure"
+
+
 def _cleanup_failure(run, code: Path, branch: str, default: str,
                      files: dict, deleted: list, initial_dirty: set,
-                     git_before: dict, on_branch: bool) -> None:
+                     git_before: dict, on_branch: bool, commit_base: str,
+                     model_worked: bool, repo_meta: dict,
+                     reason: str = "build") -> None:
     """Best-effort: leave the checkout usable after a failed build.
 
-    The model's own work is committed as WIP on the isolated branch (never
-    pushed), check side effects are discarded, .git is restored, and the
-    default branch is checked out again so the next watched spec can run.
-    Never masks the original error.
+    Only a build that reached the model is an attempt. A precondition or
+    infrastructure failure removes an empty branch and touches nothing the
+    user owns. A model failure commits its own work as WIP on the isolated
+    branch (never pushed), discards what checks did, and returns to the
+    default branch — without deleting files the user put there. A tamper
+    failure that moved HEAD resets the branch: nothing from that run is
+    carried forward.
     """
     if not on_branch:
         return
@@ -684,10 +842,54 @@ def _cleanup_failure(run, code: Path, branch: str, default: str,
                 safety.git_state_restore(code, git_before, after)
     except Exception:
         pass
+    if not model_worked:
+        # Nothing was built. Do not touch the working tree: the checkout was
+        # clean when the branch was created, and a dirty checkout never
+        # reached here. Delete the empty branch so the spec stays eligible.
+        try:
+            if _git(run, code, ["rev-parse", "HEAD"]).strip() == commit_base:
+                _git(run, code, ["checkout", default])
+                ahead = _git(run, code, ["rev-list", "--count",
+                                         f"{default}..{branch}"]).strip()
+                if ahead.isdigit() and int(ahead) == 0:
+                    _git(run, code, ["branch", "-D", branch])
+        except Exception:
+            pass
+        return
+    # A tampered build must not leave its commits or files behind: reset to
+    # the base, drop the model's own untracked additions, and remove the
+    # branch so a later publish or resume cannot carry them forward.
+    if reason == "tamper":
+        try:
+            if _git(run, code, ["rev-parse", "HEAD"]).strip() != commit_base:
+                _git(run, code, ["reset", "--hard", commit_base])
+                base_files = {line for line in _git(
+                    run, code, ["ls-tree", "-r", "--name-only", commit_base]).splitlines()
+                    if line}
+                for path in set(files) | set(deleted):
+                    if path not in base_files:
+                        _remove_path(code / path)
+                try:
+                    _fatal, leftovers = _side_effects(run, code, set(initial_dirty),
+                                                      repo_meta)
+                    for path in leftovers:
+                        _remove_path(code / path)
+                except Exception:
+                    pass
+                _git(run, code, ["checkout", default])
+                ahead = _git(run, code, ["rev-list", "--count",
+                                         f"{default}..{branch}"]).strip()
+                if ahead.isdigit() and int(ahead) == 0:
+                    _git(run, code, ["branch", "-D", branch])
+                return
+        except Exception:
+            pass
+    # The model ran: quarantine its own work, then undo only what checks did.
+    # Pre-existing dirty files (--resume) are left exactly as they were.
     try:
-        expected = set(files) | set(deleted) | initial_dirty
+        owned = set(files) | set(deleted)
         tracked = _tracked_files(run, code)
-        stage = sorted(p for p in expected if (code / p).exists() or p in tracked)
+        stage = sorted(p for p in owned if (code / p).exists() or p in tracked)
         if stage:
             _git(run, code, ["add", "-A", "--", *stage])
         if _git(run, code, ["diff", "--cached", "--name-only"]).strip():
@@ -695,8 +897,22 @@ def _cleanup_failure(run, code: Path, branch: str, default: str,
     except Exception:
         pass
     try:
-        _git(run, code, ["checkout", "--", "."])
-        _git(run, code, ["clean", "-fd"])
+        expected = set(files) | set(deleted) | initial_dirty
+        fatal, leftovers = _side_effects(run, code, expected, repo_meta)
+        head_files = {line for line in
+                      _git(run, code, ["ls-tree", "-r", "--name-only", "HEAD"]).splitlines()
+                      if line}
+        for path in fatal:
+            if path in head_files:
+                _git(run, code, ["checkout", "--", path])
+            else:
+                try:
+                    _git(run, code, ["reset", "--", path])
+                except Exception:
+                    pass
+                _remove_path(code / path)
+        for path in leftovers:
+            _remove_path(code / path)
     except Exception:
         pass
     try:
@@ -797,9 +1013,10 @@ def _transcript_md(replies: list[str], transcript: list[str]) -> str:
 
 
 def _record_failure(root: Path, spec: dict, replies: list[str],
-                    transcript: list[str], actions: list[dict], error) -> None:
-    """A failed build still leaves a trace: what the model said and did, and
-    a runs row so the daily budget counts attempts, not just successes."""
+                    transcript: list[str], actions: list[dict], error,
+                    reason: str = "build") -> None:
+    """A build that reached the model and failed leaves a trace: what the model
+    said and did, and a runs row so the daily budget counts attempts."""
     try:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         slug = re.sub(r"[^a-z0-9]+", "-",
@@ -809,11 +1026,12 @@ def _record_failure(root: Path, spec: dict, replies: list[str],
         (folder / "failure.json").write_text(json.dumps({
             "error": str(error),
             "error_class": type(error).__name__,
+            "reason": reason,
             "model_turns": len(replies),
             "actions": actions,
         }, indent=2) + "\n", encoding="utf-8")
         (folder / "transcript.md").write_text(
-            f"# Failed build\n\nError: {error}\n\n"
+            f"# Failed build\n\nReason: {reason}\n\nError: {error}\n\n"
             + _transcript_md(replies, transcript), encoding="utf-8")
         from ctx import db
         if db.db_path(root).exists():
@@ -915,12 +1133,12 @@ def _safe_rel(raw: str) -> str:
     if not rel or rel in {".", "./"}:
         return "."
     if rel.startswith("/") or re.match(r"^[A-Za-z]:", rel):
-        raise BuildError(f"absolute paths are not allowed: {raw}")
+        raise BuildError(f"absolute paths are not allowed: {raw}", reason="gate")
     parts = [part for part in rel.split("/") if part not in {"", "."}]
     if any(part == ".." for part in parts):
-        raise BuildError(f"paths may not leave the repository: {raw}")
+        raise BuildError(f"paths may not leave the repository: {raw}", reason="gate")
     if parts and parts[0].casefold() == ".git":
-        raise BuildError("the model may not touch .git")
+        raise BuildError("the model may not touch .git", reason="gate")
     return "/".join(parts)
 
 
@@ -972,7 +1190,8 @@ def _git(run, code: Path, args: list[str]) -> str:
 
 def _git_run(argv: list[str], cwd: Path, capture: bool = False):
     try:
-        done = subprocess.run(argv, cwd=cwd, check=True, capture_output=True, text=True)
+        done = subprocess.run(argv, cwd=cwd, check=True, capture_output=True,
+                              text=True, encoding="utf-8", errors="replace")
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()
         raise BuildError(detail or f"{argv[0]} failed") from exc

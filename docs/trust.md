@@ -56,7 +56,7 @@ code execution with the permissions of your user account.
 | Scrubbed environment | On | Checks cannot read `STEAD_MODEL_API_KEY`, `GH_TOKEN`, cloud keys, or the deployment token from the environment. Only `PATH`, home, temp, locale, Windows system variables, and `checks_env:` are passed. |
 | Container isolation | Opt-in: `checks_isolation: docker` + `checks_image` | Checks get no network, dropped capabilities, a PID limit, and a memory/CPU cap. The checkout is mounted at `/src` so the checks can read and write it, but `.git` is mounted read-only. A timed-out container is named and killed, not left running. |
 | Git hygiene | On | Every Stead git call (build, publish, merge, watch) runs with the checkout's hooks and fsmonitor disabled, so a planted hook or `core.fsmonitor` never executes on the host. Every check run is bracketed by a `.git/config` and hooks content snapshot; any change fails the build, in host mode too. |
-| Commit boundary | On | `finish` stages only the model's own writes (`git add -A -- <paths>`), never the whole tree. Anything else the checks changed fails the build; a protected or secret path fails hardest. The ledger (`tests_touched`, `ci_touched`, the file list) is computed from the staged diff, not the tool log. |
+| Commit boundary | On | `finish` requires HEAD to still be where Stead left it, stages only the model's own writes (`git add -A -- <paths>`), and refuses a tracked change the checks made; protected or secret paths fail hardest. Untracked leftovers are removed, not staged. The ledger (`tests_touched`, `ci_touched`, the file list) comes from the committed range `base..HEAD`, and a branch whose HEAD moved is reset. |
 | Wall-clock budget | 30 minutes per build | A repair loop cannot run forever. `--max-minutes` changes it; watched builds use `build_minutes`. |
 | Step, edit, and prompt caps | 30 steps, 1 MB written, 120k prompt chars | A model cannot loop, dump unbounded output, or grow the resent transcript without bound; older read outputs are trimmed first. |
 | Stop file | `.stead-stop` | A build and a watched run stop between steps. `stead factory stop` creates it. |
@@ -84,12 +84,16 @@ When tests are allowed, the build records `tests_touched` in its run log.
 
 Adding a **brand-new** test file is allowed by default: that is the discipline
 `require_tests` asks for, and a new file does not weaken an existing test.
-Editing or deleting an existing test stays refused. `conftest.py` and
-`__init__.py` change how other tests run, so they are never "new test"
-additions; an explicit `protected_paths:` entry always wins. Matching is
-case-insensitive on every platform (`.GitHub/...`, `TESTS/...`, `.ENV` are
-protected too) and checks the symlink-resolved path, so a symlinked directory
-inside the repo cannot sidestep `tests/**`.
+Editing or deleting a test that existed at the base commit stays refused; a
+test file the build created may be revised or removed, which is the normal
+write-test, see-it-fail, fix-it loop. `conftest.py` and `__init__.py` change how
+other tests run, so they are never "new test" additions; an explicit
+`protected_paths:` entry always wins. A case variant that would collide with a
+tracked path on macOS/Windows (`TESTS/test_app.py` beside `tests/test_app.py`)
+is refused on Linux too. Matching is case-insensitive on every platform
+(`.GitHub/...`, `TESTS/...`, `.ENV` are protected too) and checks the
+symlink-resolved path, so a symlinked directory inside the repo cannot sidestep
+`tests/**`.
 
 Protection on the **tool** is not enough: checks execute model-written code,
 and that code can change any file. So the commit step enforces the boundary
@@ -104,6 +108,16 @@ but unprotected (`make` → Makefile, `npm`/`yarn`/`pnpm` → package.json,
 `pytest`/`unittest`/`tox`/`nox` → conftest.py, pyproject.toml, tox.ini,
 noxfile.py, setup.cfg, pytest.ini). Protection is opt-in, so the warning is
 there to catch the files you would otherwise miss.
+
+## What counts as a build attempt
+
+Only a run that reached the model is a build attempt. A precondition failure
+(dirty checkout, no approval) and an infrastructure failure (the model is
+unreachable) do not write a build record, do not spend the daily budget, and
+remove the empty branch so the spec stays eligible for the next run. A run that
+reached the model and failed writes a record with a reason code — `protocol`,
+`gate`, `checks`, `budget`, `tamper`, or `infrastructure` — quarantines its work
+in progress on the branch, and spends the budget.
 
 ## Merge gates
 
@@ -254,5 +268,9 @@ agent cannot quietly rewrite the context that later builds depend on.
   header and `SameSite=Lax` session cookie. Use a proxy.
 - Container isolation is per repo and opt-in, not enforced globally. Host
   checks can still read any file your user can read.
+- Failed-build cleanup still happens in the user's checkout: an untracked file
+  created during a build (by the checks, or by the user concurrently) is
+  removed with the other leftovers. A git worktree per build would isolate the
+  build from the user's checkout entirely; that is the next containment step.
 - A model can still write a test-shaped file outside the protected globs if the
   repo's layout is unusual. Add it to `protected_paths:`.
