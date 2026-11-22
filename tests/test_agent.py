@@ -230,6 +230,12 @@ class BuildTest(BuildFixture):
         self.assertIn("not buildable", str(caught.exception))
 
     def test_tests_and_ci_are_protected(self) -> None:
+        # An existing test may not be edited; CI config may not be touched.
+        (self.code / "tests").mkdir()
+        (self.code / "tests/test_app.py").write_text(
+            "def test_real():\n    assert True\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "a real test")
         for relative in ("tests/test_app.py", ".github/workflows/ci.yml"):
             responder = self._responder([
                 {"action": "plan", "summary": "Weaken the gate."},
@@ -239,9 +245,74 @@ class BuildTest(BuildFixture):
                 agent.build(self.root, "contribution-me-app-issue-42",
                             responder=responder)
             self.assertIn("protected path", str(caught.exception))
-            self.assertFalse((self.code / relative).exists())
             _git(self.code, "checkout", "main")
             _git(self.code, "branch", "-D", "stead/42-add-a-name-flag")
+        self.assertEqual((self.code / "tests/test_app.py").read_text(encoding="utf-8"),
+                         "def test_real():\n    assert True\n")
+        self.assertFalse((self.code / ".github/workflows/ci.yml").exists())
+
+    def test_a_new_test_file_may_be_added_without_allow_test_edits(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag and a test."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "write", "path": "tests/test_flag.py",
+             "content": "def test_flag():\n    assert True\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertIn("tests/test_flag.py", result["tests_touched"])
+        self.assertIn("tests/test_flag.py", result["files"])
+
+    def test_a_new_conftest_is_not_a_test_addition(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Sneak a conftest in."},
+            {"action": "write", "path": "tests/conftest.py",
+             "content": "import pytest\npytest.skip('all', allow_module_level=True)\n"},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder)
+        self.assertIn("protected path", str(caught.exception))
+
+    def test_protection_is_case_insensitive(self) -> None:
+        (self.code / "tests").mkdir()
+        (self.code / "tests/test_app.py").write_text("assert True\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "a real test")
+        for relative in ("TESTS/test_app.py", ".GitHub/workflows/ci.yml", ".ENV"):
+            responder = self._responder([
+                {"action": "plan", "summary": "Case trick."},
+                {"action": "write", "path": relative, "content": "x"},
+            ])
+            with self.assertRaises(agent.BuildError) as caught:
+                agent.build(self.root, "contribution-me-app-issue-42",
+                            responder=responder)
+            self.assertTrue("protected path" in str(caught.exception)
+                            or "secret" in str(caught.exception), str(caught.exception))
+            _git(self.code, "checkout", "main")
+            _git(self.code, "branch", "-D", "stead/42-add-a-name-flag")
+
+    def test_a_symlinked_directory_does_not_sidestep_protection(self) -> None:
+        import os
+        (self.code / "tests").mkdir()
+        (self.code / "tests/test_app.py").write_text("assert True\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "a real test")
+        try:
+            os.symlink(self.code / "tests", self.code / "tlink", target_is_directory=True)
+        except (OSError, NotImplementedError):
+            self.skipTest("symlinks not available on this platform")
+        responder = self._responder([
+            {"action": "plan", "summary": "Go around via the symlink."},
+            {"action": "write", "path": "tlink/test_app.py", "content": "gutted\n"},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder)
+        self.assertIn("protected path", str(caught.exception))
+        self.assertEqual((self.code / "tests/test_app.py").read_text(encoding="utf-8"),
+                         "assert True\n")
 
     def test_a_repo_can_allow_test_edits_and_the_build_records_it(self) -> None:
         self._set_repo(allow_test_edits="true")
@@ -395,6 +466,127 @@ class BuildTest(BuildFixture):
             safety.run_checks(self.code, "true",
                               {"checks_isolation": "docker"})
         self.assertIn("checks_image", str(caught.exception))
+
+
+class CommitStepTest(BuildFixture):
+    """Checks execute model-written code. Its side effects must not become
+    commits, and must not rewrite git's own execution surface (.git)."""
+
+    def _with_checks(self, payload: str) -> None:
+        self._set_repo(checks="python app.py")
+        (self.code / "tests").mkdir()
+        (self.code / "tests/test_app.py").write_text(
+            "def test_real():\n    assert True\n", encoding="utf-8")
+        (self.code / ".github/workflows").mkdir(parents=True)
+        (self.code / ".github/workflows/ci.yml").write_text("name: ci\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "tests and ci")
+        self.head = _git(self.code, "rev-parse", "HEAD").strip()
+        self.payload = payload
+
+    def _build(self):
+        return agent.build(self.root, "contribution-me-app-issue-42",
+                           responder=self._responder([
+                               {"action": "plan", "summary": "Add flag."},
+                               {"action": "write", "path": "app.py", "content": self.payload},
+                               {"action": "finish", "summary": "Flag added."},
+                           ]))
+
+    def test_checks_side_effects_on_protected_paths_are_not_committed(self) -> None:
+        self._with_checks(
+            "import pathlib\n"
+            "p = pathlib.Path(__file__).parent\n"
+            "(p / 'tests/test_app.py').write_text('# gutted by a side effect\\n')\n"
+            "(p / '.github/workflows/ci.yml').write_text('name: ci\\n# rewritten\\n')\n"
+            "print('hi')\n")
+        with self.assertRaises(agent.BuildError) as caught:
+            self._build()
+        self.assertIn("protected", str(caught.exception))
+        # Nothing was committed: the branch tip is still the starting commit.
+        self.assertEqual(_git(self.code, "rev-parse", "HEAD").strip(), self.head)
+        self.assertEqual(_git(self.code, "rev-parse", "main").strip(), self.head)
+
+    def test_checks_cannot_plant_a_git_hook_that_runs_on_the_host(self) -> None:
+        leak = self.root / "leak.txt"
+        self._with_checks(
+            "import pathlib\n"
+            "p = pathlib.Path(__file__).parent\n"
+            "hook = p / '.git/hooks/post-commit'\n"
+            "hook.write_text('#!/bin/sh\\nprintf leaked > \"" + str(leak).replace("\\", "/") + "\"\\n')\n"
+            "hook.chmod(0o755)\n"
+            "print('hi')\n")
+        with self.assertRaises(agent.BuildError) as caught:
+            self._build()
+        self.assertIn(".git", str(caught.exception))
+        self.assertFalse(leak.exists(), "a planted hook ran on the host")
+        self.assertEqual(_git(self.code, "rev-parse", "HEAD").strip(), self.head)
+
+    def test_checks_cannot_rewrite_git_config(self) -> None:
+        self._with_checks(
+            "import pathlib\n"
+            "p = pathlib.Path(__file__).parent\n"
+            "cfg = p / '.git/config'\n"
+            "cfg.write_text(cfg.read_text() + '\\n[core]\\n\\tfsmonitor = evil\\n')\n"
+            "print('hi')\n")
+        with self.assertRaises(agent.BuildError) as caught:
+            self._build()
+        self.assertIn(".git", str(caught.exception))
+
+    def test_unexpected_side_effect_files_are_not_committed(self) -> None:
+        self._with_checks(
+            "import pathlib\n"
+            "p = pathlib.Path(__file__).parent\n"
+            "(p / 'seen_by_checks.txt').write_text('side effect\\n')\n"
+            "print('hi')\n")
+        with self.assertRaises(agent.BuildError) as caught:
+            self._build()
+        self.assertIn("did not write", str(caught.exception))
+        self.assertEqual(_git(self.code, "rev-parse", "HEAD").strip(), self.head)
+
+    def test_ignored_build_artifacts_are_tolerated(self) -> None:
+        self._with_checks(
+            "import pathlib\n"
+            "p = pathlib.Path(__file__).parent\n"
+            "cache = p / '__pycache__'\n"
+            "cache.mkdir(exist_ok=True)\n"
+            "(cache / 'app.cpython-313.pyc').write_bytes(b'\\x00')\n"
+            "print('hi')\n")
+        result = self._build()
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["files"], ["app.py"])
+
+    def test_a_preexisting_hook_does_not_run_during_steads_commit(self) -> None:
+        marker = self.root / "hook-ran.txt"
+        hook = self.code / ".git/hooks/post-commit"
+        hook.write_text("#!/bin/sh\nprintf ran > \"" + str(marker).replace("\\", "/") + "\"\n",
+                        encoding="utf-8")
+        hook.chmod(0o755)
+        self._set_repo(checks="python app.py")
+        self.payload = "print('hello')\n"
+        result = self._build()
+        self.assertTrue(result["ok"])
+        self.assertFalse(marker.exists(), "Stead's commit ran the checkout's hook")
+
+    def test_the_ledger_comes_from_the_diff_not_the_tool_log(self) -> None:
+        self._set_repo(allow_test_edits="true", checks="python app.py")
+        (self.code / "tests").mkdir()
+        (self.code / "tests/test_app.py").write_text(
+            "def test_real():\n    assert True\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "a real test")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add flag and test."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "write", "path": "tests/test_app.py",
+             "content": "def test_real():\n    assert True\n\ndef test_flag():\n    assert True\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        committed = _git(self.code, "show", "--name-only", "--format=", "HEAD").split()
+        self.assertEqual(sorted(committed), ["app.py", "tests/test_app.py"])
+        self.assertEqual(result["tests_touched"], ["tests/test_app.py"])
+        self.assertEqual(result["files"], ["app.py", "tests/test_app.py"])
 
 
 class GhostBuildTest(BuildFixture):

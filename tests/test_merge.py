@@ -10,6 +10,7 @@ from pathlib import Path
 from ctx import autonomy
 from ctx.merge import MergeError, merge
 from ctx.publish import PublishError, publish
+from tests import strip_git_hygiene
 from tests.test_feature_builder import SPEC_ID, FeatureBuilderTestCase
 
 
@@ -57,6 +58,7 @@ class MergeTest(FeatureBuilderTestCase):
         calls = []
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
@@ -76,6 +78,7 @@ class MergeTest(FeatureBuilderTestCase):
         calls = []
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
@@ -107,6 +110,7 @@ class MergeTest(FeatureBuilderTestCase):
         self._allow(merge_without_required_checks=False)
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
             if argv[:3] == ["gh", "pr", "view"]:
@@ -126,6 +130,7 @@ class MergeTest(FeatureBuilderTestCase):
                     merge_without_required_checks=False)
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
             if argv[:3] == ["gh", "pr", "view"]:
@@ -146,6 +151,7 @@ class MergeTest(FeatureBuilderTestCase):
         calls = []
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"

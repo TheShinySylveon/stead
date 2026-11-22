@@ -16,11 +16,16 @@ build or a watched run without killing the process.
 
 from __future__ import annotations
 
+import contextlib
 import fnmatch
+import hashlib
 import json
 import os
 import re
+import shutil
 import subprocess
+import tempfile
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -118,6 +123,12 @@ def _clean(path) -> str:
     return rel.lstrip("/")
 
 
+def _match(rel: str, pattern: str) -> bool:
+    """Case-insensitive on every platform: macOS and Windows filesystems are
+    case-insensitive, so `.GitHub/...` and `TESTS/...` are the real paths there."""
+    return fnmatch.fnmatchcase(rel.casefold(), pattern.casefold())
+
+
 def protected_by(path: str, repo_meta: dict) -> str | None:
     """Return the pattern that protects a repo-relative path, or None."""
     if truthy(repo_meta.get("allow_protected")):
@@ -130,19 +141,38 @@ def protected_by(path: str, repo_meta: dict) -> str | None:
         patterns.extend(TEST_GLOBS)
     patterns.extend(_as_list(repo_meta.get("protected_paths")))
     for pattern in patterns:
-        if fnmatch.fnmatch(rel, pattern) or fnmatch.fnmatch("/" + rel, pattern):
+        if _match(rel, pattern) or _match("/" + rel, pattern):
             return pattern
     return None
 
 
 def is_test_path(path: str) -> bool:
     rel = _clean(path)
-    return any(fnmatch.fnmatch(rel, pattern) for pattern in TEST_GLOBS)
+    return any(_match(rel, pattern) for pattern in TEST_GLOBS)
 
 
 def is_ci_path(path: str) -> bool:
     rel = _clean(path)
-    return any(fnmatch.fnmatch(rel, pattern) for pattern in CI_GLOBS)
+    return any(_match(rel, pattern) for pattern in CI_GLOBS)
+
+
+def test_addition_allowed(path: str, repo_meta: dict) -> bool:
+    """A brand-new test file may be added even when tests are protected.
+
+    Editing or deleting an existing test weakens the gate; adding a new test is
+    the discipline ``require_tests`` asks for. ``conftest.py`` and ``__init__.py``
+    change how *other* tests run, so they never count as a new-test addition.
+    An explicit ``protected_paths:`` entry still wins.
+    """
+    rel = _clean(path)
+    if not is_test_path(rel):
+        return False
+    if rel.rsplit("/", 1)[-1].casefold() in {"conftest.py", "__init__.py"}:
+        return False
+    for pattern in _as_list(repo_meta.get("protected_paths")):
+        if _match(rel, pattern) or _match("/" + rel, pattern):
+            return False
+    return True
 
 
 def secret_by(path: str) -> str | None:
@@ -153,7 +183,7 @@ def secret_by(path: str) -> str | None:
             (".example", ".sample", ".template")):
         return None
     for pattern in SECRET_GLOBS:
-        if fnmatch.fnmatch(rel, pattern):
+        if _match(rel, pattern):
             return pattern
     return None
 
@@ -197,6 +227,134 @@ def checks_trusted(repo_meta: dict) -> bool:
             or str(repo_meta.get("trust_checks") or "").strip().lower() == "host")
 
 
+# --- Git hygiene -----------------------------------------------------------
+# Checks execute model-written code with write access to the checkout, .git
+# included. A planted hook or a rewritten .git/config (core.fsmonitor,
+# core.sshCommand, credential.helper, filter drivers) would run on the HOST
+# with Stead's full environment the next time Stead calls git. Two controls:
+# every Stead git call disables the checkout's hooks and fsmonitor, and every
+# check run is bracketed by a .git/config + hooks snapshot that fails the
+# build on any change.
+
+def disable_hooks(argv: list[str], hooks_dir: Path) -> list[str]:
+    """Prepend config that points git's hooks at an empty dir we own."""
+    if argv and argv[0] == "git":
+        return ["git", "-c", f"core.hooksPath={hooks_dir}",
+                "-c", "core.fsmonitor=false", *argv[1:]]
+    return list(argv)
+
+
+@contextlib.contextmanager
+def hooks_disabled():
+    """An empty, unpredictable hooks directory for one build/publish/merge."""
+    folder = Path(tempfile.mkdtemp(prefix="stead-no-hooks-"))
+    try:
+        yield folder
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def safe_runner(base_run):
+    """Wrap a git runner so every call disables the checkout's hooks and
+    fsmonitor. Each call gets its own empty hooks dir; git never executes
+    anything the checkout planted."""
+    def run(argv, cwd):
+        with hooks_disabled() as folder:
+            return base_run(disable_hooks(argv, folder), cwd)
+    return run
+
+
+def _git_dirs(code: Path) -> list[Path]:
+    """The .git dir(s) that matter: a worktree shares the common dir's hooks
+    and config, and may carry its own config.worktree."""
+    git_path = code / ".git"
+    if git_path.is_file():
+        try:
+            text = git_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return []
+        if not text.startswith("gitdir:"):
+            return []
+        git_path = (code / text.split(":", 1)[1].strip()).resolve()
+    if not git_path.is_dir():
+        return []
+    dirs = [git_path]
+    commondir = git_path / "commondir"
+    if commondir.is_file():
+        try:
+            common = (git_path / commondir.read_text(encoding="utf-8").strip()).resolve()
+            if common != git_path and common.is_dir():
+                dirs.append(common)
+        except OSError:
+            pass
+    return dirs
+
+
+_SNAPSHOT_CAP = 1_000_000
+
+
+def git_state_snapshot(code: Path) -> dict:
+    """Content of .git/config and every hook file, keyed by location.
+
+    Values are bytes, or a sha256 digest string for files over 1 MB (those are
+    compared but cannot be restored). Dict equality is the change check.
+    """
+    snap: dict = {}
+    for git_dir in _git_dirs(code):
+        try:
+            label = git_dir.relative_to(code.resolve()).as_posix()
+        except ValueError:
+            label = str(git_dir)
+        candidates = [git_dir / "config", git_dir / "config.worktree"]
+        hooks = git_dir / "hooks"
+        if hooks.is_dir():
+            candidates.extend(sorted(p for p in hooks.rglob("*") if p.is_file()))
+        for path in candidates:
+            if not path.is_file():
+                continue
+            key = label + "/" + path.relative_to(git_dir).as_posix()
+            try:
+                if path.stat().st_size > _SNAPSHOT_CAP:
+                    snap[key] = "sha256:" + hashlib.sha256(path.read_bytes()).hexdigest()
+                else:
+                    snap[key] = path.read_bytes()
+            except OSError:
+                snap[key] = "unreadable"
+    return snap
+
+
+def git_state_restore(code: Path, before: dict, after: dict) -> list[str]:
+    """Undo .git changes a check run made. Returns what could not be restored."""
+    problems: list[str] = []
+    for git_dir in _git_dirs(code):
+        try:
+            label = git_dir.relative_to(code.resolve()).as_posix()
+        except ValueError:
+            label = str(git_dir)
+        prefix = label + "/"
+        wanted = {k[len(prefix):]: v for k, v in before.items() if k.startswith(prefix)}
+        current = {k[len(prefix):]: v for k, v in after.items() if k.startswith(prefix)}
+        for rel, value in wanted.items():
+            if current.get(rel) == value:
+                continue
+            path = git_dir / rel
+            if isinstance(value, bytes):
+                try:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    path.write_bytes(value)
+                except OSError:
+                    problems.append(rel)
+            else:
+                problems.append(rel)  # digest-only or unreadable: cannot restore
+        for rel in current:
+            if rel not in wanted:
+                try:
+                    (git_dir / rel).unlink()
+                except OSError:
+                    problems.append(rel)
+    return problems
+
+
 def _env_pairs(value) -> dict:
     if isinstance(value, dict):
         return {str(k): str(v) for k, v in value.items()}
@@ -221,13 +379,15 @@ def run_checks(code: Path, command: str, repo_meta: dict, *,
     isolation = str(repo_meta.get("checks_isolation") or "host").strip().lower()
     if isolation not in {"host", "docker"}:
         raise SafetyError(f"invalid checks_isolation {isolation!r}")
+    name = ""
     if isolation == "docker":
         image = str(repo_meta.get("checks_image") or "").strip()
         if not image:
             raise SafetyError(
                 "checks_isolation is docker but checks_image is empty. "
                 "Set checks_image on the repo, for example python:3.12-slim.")
-        argv = _docker_command(code, command, image, repo_meta)
+        name = f"stead-checks-{uuid.uuid4().hex[:12]}"
+        argv = _docker_command(code, command, image, repo_meta, name)
         mode = "docker"
     else:
         argv = command
@@ -238,15 +398,26 @@ def run_checks(code: Path, command: str, repo_meta: dict, *,
             capture_output=True, text=True, timeout=max(30, timeout),
             env=environment(repo_meta),
         )
+    except subprocess.TimeoutExpired as exc:
+        if name:
+            # Killing the docker client does not stop the container. Name it
+            # and kill it explicitly, or it keeps running after the timeout.
+            try:
+                subprocess.run(["docker", "kill", name], capture_output=True,
+                               timeout=30)
+            except (OSError, subprocess.SubprocessError):
+                pass
+        raise SafetyError(f"checks timed out after {max(30, timeout)}s") from exc
     except (OSError, subprocess.SubprocessError) as exc:
         raise SafetyError(f"could not run checks: {exc}") from exc
     output = ((done.stdout or "") + (done.stderr or "")).strip()
     return done.returncode == 0, output, mode
 
 
-def _docker_command(code: Path, command: str, image: str, repo_meta: dict) -> list[str]:
+def _docker_command(code: Path, command: str, image: str, repo_meta: dict,
+                    name: str) -> list[str]:
     argv = [
-        "docker", "run", "--rm", "--network", "none",
+        "docker", "run", "--rm", "--name", name, "--network", "none",
         "--cap-drop", "ALL", "--security-opt", "no-new-privileges",
         "--pids-limit", "256", "--memory", "2g", "--cpus", "2",
     ]
@@ -254,7 +425,13 @@ def _docker_command(code: Path, command: str, image: str, repo_meta: dict) -> li
         argv += ["--user", f"{os.getuid()}:{os.getgid()}"]
     for key, value in _env_pairs(repo_meta.get("checks_env")).items():
         argv += ["-e", f"{key}={value}"]
-    argv += ["-v", f"{code}:/src", "-w", "/src", image, "sh", "-lc", command]
+    argv += ["-v", f"{code}:/src"]
+    # The checkout is read-write so checks can build, but .git is read-only:
+    # code in the container must not plant hooks or rewrite git config that
+    # the host would later execute.
+    if (code / ".git").exists():
+        argv += ["-v", f"{code / '.git'}:/src/.git:ro"]
+    argv += ["-w", "/src", image, "sh", "-lc", command]
     return argv
 
 

@@ -21,6 +21,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import socket
 import subprocess
 import tempfile
@@ -90,19 +91,29 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                          "approval. Publish and merge need a higher reach on the repo.")
     checks = (repo_meta.get("checks") or "").strip()
     default = (repo_meta.get("default_branch") or "main").strip()
-    run = runner or _git_run
+    base_run = runner or _git_run
     branch = branch_for(spec)
     started = time.monotonic()
     deadline = started + max(1, max_minutes) * 60
     lock = _lock(code)
+    # Every git call Stead makes runs with the checkout's hooks and fsmonitor
+    # disabled: checks execute model-written code that could plant either.
+    hooks_dir = Path(tempfile.mkdtemp(prefix="stead-no-hooks-"))
+
+    def run(argv, cwd):
+        return base_run(safety.disable_hooks(argv, hooks_dir), cwd)
+
     replies: list[str] = []
     transcript: list[str] = []
     actions: list[dict] = []
+    git_before: dict = {}
+    initial_dirty: set[str] = set()
     try:
         current = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
         if resume:
             if current != branch:
                 raise BuildError(f"--resume needs the build branch checked out ({branch}), now on {current}.")
+            initial_dirty = set(_porcelain_paths(run, code))
         else:
             if _git(run, code, ["status", "--porcelain"]).strip():
                 raise BuildError("the checkout has uncommitted changes. Commit, stash, or use --resume.")
@@ -111,6 +122,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             if _git(run, code, ["branch", "--list", branch]).strip():
                 raise BuildError(f"branch {branch} already exists. Use --resume or remove it.")
             _git(run, code, ["checkout", "-b", branch])
+        git_before = safety.git_state_snapshot(code)
         if responder is None:
             from ctx import models
             settings = models.resolve(root)
@@ -162,7 +174,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if not target.is_file() or _ignored(target, code):
                     transcript.append(f"read: no readable file at {rel}")
                     continue
-                if safety.secret_by(rel):
+                if safety.secret_by(rel) or safety.secret_by(_resolved_rel(target, code)):
                     transcript.append(f"read: {rel} looks like a secret; refused")
                     continue
                 text = target.read_text(encoding="utf-8", errors="replace")
@@ -209,13 +221,23 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if not isinstance(text, str):
                     transcript.append("write: content must be a string")
                     continue
+                target = code / rel
+                resolved_rel = _resolved_rel(target, code)
                 protected = safety.protected_by(rel, repo_meta)
-                if protected:
+                if protected is None and resolved_rel != rel:
+                    protected = safety.protected_by(resolved_rel, repo_meta)
+                # Adding a brand-new test file is the discipline require_tests
+                # asks for; editing or deleting existing tests stays refused.
+                new_test = (protected in safety.TEST_GLOBS
+                            and not target.exists()
+                            and safety.test_addition_allowed(rel, repo_meta)
+                            and safety.test_addition_allowed(resolved_rel, repo_meta))
+                if protected and not new_test:
                     raise BuildError(
                         f"refusing to write protected path {rel} ({protected}). "
                         "The repo can allow it with allow_test_edits, "
                         "allow_ci_edits, or protected_paths.")
-                if safety.secret_by(rel):
+                if safety.secret_by(rel) or safety.secret_by(resolved_rel):
                     raise BuildError(f"refusing to write {rel}: it looks like a secret file")
                 data = text.encode("utf-8")
                 if len(data) > MAX_FILE_BYTES:
@@ -224,7 +246,6 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 edits += len(data)
                 if edits > MAX_TOTAL_EDITS:
                     raise BuildError("the model tried to write too much in one build")
-                target = code / rel
                 if _ignored(target, code):
                     raise BuildError(f"refusing to write an ignored path: {rel}")
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -245,13 +266,16 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if _ignored(target, code) or not target.is_file():
                     transcript.append(f"delete: no file at {rel}")
                     continue
+                resolved_rel = _resolved_rel(target, code)
                 reason = safety.protected_by(rel, repo_meta)
+                if reason is None and resolved_rel != rel:
+                    reason = safety.protected_by(resolved_rel, repo_meta)
                 if reason:
                     raise BuildError(
                         f"refusing to delete protected path {rel} ({reason}). "
                         "The repo can allow it with allow_test_edits, "
                         "allow_ci_edits, or protected_paths.")
-                if safety.secret_by(rel):
+                if safety.secret_by(rel) or safety.secret_by(resolved_rel):
                     raise BuildError(f"refusing to delete {rel}: it looks like a secret file")
                 target.unlink()
                 files.pop(rel, None)
@@ -324,27 +348,51 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                             (output[-4000:] or "(no output)"))
                         continue
                 commit = ""
+                changed_actual: list[str] = []
+                deleted_actual: list[str] = []
                 if changed:
-                    _git(run, code, ["add", "-A"])
+                    # Checks execute model-written code. Anything it changed
+                    # beyond the model's own writes is a side effect, not work:
+                    # refuse it, and never let `git add -A` launder it into the
+                    # commit. Protected or secret paths fail hardest.
+                    expected = set(files) | set(deleted) | initial_dirty
+                    unexpected = _unexpected_changes(run, code, expected)
+                    if unexpected:
+                        bad = [p for p in unexpected
+                               if safety.protected_by(p, repo_meta) or safety.secret_by(p)]
+                        if bad:
+                            raise BuildError(
+                                "checks changed protected or secret paths: "
+                                + ", ".join(sorted(bad))
+                                + ". The repo did not allow this. Refusing to commit.")
+                        raise BuildError(
+                            "checks changed files the model did not write: "
+                            + ", ".join(sorted(unexpected)) + ". Refusing to commit.")
+                    tracked = _tracked_files(run, code)
+                    stage = sorted(p for p in expected
+                                   if (code / p).exists() or p in tracked)
+                    if stage:
+                        _git(run, code, ["add", "-A", "--", *stage])
+                    changed_actual, deleted_actual = _staged_changes(run, code)
                     message = f"{spec.get('title') or spec.get('id')}"
                     if spec.get("number"):
                         message += f" (#{spec['number']})"
                     _git(run, code, ["commit", "-m", message])
                     commit = _git(run, code, ["rev-parse", "HEAD"]).strip()
-                touched = sorted(files) + sorted(deleted)
                 result = {
                     "ok": True,
                     "reach": reach,
                     "branch": branch,
-                    "files": sorted(files),
-                    "deleted": sorted(deleted),
+                    "files": changed_actual,
+                    "deleted": deleted_actual,
                     "plan": plan,
                     "summary": summary,
                     "checks": checks,
                     "checks_mode": checks_mode,
-                    "tests_touched": [path for path in sorted(files) if safety.is_test_path(path)],
-                    "tests_deleted": [path for path in sorted(deleted) if safety.is_test_path(path)],
-                    "ci_touched": [path for path in touched if safety.is_ci_path(path)],
+                    "tests_touched": [p for p in changed_actual if safety.is_test_path(p)],
+                    "tests_deleted": [p for p in deleted_actual if safety.is_test_path(p)],
+                    "ci_touched": [p for p in changed_actual + deleted_actual
+                                   if safety.is_ci_path(p)],
                     "commit": commit,
                     "steps": len(actions),
                     "repair_rounds": failures,
@@ -391,6 +439,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         raise
     finally:
         _unlock(lock)
+        shutil.rmtree(hooks_dir, ignore_errors=True)
 
 
 def lock_path(code: Path) -> Path:
@@ -489,10 +538,79 @@ def _remain_running(root: Path, deadline: float) -> None:
 def _run_checks(code: Path, command: str, repo_meta: dict,
                 deadline: float) -> tuple[bool, str, str]:
     remaining = int(max(30, deadline - time.monotonic()))
+    before = safety.git_state_snapshot(code)
     try:
-        return safety.run_checks(code, command, repo_meta, timeout=remaining)
+        ok, output, mode = safety.run_checks(code, command, repo_meta, timeout=remaining)
     except safety.SafetyError as exc:
         raise BuildError(str(exc)) from exc
+    if safety.git_state_snapshot(code) != before:
+        raise BuildError(
+            "checks changed .git (config or hooks). A check run must not rewrite "
+            "git's own execution surface: hooks and config would run on the host "
+            "with Stead's environment. Refusing to continue.")
+    return ok, output, mode
+
+
+def _porcelain_paths(run, code: Path) -> list[str]:
+    """Repo-relative paths git reports as changed (staged or not). -uall lists
+    untracked files individually, not as collapsed directory entries."""
+    paths: list[str] = []
+    for line in _git(run, code, ["status", "--porcelain", "-uall"]).splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:]
+        if " -> " in path:  # rename: report the destination
+            path = path.split(" -> ")[-1]
+        path = path.strip().strip('"')
+        if path:
+            paths.append(path)
+    return paths
+
+
+def _unexpected_changes(run, code: Path, expected: set[str]) -> list[str]:
+    """Changed paths outside the model's writes, ignoring build artifacts."""
+    unexpected: list[str] = []
+    for path in _porcelain_paths(run, code):
+        parts = Path(path).parts
+        if any(p.casefold() in IGNORE_DIRS or p.casefold() == LOCK_NAME for p in parts):
+            continue
+        if path not in expected:
+            unexpected.append(path)
+    return unexpected
+
+
+def _tracked_files(run, code: Path) -> set[str]:
+    return {line.strip().strip('"')
+            for line in _git(run, code, ["ls-files"]).splitlines() if line.strip()}
+
+
+def _staged_changes(run, code: Path) -> tuple[list[str], list[str]]:
+    """The real diff about to be committed: (changed, deleted) paths."""
+    changed: list[str] = []
+    deleted: list[str] = []
+    raw = _git(run, code, ["diff", "--cached", "--name-status", "HEAD"])
+    for line in raw.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        status = parts[0].strip()
+        if status.startswith("D"):
+            deleted.append(parts[-1].strip())
+        elif status.startswith("R") and len(parts) >= 3:
+            deleted.append(parts[1].strip())
+            changed.append(parts[-1].strip())
+        else:
+            changed.append(parts[-1].strip())
+    return sorted(set(changed)), sorted(set(deleted))
+
+
+def _resolved_rel(target: Path, code: Path) -> str:
+    """The path after symlinks: protection matches the real target, not the
+    name the model gave (a symlinked directory must not sidestep tests/**)."""
+    try:
+        return target.resolve().relative_to(code).as_posix()
+    except ValueError:
+        raise BuildError(f"path leaves the repository: {target}")
 
 
 def _search(code: Path, query: str) -> list[str]:
@@ -647,8 +765,10 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         "write replaces the whole file. Read a file before changing it, and use the "
         "exact paths from the repository tree below — do not invent filenames. "
         "Stay inside the repository. Do not touch .git. "
-        "Do not edit tests, CI config, or the checks definition: those paths "
-        "are protected, and an attempt fails the build. "
+        "Do not edit or delete existing tests, CI config, or the checks "
+        "definition: those paths are protected, and an attempt fails the build. "
+        "Adding a brand-new test file is allowed and expected when the spec has "
+        "acceptance criteria. "
         "If the work implies a decision or a glossary term, propose it with "
         "propose; it goes to the inbox for a person, never straight into context. "
         "Match the repo's existing style and tests. Finish when the spec is met.\n\n"
@@ -691,7 +811,7 @@ def _safe_rel(raw: str) -> str:
     parts = [part for part in rel.split("/") if part not in {"", "."}]
     if any(part == ".." for part in parts):
         raise BuildError(f"paths may not leave the repository: {raw}")
-    if parts and parts[0] == ".git":
+    if parts and parts[0].casefold() == ".git":
         raise BuildError("the model may not touch .git")
     return "/".join(parts)
 
@@ -701,7 +821,8 @@ def _ignored(path: Path, code: Path) -> bool:
         relative = path.resolve().relative_to(code)
     except ValueError:
         raise BuildError(f"path leaves the repository: {path}")
-    return any(part in IGNORE_DIRS or part == LOCK_NAME for part in relative.parts)
+    return any(part.casefold() in IGNORE_DIRS or part.casefold() == LOCK_NAME
+               for part in relative.parts)
 
 
 def _tree(code: Path) -> str:

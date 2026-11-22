@@ -8,6 +8,7 @@ from pathlib import Path
 
 from ctx import autonomy
 from ctx.publish import PublishError, publish
+from tests import strip_git_hygiene
 from tests.test_feature_builder import SPEC_ID, FeatureBuilderTestCase
 
 
@@ -40,6 +41,7 @@ class PublishTest(FeatureBuilderTestCase):
         calls = []
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
@@ -64,6 +66,7 @@ class PublishTest(FeatureBuilderTestCase):
         captured = {}
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
@@ -87,6 +90,7 @@ class PublishTest(FeatureBuilderTestCase):
         captured = {}
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
@@ -110,6 +114,7 @@ class PublishTest(FeatureBuilderTestCase):
         calls = []
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "main\n"
@@ -126,6 +131,7 @@ class PublishTest(FeatureBuilderTestCase):
         calls = []
 
         def runner(argv, cwd):
+            argv = strip_git_hygiene(argv)
             calls.append((argv, Path(cwd)))
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"

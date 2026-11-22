@@ -47,7 +47,7 @@ def publish(root: Path, contribution_ref: str, *, runner=None) -> dict:
             "set the repo code_path to a local checkout before publishing")
     if code.resolve() == root.resolve():
         raise PublishError("code_path must be the project checkout, not this Stead repo")
-    run = runner or _run
+    run = safety.safe_runner(runner or _run)
     default = (repo_meta.get("default_branch") or "main").strip()
     branch = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
     if not branch or branch in {default, "HEAD"}:
