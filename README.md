@@ -141,6 +141,7 @@ More: [docs/factories.md](docs/factories.md) and
 | [Getting started](docs/getting-started.md) | Requirements, clone, first command |
 | [First run](docs/first-run.md) | Welcome, and what it refuses to do |
 | [Concepts](docs/concepts.md) | Files, the index, public and private |
+| [Vision](docs/vision.md) | The autonomy slider, shared repo context, one context graph |
 | [Cockpit](docs/cockpit.md) | The browser UI |
 | [CLI](docs/cli.md) | Every command |
 | [Models](docs/models.md) | The optional endpoint a factory drafts with |

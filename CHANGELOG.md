@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- `docs/vision.md` records the long-range design: an autonomy slider with a
+  `spec` rung, opt-in `.stead/` repo context, unbounded retrieval, and one
+  context graph across repos. `PLAN.md` §7.8–7.10 carries the near-term slice.
 - `PLAN.md` now carries the autonomy roadmap: PR feedback repair, queue and
   workers, check detection, patch edits, budgets, stale-lock recovery, and
   post-merge cleanup.

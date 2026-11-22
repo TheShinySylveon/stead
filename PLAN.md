@@ -219,6 +219,10 @@ the item says so. Every item keeps the existing hard rules: no push to the
 default branch, no `--admin`, no model-chosen shell command, and no merge
 without `reach: merge`.
 
+The larger product direction — the `spec` rung, opt-in `.stead/` context,
+retrieval with budgets, and one context graph across repos — is
+[docs/vision.md](docs/vision.md). Items 7.8–7.10 are its near-term slice.
+
 ### 7.1 PR feedback loop — `stead repair`
 
 Today the agent stops at the first PR. It cannot react to a failing CI run or
@@ -296,6 +300,32 @@ A crashed build leaves a lock file that needs manual removal.
   `--cleanup` is passed. Leave the remote branch to the operator's GitHub
   settings.
 - Acceptance: local branch removed only on request; remote untouched.
+
+### 7.8 One autonomy ladder, with a `spec` rung
+
+- Add `spec` between observe and build: the agent writes specs, decisions, and
+  plans as a docs PR; it does not write code.
+- Expose `observe / spec / build / deliver` as one per-repo ladder, with
+  `shadow / draft-pr / pr / merge` as the compatibility mapping.
+- Acceptance: a `spec`-reach repo opens a docs-only PR; a build on it is
+  refused; the existing reach values still work.
+
+### 7.9 Opt-in shared repo context (`.stead/`)
+
+- Commit a curated public context: repo description, autonomy defaults, specs,
+  decisions, glossary, roadmap, compacted history.
+- Allowlist only. Private notes, inbox, drafts, and secrets never publish.
+- `stead context publish --dry-run` lists exactly what would be committed.
+- Acceptance: a clone can rebuild the index from `.stead/` with no server; a
+  private document is never included; the dry run matches the commit.
+
+### 7.10 Context retrieval and the global index
+
+- `stead context search`, `timeline`, and `bundle --budget N` over SQLite FTS5.
+- A server index across opted-in repos, derived and rebuildable.
+- Bundles cite source paths and commits; the budget is enforced by Stead.
+- Acceptance: a query returns matches from two repos; a bundle stays under
+  budget; deleting the global index and rebuilding loses nothing.
 
 ## 8. Principles
 

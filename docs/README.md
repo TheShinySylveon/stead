@@ -16,6 +16,9 @@ the copyright in code you write.
 4. [Several people and agents](multi-actor.md) — git shares the files. SQLite stays local.
 5. [Deploy](deploy.md) — this computer, or a Docker shared server.
 
+The long-range design is [Vision](vision.md): the autonomy slider, opt-in
+repo context, and one context graph across repos.
+
 ## Use it
 
 - [Cockpit](cockpit.md) — the local browser UI.
