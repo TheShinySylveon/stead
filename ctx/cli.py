@@ -624,7 +624,7 @@ def build_parser() -> argparse.ArgumentParser:
     rs = repo.add_parser("set", help="set this repo's factory trigger and ceiling")
     rs.add_argument("id")
     rs.add_argument("--trigger", choices=("on-demand", "watch"))
-    rs.add_argument("--reach", choices=("shadow", "draft-pr", "pr", "merge"))
+    rs.add_argument("--reach", choices=("ghost", "shadow", "draft-pr", "pr", "merge"))
     rs.add_argument("--path", help="local checkout for this repo. Not this Stead directory.")
     rs.add_argument("--set", action="append", default=[], metavar="KEY=VALUE",
                     help="set any repo field, e.g. checks_isolation=docker. "
@@ -778,7 +778,7 @@ def build_parser() -> argparse.ArgumentParser:
     frun.add_argument("--live", action="store_true", help="record as live. Still does not push or open a PR.")
     frun.add_argument("--generate", action="store_true",
                       help="draft with the configured model. Nothing is posted or pushed.")
-    frun.add_argument("--reach", choices=("shadow", "draft-pr", "pr", "merge"),
+    frun.add_argument("--reach", choices=("ghost", "shadow", "draft-pr", "pr", "merge"),
                       help="feature-builder only. Cannot exceed the repo ceiling. "
                            "Does not push. Merge is never inherited.")
     fwatch = fr.add_parser("watch", help="assemble open feature specs on repos set to watch")
@@ -797,7 +797,7 @@ def build_parser() -> argparse.ArgumentParser:
     fmerge.add_argument("--contribution", required=True)
     fdef = fr.add_parser("defaults", help="install factory preference. Cannot be merge.")
     fdef.add_argument("--trigger", choices=("on-demand", "watch"))
-    fdef.add_argument("--reach", choices=("shadow", "draft-pr", "pr"))
+    fdef.add_argument("--reach", choices=("ghost", "shadow", "draft-pr", "pr"))
     fdef.add_argument("--max-builds-per-day", type=int,
                       help="watched builds after which the scheduler stops (0 = no cap)")
     fdef.add_argument("--build-minutes", type=int,
@@ -1020,7 +1020,11 @@ def main(argv: list[str] | None = None) -> int:
         print(f"plan: {result['plan']}")
         print(f"files: {', '.join(result['files'])}")
         print(f"branch: {result['branch']}  commit: {result['commit'][:12]}")
-        if result["checks"]:
+        if result.get("reach") == "ghost":
+            print("checks: not run (ghost proposes; it does not execute)")
+            print(f"proposed diff: {result.get('run_dir', '')}/proposed.diff "
+                  f"(applies cleanly: {result.get('diff_applies')})")
+        elif result["checks"]:
             print(f"checks: passed ({result['checks']})")
         else:
             print("checks: none configured on the repo")
@@ -1030,6 +1034,9 @@ def main(argv: list[str] | None = None) -> int:
                 print(f"merged {result['merged_url']}")
             elif args.merge:
                 print("merge did not run. The checks may be pending or the repo moved.")
+        elif result.get("reach") == "ghost":
+            print("ghost run: no code was applied and nothing was pushed. "
+                  "Review the plan and diff, then apply it or raise the repo reach.")
         else:
             print("not pushed. Run with --publish, or:")
             print(f"  python -m stead factory publish --contribution {args.contribution}")

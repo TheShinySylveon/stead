@@ -24,6 +24,16 @@ class PublishTest(FeatureBuilderTestCase):
         with self.assertRaises(PublishError):
             publish(self.root, SPEC_ID, runner=boom)
 
+    def test_ghost_ceiling_never_calls_git(self) -> None:
+        autonomy.set_repo(self.root, "repo-testuser-my-app", reach="ghost",
+                          code_path=str(self.code))
+
+        def boom(*_args):
+            raise AssertionError("git was called")
+        with self.assertRaises(PublishError) as caught:
+            publish(self.root, SPEC_ID, runner=boom)
+        self.assertIn("ghost", str(caught.exception))
+
     def test_merge_ceiling_still_does_not_merge_from_publish(self) -> None:
         autonomy.set_repo(self.root, "repo-testuser-my-app", reach="merge",
                           code_path=str(self.code))

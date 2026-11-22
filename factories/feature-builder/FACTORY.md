@@ -19,12 +19,12 @@ Two settings, not one ladder everyone climbs. The ceiling is per repo.
 - **trigger:** `on-demand` (default) or `watch`. Watch may assemble open
   authored issues tagged `feature-spec` when a scheduler runs
   `stead factory watch`. Flagged specs are skipped. On-demand repos are skipped.
-- **reach:** `shadow` (default), `draft-pr`, `pr`, or `merge`. A run may ask
-  for less. It may not ask for more.
+- **reach:** `ghost`, `shadow` (default), `draft-pr`, `pr`, or `merge`. A run
+  may ask for less. It may not ask for more.
 
-An install default in gitignored `stead.json` can be `shadow`, `draft-pr`, or
-`pr`. Merge is never inherited. The repo file has to say `reach: merge`.
-A fresh install starts at on-demand and shadow.
+An install default in gitignored `stead.json` can be `ghost`, `shadow`,
+`draft-pr`, or `pr`. Merge is never inherited. The repo file has to say
+`reach: merge`. A fresh install starts at on-demand and shadow.
 
 Assembly stays on disk. `stead factory publish` pushes an isolated branch
 and opens a pull request when the ceiling allows `draft-pr`, `pr`, or
@@ -37,17 +37,23 @@ protection, and it does not push the default branch.
 
 The reaches above are the rungs. A repo may sit on any rung.
 
-1. **SHADOW (default, current).** The agent reads `prompt.md` and proposes a
+1. **GHOST.** The build delivers the **plan, spec/doc (markdown) changes, and
+   a FULL proposed diff** for human approval. The diff is recorded as
+   `proposed.diff` in the run directory and verified read-only with
+   `git apply --check`. ZERO code is applied to the checkout: no source,
+   test, or CI edits, no checks run, no push, no PR. Code snippets belong in
+   the plan or the diff. A human approves the diff before any code lands.
+2. **SHADOW (default, current).** The agent reads `prompt.md` and proposes a
    **plan + proposed diff only**. NO remote writes, NO push, NO PR/issue/
    comment/label creation. A human reviews the plan and diff locally before
    anything is applied.
-2. **DRAFT-PR.** When the repo ceiling allows it, `stead factory publish`
+3. **DRAFT-PR.** When the repo ceiling allows it, `stead factory publish`
    pushes an isolated feature branch and opens a **DRAFT PR**. A **HUMAN
    reviews and merges**. The command never marks the PR ready-for-review,
    never merges, and never pushes the default branch.
-3. **PULL REQUEST.** `stead factory publish` opens a normal pull request.
+4. **PULL REQUEST.** `stead factory publish` opens a normal pull request.
    A human still merges, unless the repo file says `reach: merge`.
-4. **TRUSTED (explicit per repo, never the default).** `stead factory merge`
+5. **TRUSTED (explicit per repo, never the default).** `stead factory merge`
    only after ALL of: the repo file says `reach: merge`, the checks are
    actually green, and GitHub accepts the merge. Branch protection is not
    bypassed. A factory run does not call it. Nothing merges a red check.

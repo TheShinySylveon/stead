@@ -49,6 +49,14 @@ class TestSnapshot(UiTestCase):
         self.assertEqual(snap["attention"][0]["tone"], "doing")
         self.assertIn("spec-kit", snap["choices"]["method"])
 
+    def test_ghost_is_the_first_reach_option(self) -> None:
+        snap = ui.snapshot(self.root)
+        self.assertEqual(snap["choices"]["factory_reach"][0], "ghost")
+        self.assertEqual(snap["choices"]["factory_reach"],
+                         ["ghost", "shadow", "draft-pr", "pr", "merge"])
+        self.assertEqual(snap["choices"]["factory_reach_install"],
+                         ["ghost", "shadow", "draft-pr", "pr"])
+
     def test_status_write_goes_through_the_file(self) -> None:
         ui.set_task_status(self.root, "task-write-the-cockpit", "blocked")
         found = __import__("ctx").objects.find(self.root, "task", "task-write-the-cockpit")

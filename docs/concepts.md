@@ -21,7 +21,7 @@ can read the same files; the model is rented, not required.
 |---|---|---|
 | Context system | One organized place where people and agents read and write | It is a folder of markdown in git. SQLite is only a rebuildable index |
 | Factory | A specific, repeatable, scrutinized workflow | The factory executes: `stead build` plans, edits, checks, and commits |
-| Human review | A person watches consequential steps | Review is a per-repo `reach`: human at `shadow`/`draft-pr`, autonomous at `pr`/`merge` |
+| Human review | A person watches consequential steps | Review is a per-repo `reach`: human at `ghost`/`shadow`/`draft-pr`, autonomous at `pr`/`merge` |
 | Prompt versions and evals | Test prompts before trusting them | Built in: eval cases, recorded passes, and a promote gate |
 | Model choice | Intelligence is rented | Any OpenAI-compatible server, Anthropic, Grok, or Ollama; no vendor SDK |
 | Governance | The work is legible | Git history, run logs, and an explicit ceiling per repo |

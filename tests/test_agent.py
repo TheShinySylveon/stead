@@ -16,7 +16,7 @@ def _git(cwd: Path, *args: str) -> str:
                           text=True).stdout
 
 
-class BuildTest(unittest.TestCase):
+class BuildFixture(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self._tmp.cleanup)
@@ -64,6 +64,14 @@ class BuildTest(unittest.TestCase):
 
         return respond
 
+    def _set_repo(self, **fields) -> None:
+        path = self.root / "context/repos/app.md"
+        meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
+        meta.update(fields)
+        path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+
+
+class BuildTest(BuildFixture):
     def test_plan_then_edit_then_commit(self) -> None:
         responder = self._responder([
             {"action": "plan", "summary": "Add an argparse flag."},
@@ -219,12 +227,6 @@ class BuildTest(unittest.TestCase):
                         responder=lambda _p: "{}")
         self.assertIn("not buildable", str(caught.exception))
 
-    def _set_repo(self, **fields) -> None:
-        path = self.root / "context/repos/app.md"
-        meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
-        meta.update(fields)
-        path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
-
     def test_tests_and_ci_are_protected(self) -> None:
         for relative in ("tests/test_app.py", ".github/workflows/ci.yml"):
             responder = self._responder([
@@ -326,3 +328,126 @@ class BuildTest(unittest.TestCase):
             safety.run_checks(self.code, "true",
                               {"checks_isolation": "docker"})
         self.assertIn("checks_image", str(caught.exception))
+
+
+GHOST_DIFF = ("--- a/app.py\n+++ b/app.py\n@@ -1 +1,2 @@\n"
+              " print('hi')\n+print('proposed')\n")
+
+
+class GhostBuildTest(BuildFixture):
+    """reach: ghost — plan, spec/doc markdown, and a full proposed diff. Zero code."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        self._set_repo(reach="ghost")
+
+    def test_ghost_proposes_a_diff_and_applies_no_code(self) -> None:
+        prompts: list[str] = []
+        queue = [
+            {"action": "plan", "summary": "Add a second greeting."},
+            {"action": "read", "path": "app.py"},
+            {"action": "diff", "content": GHOST_DIFF},
+            {"action": "finish", "summary": "Proposal ready for review."},
+        ]
+
+        def responder(prompt: str) -> str:
+            prompts.append(prompt)
+            return json.dumps(queue.pop(0))
+
+        result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertEqual(result["reach"], "ghost")
+        self.assertTrue(result["diff_applies"])
+        self.assertEqual(result["diff"], GHOST_DIFF)
+        self.assertEqual(result["files"], [])
+        self.assertEqual(result["commit"], "")
+        self.assertEqual((self.code / "app.py").read_text(encoding="utf-8"), "print('hi')\n")
+        run_dir = self.root / result["run_dir"]
+        self.assertEqual((run_dir / "proposed.diff").read_text(encoding="utf-8"), GHOST_DIFF)
+        self.assertIn("Add a second greeting.", (run_dir / "plan.md").read_text(encoding="utf-8"))
+        self.assertIn("GHOST", prompts[0])
+        self.assertIn('"diff"', prompts[0])
+
+    def test_ghost_writes_spec_docs_but_never_code(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Spec first, code as a proposal."},
+            {"action": "write", "path": "docs/spec.md", "content": "# Spec\n\nUpdated.\n"},
+            {"action": "diff", "content": GHOST_DIFF},
+            {"action": "finish", "summary": "Docs committed, code proposed."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertEqual(result["files"], ["docs/spec.md"])
+        self.assertTrue(result["commit"])
+        self.assertEqual((self.code / "app.py").read_text(encoding="utf-8"), "print('hi')\n")
+        self.assertEqual((self.code / "docs/spec.md").read_text(encoding="utf-8"),
+                         "# Spec\n\nUpdated.\n")
+
+    def test_ghost_refuses_code_writes(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Sneak code in."},
+            {"action": "write", "path": "app.py", "content": "print('changed')\n"},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertIn("Zero code", str(caught.exception))
+        self.assertEqual((self.code / "app.py").read_text(encoding="utf-8"), "print('hi')\n")
+
+    def test_ghost_refuses_code_deletes(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Sneak a delete in."},
+            {"action": "delete", "path": "app.py"},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertIn("Zero code", str(caught.exception))
+        self.assertTrue((self.code / "app.py").exists())
+
+    def test_ghost_finish_needs_a_diff(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Docs only."},
+            {"action": "write", "path": "docs/spec.md", "content": "# Spec\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertIn("without a proposed diff", str(caught.exception))
+
+    def test_ghost_diff_must_apply_cleanly(self) -> None:
+        bad = ("--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n"
+               "-print('not the real line')\n+print('x')\n")
+        responder = self._responder([
+            {"action": "plan", "summary": "Propose."},
+            {"action": "diff", "content": bad},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder, repair_rounds=0)
+        self.assertIn("never applied cleanly", str(caught.exception))
+        self.assertEqual((self.code / "app.py").read_text(encoding="utf-8"), "print('hi')\n")
+
+    def test_ghost_diff_before_plan_is_refused(self) -> None:
+        responder = self._responder([
+            {"action": "diff", "content": GHOST_DIFF},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertIn("before a plan", str(caught.exception))
+
+    def test_ghost_runs_no_checks(self) -> None:
+        self._set_repo(checks='python -c "import sys; sys.exit(1)"')
+        responder = self._responder([
+            {"action": "plan", "summary": "Propose."},
+            {"action": "diff", "content": GHOST_DIFF},
+            {"action": "check"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["checks_mode"], "none")
+
+    def test_ghost_refuses_publish_and_merge(self) -> None:
+        for flags in ({"publish": True}, {"merge": True}):
+            with self.assertRaises(agent.BuildError) as caught:
+                agent.build(self.root, "contribution-me-app-issue-42",
+                            responder=lambda _p: "{}", **flags)
+            self.assertIn("ghost", str(caught.exception))

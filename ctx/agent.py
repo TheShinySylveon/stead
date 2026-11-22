@@ -9,6 +9,10 @@ for publish and the repo ceiling allows it.
 
 Bounds: a wall-clock deadline (``max_minutes``), a step cap, a total edit cap,
 and a stop file checked between steps.
+
+A repo at ``reach: ghost`` gets a plan, spec/doc (markdown) changes, and a
+full proposed diff for human approval: zero code applied, no checks run,
+no publish or merge. The diff is verified read-only with ``git apply --check``.
 """
 
 from __future__ import annotations
@@ -72,9 +76,13 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     code = code.resolve()
     policy = effective(root, repo_meta)
     try:
-        permit(policy, None)
+        reach = permit(policy, None)
     except AutonomyError as exc:
         raise BuildError(str(exc)) from exc
+    ghost = reach == "ghost"
+    if ghost and (publish or merge):
+        raise BuildError("ghost writes the plan and spec/doc changes only, for "
+                         "approval. Publish and merge need a higher reach on the repo.")
     checks = (repo_meta.get("checks") or "").strip()
     default = (repo_meta.get("default_branch") or "main").strip()
     run = runner or _git_run
@@ -100,15 +108,18 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             settings = models.resolve(root)
             responder = lambda prompt: models.complete(prompt, settings, timeout=300)
         tree = _tree(code)
-        prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta)
+        prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta, ghost=ghost)
         transcript: list[str] = []
         plan = ""
+        proposed = ""
+        diff_applies = False
+        diff_note = ""
         files: dict[str, str] = {}
         deleted: list[str] = []
         actions: list[dict] = []
         edits = 0
         failures = 0
-        checks_mode = "host" if checks else "none"
+        checks_mode = "none" if ghost or not checks else "host"
         for _step in range(max_steps):
             _remain_running(root, deadline)
             reply = responder(prompt + "\n\n" + "\n\n".join(transcript))
@@ -156,12 +167,37 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     transcript.append("plan: summary is required")
                     continue
                 actions.append({"action": "plan"})
-                transcript.append("Plan recorded. You may now write files.")
+                transcript.append(
+                    "Plan recorded. You may now write spec/doc markdown for approval, and you "
+                    "must propose the full diff of the code changes. No code is applied."
+                    if ghost else "Plan recorded. You may now write files.")
+                continue
+            if kind == "diff":
+                if not ghost:
+                    transcript.append("diff: only ghost mode proposes a diff. Edit the files directly.")
+                    continue
+                if not plan:
+                    raise BuildError("the model proposed a diff before a plan. Planning comes first.")
+                text = action.get("content")
+                if not isinstance(text, str) or not text.strip():
+                    transcript.append("diff: content must be a non-empty unified diff string")
+                    continue
+                if len(text.encode("utf-8")) > MAX_FILE_BYTES:
+                    transcript.append(f"diff: over {MAX_FILE_BYTES} bytes. Split the spec.")
+                    continue
+                proposed = text if text.endswith("\n") else text + "\n"
+                diff_applies, diff_note = _check_diff(run, code, proposed)
+                actions.append({"action": "diff", "applies": diff_applies})
+                transcript.append("Proposed diff recorded for human review. " + diff_note)
                 continue
             if kind == "write":
                 if not plan:
                     raise BuildError("the model tried to write before a plan. Planning comes first.")
                 rel = _safe_rel(action.get("path") or "")
+                if ghost and not _is_doc_path(rel):
+                    raise BuildError(
+                        f"ghost writes the plan and spec/doc changes only: refusing {rel}. "
+                        "Zero code. Only markdown (.md, .markdown, .mdx) may change.")
                 text = action.get("content")
                 if not isinstance(text, str):
                     transcript.append("write: content must be a string")
@@ -194,6 +230,10 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if not plan:
                     raise BuildError("the model tried to delete before a plan.")
                 rel = _safe_rel(action.get("path") or "")
+                if ghost and not _is_doc_path(rel):
+                    raise BuildError(
+                        f"ghost writes the plan and spec/doc changes only: refusing to delete {rel}. "
+                        "Zero code. Only markdown (.md, .markdown, .mdx) may change.")
                 target = code / rel
                 if _ignored(target, code) or not target.is_file():
                     transcript.append(f"delete: no file at {rel}")
@@ -213,6 +253,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 transcript.append(f"deleted {rel}")
                 continue
             if kind == "check":
+                if ghost:
+                    transcript.append("check: ghost runs no checks. Propose the diff for review instead.")
+                    continue
                 if not checks:
                     transcript.append("check: no checks command is configured on this repo")
                     continue
@@ -226,9 +269,25 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if not plan:
                     raise BuildError("the model finished without a plan")
                 dirty = _git(run, code, ["status", "--porcelain"]).strip()
-                if not files and not deleted and not (resume and dirty):
+                changed = bool(files or deleted or (resume and dirty))
+                if not changed and not ghost:
                     raise BuildError("the model finished without changing a file")
-                if checks:
+                if ghost:
+                    if not proposed:
+                        raise BuildError(
+                            "ghost finished without a proposed diff. Produce the full diff "
+                            "of the code changes for review before finishing.")
+                    if not diff_applies:
+                        failures += 1
+                        if failures > repair_rounds:
+                            raise BuildError("the proposed diff never applied cleanly:\n" +
+                                             diff_note[-4000:])
+                        actions.append({"action": "finish", "diff": "fail"})
+                        transcript.append(
+                            "The proposed diff does not apply cleanly to the checkout. "
+                            "Fix it and finish again:\n" + diff_note[-4000:])
+                        continue
+                if checks and not ghost:
                     ok, output, checks_mode = _run_checks(code, checks, repo_meta, deadline)
                     if not ok:
                         failures += 1
@@ -240,20 +299,25 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                             "checks failed. Read the failure, fix it, and finish again:\n" +
                             (output[-4000:] or "(no output)"))
                         continue
-                _git(run, code, ["add", "-A"])
-                message = f"{spec.get('title') or spec.get('id')}"
-                if spec.get("number"):
-                    message += f" (#{spec['number']})"
-                _git(run, code, ["commit", "-m", message])
-                commit = _git(run, code, ["rev-parse", "HEAD"]).strip()
+                commit = ""
+                if changed:
+                    _git(run, code, ["add", "-A"])
+                    message = f"{spec.get('title') or spec.get('id')}"
+                    if spec.get("number"):
+                        message += f" (#{spec['number']})"
+                    _git(run, code, ["commit", "-m", message])
+                    commit = _git(run, code, ["rev-parse", "HEAD"]).strip()
                 touched = sorted(files) + sorted(deleted)
                 result = {
                     "ok": True,
+                    "reach": reach,
                     "branch": branch,
                     "files": sorted(files),
                     "deleted": sorted(deleted),
                     "plan": plan,
                     "summary": summary,
+                    "diff": proposed,
+                    "diff_applies": diff_applies,
                     "checks": checks,
                     "checks_mode": checks_mode,
                     "tests_touched": [path for path in touched if safety.is_test_path(path)],
@@ -288,7 +352,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 _record_run(root, spec, result, mode="live" if publish else "shadow")
                 return result
             transcript.append(
-                'action must be plan, list, read, search, write, delete, check, or finish.')
+                'action must be plan, list, read, search, diff, write, delete, check, or finish.')
         raise BuildError(f"the model did not finish within {max_steps} steps")
     finally:
         _unlock(lock)
@@ -396,6 +460,21 @@ def _run_checks(code: Path, command: str, repo_meta: dict,
         raise BuildError(str(exc)) from exc
 
 
+def _check_diff(run, code: Path, diff_text: str) -> tuple[bool, str]:
+    """Read-only validation of a ghost proposal: git apply --check never edits."""
+    with tempfile.NamedTemporaryFile("w", suffix=".patch", delete=False,
+                                     encoding="utf-8") as handle:
+        handle.write(diff_text)
+        patch = Path(handle.name)
+    try:
+        run(["git", "apply", "--check", "--recount", str(patch)], code)
+        return True, "It applies cleanly to the checkout (verified with git apply --check)."
+    except BuildError as exc:
+        return False, f"git apply --check refused it:\n{exc}"
+    finally:
+        patch.unlink(missing_ok=True)
+
+
 def _search(code: Path, query: str) -> list[str]:
     needle = query.lower()
     hits: list[str] = []
@@ -449,6 +528,9 @@ def _record_run(root: Path, spec: dict, result: dict, *, mode: str) -> None:
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "plan.md").write_text(result.get("plan", "") + "\n", encoding="utf-8")
     (folder / "summary.md").write_text(result.get("summary", "") + "\n", encoding="utf-8")
+    if result.get("diff"):
+        (folder / "proposed.diff").write_text(result["diff"], encoding="utf-8")
+    result["run_dir"] = folder.relative_to(root).as_posix()
     (folder / "build.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     from ctx import db
     if not db.db_path(root).exists():
@@ -467,24 +549,47 @@ def _record_run(root: Path, spec: dict, result: dict, *, mode: str) -> None:
 
 
 def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
-                   repo_meta: dict) -> str:
-    check_line = ("You may call check at any time to run the repo checks. "
-                  if has_checks else "This repo has no checks command. ")
-    if str(repo_meta.get("checks_isolation") or "").strip().lower() == "docker":
-        check_line += "Checks run in a container with no network. "
+                   repo_meta: dict, *, ghost: bool = False) -> str:
+    if ghost:
+        check_line = "No checks run in ghost mode. "
     else:
-        check_line += "Checks run on the host with a scrubbed environment. "
-    return (
+        check_line = ("You may call check at any time to run the repo checks. "
+                      if has_checks else "This repo has no checks command. ")
+        if str(repo_meta.get("checks_isolation") or "").strip().lower() == "docker":
+            check_line += "Checks run in a container with no network. "
+        else:
+            check_line += "Checks run on the host with a scrubbed environment. "
+    intro = (
+        "You are planning one feature spec in a local git checkout.\n"
+        "Mode GHOST (binding): deliver the plan, spec/doc changes, and a FULL\n"
+        "proposed diff for human review. ZERO code is applied: you may write or\n"
+        "delete markdown files (.md, .markdown, .mdx) only; every code change\n"
+        "goes in the diff action instead. Code snippets in the plan are fine.\n"
+        "Nothing is pushed. A human approves the diff before any code lands\n"
+        "or a pull request is opened.\n"
+        if ghost else
         "You are implementing one feature spec in a local git checkout.\n"
+    )
+    diff_action = ('{"action":"diff","content":"unified diff of ALL proposed code changes"}, '
+                   if ghost else "")
+    diff_rule = (
+        "The diff must be a complete unified diff that applies cleanly to this "
+        "checkout (it is verified with git apply --check). Include every code "
+        "change the spec needs; do not include markdown you wrote directly. "
+        if ghost else ""
+    )
+    return (
+        intro +
         "Reply with exactly one JSON object per turn. No prose, no code fences.\n"
         'Actions: {"action":"plan","summary":"..."}, '
         '{"action":"list","path":"."}, {"action":"read","path":"a.py"}, '
         '{"action":"search","query":"name"}, '
+        + diff_action +
         '{"action":"write","path":"a.py","content":"full file text"}, '
         '{"action":"delete","path":"old.py"}, {"action":"check"}, '
         '{"action":"finish","summary":"..."}.\n'
         "First action must be a plan. Do not write before the plan. "
-        + check_line +
+        + check_line + diff_rule +
         "write replaces the whole file. Read a file before changing it. "
         "Stay inside the repository. Do not touch .git. "
         "Do not edit tests, CI config, or the checks definition: those paths "
@@ -513,6 +618,11 @@ def _parse(text: str) -> dict | None:
         except json.JSONDecodeError:
             return None
     return value if isinstance(value, dict) else None
+
+
+def _is_doc_path(rel: str) -> bool:
+    """Ghost may only touch plan/spec/doc markdown. Everything else is code."""
+    return Path(rel).suffix.lower() in {".md", ".markdown", ".mdx"}
 
 
 def _safe_rel(raw: str) -> str:

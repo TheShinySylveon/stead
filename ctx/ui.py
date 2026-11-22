@@ -24,7 +24,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from ctx import cli, db, factory, frontmatter, objects
+from ctx import autonomy, cli, db, factory, frontmatter, objects
 
 PKG_DIR = Path(__file__).resolve().parent
 PAGE_PATH = PKG_DIR / "cockpit.html"
@@ -440,8 +440,8 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
             "repo_kind": list(cli.REPO_KINDS),
             "repo_status": list(cli.REPO_STATUSES),
             "factory_trigger": ["on-demand", "watch"],
-            "factory_reach": ["shadow", "draft-pr", "pr", "merge"],
-            "factory_reach_install": ["shadow", "draft-pr", "pr"],
+            "factory_reach": list(autonomy.REACHES),
+            "factory_reach_install": list(autonomy.INSTALL_REACHES),
             "model_provider": _model_providers(),
         },
     }

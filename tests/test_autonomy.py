@@ -52,6 +52,18 @@ class AutonomyPolicyTest(unittest.TestCase):
         self.assertEqual(autonomy.permit(explicit, "merge"), "merge")
         self.assertEqual(autonomy.permit(explicit, "shadow"), "shadow")
 
+    def test_ghost_is_the_lowest_rung_and_a_valid_install_default(self) -> None:
+        self.assertEqual(autonomy.REACHES[0], "ghost")
+        shown = autonomy.set_defaults(self.root, reach="ghost")
+        self.assertEqual(shown["reach"], "ghost")
+        policy = autonomy.effective(self.root, {})
+        self.assertEqual(policy["ceiling"], "ghost")
+        self.assertEqual(autonomy.permit(policy, None), "ghost")
+        with self.assertRaises(autonomy.AutonomyError):
+            autonomy.permit(policy, "shadow")
+        higher = autonomy.effective(self.root, {"reach": "merge"})
+        self.assertEqual(autonomy.permit(higher, "ghost"), "ghost")
+
 
 class AutonomyRunTest(FeatureBuilderTestCase):
     def test_run_refuses_to_pass_the_ceiling_and_does_not_push(self) -> None:
@@ -71,6 +83,20 @@ class AutonomyRunTest(FeatureBuilderTestCase):
         self.assertEqual(info["reach"], "draft-pr")
         self.assertEqual(info["remote"], "not-implemented")
         self.assertIn("did not push", (self.root / info["run_dir"] / "bundle.md").read_text(encoding="utf-8"))
+
+    def test_ghost_assembly_is_local_only_and_asks_for_a_full_diff(self) -> None:
+        self.seed_spec()
+        autonomy.set_repo(self.root, "repo-testuser-my-app", reach="ghost")
+        boom = AssertionError("remote write during a ghost run")
+        with mock.patch("subprocess.run", side_effect=boom), \
+             mock.patch("urllib.request.urlopen", side_effect=boom):
+            info = factory.assemble_feature_build(self.root, SPEC_ID)
+        self.assertEqual(info["reach"], "ghost")
+        self.assertEqual(info["remote"], "none")
+        bundle = (self.root / info["run_dir"] / "bundle.md").read_text(encoding="utf-8")
+        self.assertIn("GHOST", bundle)
+        self.assertIn("FULL proposed diff", bundle)
+        self.assertIn("ZERO code is applied", bundle)
 
     def test_watch_skips_on_demand_and_flagged_specs(self) -> None:
         self.seed_spec()

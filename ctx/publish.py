@@ -38,9 +38,9 @@ def publish(root: Path, contribution_ref: str, *, runner=None) -> dict:
         reach = permit(policy, None)
     except AutonomyError as exc:
         raise PublishError(str(exc)) from exc
-    if reach == "shadow":
+    if reach in ("ghost", "shadow"):
         raise PublishError(
-            "this repo's ceiling is shadow. Raise it before opening a pull request.")
+            f"this repo's ceiling is {reach}. Raise it before opening a pull request.")
     code = Path(repo_meta.get("code_path") or "")
     if not repo_meta.get("code_path") or not code.is_dir():
         raise PublishError(

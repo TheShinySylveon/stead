@@ -326,6 +326,14 @@ def spec_flags(description: str, criteria: list[tuple[bool, str]]) -> list[str]:
 
 
 _REACH_SAFETY = {
+    "ghost": (
+        "Mode: **GHOST**. Deliver the plan, spec/doc changes (markdown), and a\n"
+        "FULL proposed diff for human review. ZERO code is applied to the checkout:\n"
+        "no source, test, or CI edits, no checks run. Code snippets belong in the\n"
+        "plan or the diff. NO remote writes of any kind: no push, no branch creation\n"
+        "on the remote, no PR/issue/comment/label creation. A human approves the\n"
+        "diff before any code lands or a pull request is opened."
+    ),
     "shadow": (
         "Mode: **SHADOW** (default). Propose a plan and a proposed diff ONLY.\n"
         "NO remote writes of any kind: no push, no branch creation on the remote,\n"
@@ -525,7 +533,7 @@ def assemble_feature_build(root: Path, contribution_ref: str,
             "reach": requested,
             "ceiling": policy["ceiling"],
             "trigger": policy["trigger"],
-            "remote": "none" if requested == "shadow" else "not-implemented",
+            "remote": "none" if requested in ("ghost", "shadow") else "not-implemented",
             "note": "Local assembly only. Nothing was pushed, opened, or merged.",
         }
         (run_dir / "run.json").write_text(json.dumps(info, indent=2) + "\n", encoding="utf-8")

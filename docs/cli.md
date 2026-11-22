@@ -118,11 +118,11 @@ python -m stead factory run --factory feature-builder --contribution ID [--shado
 python -m stead digest [--generate]
 python -m stead factory new --name NAME --title "What it drafts"
 python -m stead factory watch [--build] [--publish] [--merge]
-python -m stead factory defaults [--trigger on-demand|watch] [--reach shadow|draft-pr|pr] \
+python -m stead factory defaults [--trigger on-demand|watch] [--reach ghost|shadow|draft-pr|pr] \
     [--max-builds-per-day N] [--build-minutes N]
 python -m stead factory stop
 python -m stead factory start
-python -m stead repo set ID [--trigger on-demand|watch] [--reach shadow|draft-pr|pr|merge] \
+python -m stead repo set ID [--trigger on-demand|watch] [--reach ghost|shadow|draft-pr|pr|merge] \
     [--path DIR] [--set KEY=VALUE ...]
 
 python -m stead eval run [--factory F]

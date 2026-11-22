@@ -117,7 +117,7 @@ python -m stead doctor                        # lint frontmatter, ids, dates, re
 python -m stead model show                    # configured endpoint; never prints the key
 python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME
 python -m stead eval run [--factory F]        # structural check, no model
-python -m stead repo set ID --trigger on-demand|watch --reach shadow|draft-pr|pr|merge
+python -m stead repo set ID --trigger on-demand|watch --reach ghost|shadow|draft-pr|pr|merge
 python -m stead repo set ID --set checks_isolation=docker --set checks_image=python:3.12-slim
 python -m stead factory stop                  # .stead-stop: halt builds between steps
 python -m stead factory start                 # remove the stop file
@@ -247,8 +247,8 @@ rules: `docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`
 `stead prompt promote`).
 
 **Autonomy is two knobs, per repo.** `trigger` is `on-demand` (default) or
-`watch`. `reach` is the ceiling: `shadow` (default), `draft-pr`, `pr`, or
-`merge`. A run may ask for less. It may not ask for more. Merge is never
+`watch`. `reach` is the ceiling: `ghost`, `shadow` (default), `draft-pr`, `pr`,
+or `merge`. A run may ask for less. It may not ask for more. Merge is never
 inherited from the install default. `stead factory publish` may push an
 isolated branch and open a pull request. `stead build --publish` also runs the
 model build first. `stead factory merge` runs only when the repo file says
@@ -264,10 +264,13 @@ turns that into issue-to-delivery without a person in the loop. Shadow and
 draft-PR remain the safe defaults.
 
 **Autonomy ladder (a repo may sit on any rung):**
-1. **SHADOW (default):** plan + proposed diff only; zero remote writes.
-2. **DRAFT-PR:** isolated branch + `gh pr create --draft`; a HUMAN merges.
+1. **GHOST:** plan + spec/doc (markdown) changes + a FULL proposed diff for
+   approval. Zero code applied to the checkout, no checks run, zero remote
+   writes. A human approves the diff before any code lands or a PR is opened.
+2. **SHADOW (default):** plan + proposed diff only; zero remote writes.
+3. **DRAFT-PR:** isolated branch + `gh pr create --draft`; a HUMAN merges.
    `stead factory publish` does this when the ceiling allows it.
-3. **TRUSTED (never the install default):** build, publish, and merge only
+4. **TRUSTED (never the install default):** build, publish, and merge only
    when the repo file says `reach: merge`, checks are green, and GitHub
    accepts the merge. No `--admin`. No push of the default branch.
 
