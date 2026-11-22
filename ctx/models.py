@@ -82,6 +82,13 @@ def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
     stored = current.get("api_key") or ""
     if api_key:
         stored = api_key.strip()
+    else:
+        # The stored key belongs to the old endpoint. When the host changes,
+        # drop it: a key must never ride along to a different server.
+        old_host = (urlparse(current.get("base_url") or "").hostname or "").lower()
+        new_host = (urlparse(url).hostname or "").lower()
+        if old_host and new_host and old_host != new_host:
+            stored = ""
     model = {
         "provider": provider,
         "name": name,
