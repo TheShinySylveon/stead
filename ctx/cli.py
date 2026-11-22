@@ -685,10 +685,16 @@ def build_parser() -> argparse.ArgumentParser:
     sshow.add_argument("--project", help="also assemble this project's status")
     sshow.add_argument("--watch", action="store_true", help="also build and publish watched specs")
     sshow.add_argument("--merge", action="store_true", help="with --watch, merge when reach: merge")
+    sshow.add_argument("--interval", choices=("hourly", "daily"),
+                       help="print the shorter monitor cadence (sync + watch) "
+                            "instead of the weekly digest job")
     sinst = sched.add_parser("install", help="Windows only. Current user, Friday 16:00. No remote writes.")
     sinst.add_argument("--project", help="also assemble this project's status")
     sinst.add_argument("--watch", action="store_true", help="also build and publish watched specs")
     sinst.add_argument("--merge", action="store_true", help="with --watch, merge when reach: merge")
+    sinst.add_argument("--interval", choices=("hourly", "daily"),
+                       help="install the shorter monitor cadence (sync + watch) "
+                            "instead of the weekly digest job")
     hook = sub.add_parser("hook", help="loopback or shared-server capture webhook").add_subparsers(dest="sub", required=True)
     hook.add_parser("set", help="create a webhook token. Printed once. Stored in stead.json.")
     hook.add_parser("show", help="say whether a webhook token is set. Never prints it.")
@@ -1170,17 +1176,30 @@ def main(argv: list[str] | None = None) -> int:
         print("git history keeps the old text.")
         return 0
     if args.command == "schedule":
-        from ctx.schedule import ScheduleError, install, show
+        from ctx.schedule import (ScheduleError, install, install_monitor,
+                                  monitor_show, show)
         if args.sub == "show":
-            print(show(root, args.project, watch=args.watch, merge=args.merge))
+            if getattr(args, "interval", None):
+                print(monitor_show(root, interval=args.interval,
+                                   watch=args.watch, merge=args.merge))
+            else:
+                print(show(root, args.project, watch=args.watch, merge=args.merge))
             return 0
         try:
-            name = install(root, project=args.project, watch=args.watch,
-                           merge=args.merge)
+            if getattr(args, "interval", None):
+                name = install_monitor(root, interval=args.interval,
+                                       watch=args.watch, merge=args.merge)
+            else:
+                name = install(root, project=args.project, watch=args.watch,
+                               merge=args.merge)
         except ScheduleError as exc:
             raise SystemExit(str(exc)) from exc
         print(f"installed {name}")
-        print("Friday 16:00. Read-only sync, local drafts. Nothing is posted.")
+        if getattr(args, "interval", None):
+            print("Monitor cadence. Read-only sync + watched build. Nothing merges "
+                  "unless the repo says reach: merge.")
+        else:
+            print("Friday 16:00. Read-only sync, local drafts. Nothing is posted.")
         return 0
     if args.command == "hook":
         from ctx.config import hook_token, set_hook_token

@@ -48,13 +48,65 @@ def weekly_command(root: Path, project: str | None = None, *,
     return command
 
 
+def monitor_command(root: Path, *, watch: bool = True, merge: bool = False) -> str:
+    """The shorter monitor cadence (Windows `cmd` syntax): read-only sync, then
+    watch/build enabled specs. The weekly digest and maintenance jobs stay on
+    the weekly schedule."""
+    if merge and not watch:
+        raise ScheduleError("--merge needs --watch")
+    exe = sys.executable
+    folder = str(root)
+    command = f'cd /d "{folder}" && "{exe}" -m stead sync github --limit 30'
+    if watch:
+        command += (f' && "{exe}" -m stead factory watch --build --publish'
+                    + (" --merge" if merge else ""))
+    return command
+
+
+def _monitor_posix(root: Path, *, watch: bool = True, merge: bool = False) -> str:
+    """The monitor command in POSIX syntax, for the cron line."""
+    exe = sys.executable
+    folder = str(root)
+    command = f'cd "{folder}" && "{exe}" -m stead sync github --limit 30'
+    if watch:
+        command += (f' && "{exe}" -m stead factory watch --build --publish'
+                    + (" --merge" if merge else ""))
+    return command
+
+
+def monitor_launcher_path(root: Path) -> Path:
+    """Short, stable path for the monitor task. Distinct from the weekly job."""
+    return root / "private" / "run-monitor.cmd"
+
+
+def monitor_show(root: Path, *, interval: str = "hourly", watch: bool = True,
+                 merge: bool = False) -> str:
+    """The command a shorter scheduler runs, printed with the cron/task line."""
+    if interval not in ("hourly", "daily"):
+        raise ScheduleError("interval must be hourly or daily")
+    if interval == "hourly":
+        cron, schtasks = "0 * * * *", "HOURLY"
+    else:
+        cron, schtasks = "0 9 * * *", "DAILY /ST 09:00"
+    return (
+        f"Monitor ({interval}), from {root}\n"
+        f"Read-only sync, then a watched build + publish for enabled specs. "
+        f"Nothing merges unless the repo says reach: merge.\n\n"
+        "Windows Task Scheduler (install writes this to "
+        "private/run-monitor.cmd):\n"
+        f'schtasks /Create /TN SteadMonitor /SC {schtasks} '
+        f'/TR "cmd /c {monitor_launcher_path(root)}" /F\n\n'
+        f"cron:\n{cron} {_monitor_posix(root, watch=watch, merge=merge)}\n"
+    )
+
+
 def launcher_path(root: Path) -> Path:
     """Short, stable path for Task Scheduler. The command itself is too long."""
     return root / "private" / "run-weekly.cmd"
 
 
-def _write_launcher(root: Path, command: str) -> Path:
-    path = launcher_path(root)
+def _write_launcher(root: Path, command: str, name: str = "run-weekly.cmd") -> Path:
+    path = root / "private" / name
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text("@echo off\r\n" + command + "\r\n", encoding="utf-8")
     return path
@@ -98,6 +150,34 @@ def install(root: Path, *, runner=None, platform: str | None = None,
     run = runner or _run
     run(argv)
     return TASK_NAME
+
+
+def install_monitor(root: Path, *, runner=None, platform: str | None = None,
+                    interval: str = "hourly", watch: bool = True,
+                    merge: bool = False) -> str:
+    """Create the current user's shorter monitor task (Windows)."""
+    if interval not in ("hourly", "daily"):
+        raise ScheduleError("interval must be hourly or daily")
+    if (platform or sys.platform) != "win32":
+        raise ScheduleError(
+            "this install is for Windows Task Scheduler. Use "
+            "`stead schedule show --interval` for the cron line.")
+    if merge and not watch:
+        raise ScheduleError("--merge needs --watch")
+    command = monitor_command(root, watch=watch, merge=merge)
+    launcher = _write_launcher(root, command, name="run-monitor.cmd")
+    trigger = f'cmd /c "{launcher}"'
+    if len(trigger) > 261:
+        raise ScheduleError("the launcher path is too long for Task Scheduler")
+    if interval == "hourly":
+        argv = ["schtasks", "/Create", "/TN", "SteadMonitor",
+                "/SC", "HOURLY", "/TR", trigger, "/F"]
+    else:
+        argv = ["schtasks", "/Create", "/TN", "SteadMonitor",
+                "/SC", "DAILY", "/ST", "09:00", "/TR", trigger, "/F"]
+    run = runner or _run
+    run(argv)
+    return "SteadMonitor"
 
 
 def _run(argv: list[str]) -> str:

@@ -94,9 +94,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         raise BuildError(f"contribution not found: {contribution_ref}",
                          reason="precondition")
     _path, spec, body = found
-    if spec.get("kind") != "issue" or spec.get("role") != "author":
-        raise BuildError("build runs from an issue you authored",
-                         reason="precondition")
+    if spec.get("kind") != "issue" or not factory.enabled(spec):
+        raise BuildError("build runs from an enabled issue (stead-build label "
+                         "or feature-spec tag)", reason="precondition")
     description, criteria = factory.split_spec(body)
     flags = factory.spec_flags(description, criteria)
     if flags:

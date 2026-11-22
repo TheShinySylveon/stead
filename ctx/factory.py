@@ -473,9 +473,9 @@ def assemble_feature_build(root: Path, contribution_ref: str,
     if spec_meta.get("kind") != "issue":
         raise SystemExit("feature-builder builds from a spec contribution with "
                          f"kind: issue (got {spec_meta.get('kind')!r})")
-    if spec_meta.get("role") != "author":
-        raise SystemExit("feature-builder builds specs you authored: role: author "
-                         f"required (got {spec_meta.get('role')!r})")
+    if not enabled(spec_meta):
+        raise SystemExit("feature-builder builds enabled specs only: tag it "
+                         "`feature-spec` or label it `stead-build` first")
     repo_ref = spec_meta.get("repo")
     repo_found = objects.find(root, "repo", repo_ref) if repo_ref else None
     if repo_found is None:
@@ -655,6 +655,18 @@ def _tags(meta: dict) -> list[str]:
     return [str(tag) for tag in tags]
 
 
+BUILD_LABEL = "stead-build"
+
+
+def enabled(meta: dict) -> bool:
+    """A contribution is an enabled build target when a person opted it in: the
+    `stead-build` label (GitHub intake) or the `feature-spec` tag (local
+    authoring). The `author` role is a label, not a permission — the approval
+    hash is the real gate."""
+    tags = {str(t).lower() for t in _tags(meta)}
+    return BUILD_LABEL in tags or "feature-spec" in tags
+
+
 def assemble_maintenance(root: Path, factory: str = MAINTENANCE_FACTORY,
                          mode: str = "shadow") -> dict:
     """Bundle inbox, broken relations, and stale objects. Does not edit them."""
@@ -811,11 +823,9 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
     ran: list[dict] = []
     skipped: list[dict] = []
     for _path, meta, body in objects.iter_objects(root, "contribution"):
-        if meta.get("kind") != "issue" or meta.get("role") != "author":
+        if meta.get("kind") != "issue" or not enabled(meta):
             continue
         if meta.get("state") not in (None, "", "open"):
-            continue
-        if "feature-spec" not in _tags(meta):
             continue
         if build and budget and built >= budget:
             skipped.append({"id": meta.get("id"),

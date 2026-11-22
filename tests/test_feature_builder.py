@@ -270,11 +270,17 @@ class TestFeatureBuilderAssembly(FeatureBuilderTestCase):
         finally:
             conn.close()
 
-    def test_rejects_pr_target_and_non_author_role(self) -> None:
+    def test_rejects_pr_target_and_non_enabled_spec(self) -> None:
         self.seed_spec(kind="pr", number=7)
         with self.assertRaises(SystemExit):
             factory.assemble_feature_build(self.root, "contribution-testuser-my-app-pr-7")
-        self.seed_spec(kind="issue", role="assignee", number=9)
+        self.seed_spec(kind="issue", number=9)
+        # Strip the feature-spec tag: the issue is no longer an enabled target
+        # (the `author` role alone is not a gate).
+        path = self.root / "context" / "contributions" / "testuser-my-app-issue-9.md"
+        meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
+        meta["tags"] = []
+        path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
         with self.assertRaises(SystemExit):
             factory.assemble_feature_build(self.root, "contribution-testuser-my-app-issue-9")
 
