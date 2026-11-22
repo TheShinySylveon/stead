@@ -39,6 +39,19 @@ def _repo_of(root: Path, contribution_ref: str):
     return meta, (repo[1] if repo else {})
 
 
+def spec_sha_of(root: Path, contribution_ref: str) -> str:
+    """The approval hash of the contribution body, if the contribution exists.
+
+    Build records carry this so attempt gating can key on *approved content*
+    (re-approval changes the hash and grants a fresh attempt), not on the
+    contribution id."""
+    found = objects.find(root, "contribution", contribution_ref)
+    if found is None:
+        return ""
+    from ctx import spec as spec_approval
+    return spec_approval.body_hash(found[2])
+
+
 def record_delivery(root: Path, contribution_ref: str, result: dict,
                     run_id: object = None) -> dict:
     """Write the factual record and update linked statuses. Returns the doc id."""
@@ -70,6 +83,7 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         "tags": [RECORD_TAG, f"repo:{repo_id}"],
         "outcome": outcome,
         "contribution": str(contrib.get("id") or contribution_ref),
+        "spec_sha": spec_sha_of(root, contribution_ref),
         "checks_mode": str(result.get("checks_mode") or "none"),
         "elapsed_seconds": str(result.get("elapsed_seconds") or 0),
         "repair_rounds": str(result.get("repair_rounds") or 0),
@@ -159,6 +173,7 @@ def record_failure(root: Path, contribution_ref: str, error, *,
         "tags": [RECORD_TAG, f"repo:{repo_id}"],
         "outcome": "failed",
         "contribution": str(contrib.get("id") or contribution_ref),
+        "spec_sha": spec_sha_of(root, contribution_ref),
         "error_class": type(error).__name__,
         "reason": reason,
         "checks_mode": str(checks_mode or "none"),
@@ -369,6 +384,27 @@ def prior_records(root: Path, repo_id: str, limit: int = 5) -> list[tuple[Path, 
         found.append((path, meta, body))
     found.sort(key=lambda item: str(item[1].get("created") or ""), reverse=True)
     return found[:limit]
+
+
+def build_failure_attempts(root: Path, repo_id: str, spec_sha: str) -> int:
+    """How many build-class failures exist for one approved spec hash.
+
+    A build-class failure (protocol, gate, checks, budget, tamper, build)
+    consumes the spec's single automatic attempt; an infrastructure failure
+    (the model was down or timed out) does not. Keyed on the approval hash, so
+    re-approval grants a fresh attempt."""
+    count = 0
+    for _path, meta, _body in objects.iter_objects(root, "document"):
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if RECORD_TAG not in tags or f"repo:{repo_id}".lower() not in tags:
+            continue
+        if str(meta.get("outcome") or "") != "failed":
+            continue
+        if str(meta.get("reason") or "build") == "infrastructure":
+            continue
+        if spec_sha and str(meta.get("spec_sha") or "") == spec_sha:
+            count += 1
+    return count
 
 
 def propose_note(root: Path, kind: str, title: str, text: str,

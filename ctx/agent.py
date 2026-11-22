@@ -59,12 +59,16 @@ class BuildError(Exception):
 
 def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
           publish: bool = False, merge: bool = False, resume: bool = False,
-          wait: bool = False, wait_minutes: int = 30,
+          retry: bool = False, wait: bool = False, wait_minutes: int = 30,
           repair_rounds: int = 2, max_steps: int = MAX_STEPS,
           max_minutes: int = MAX_MINUTES,
           max_tokens: int | None = None,
           max_cost: float | None = None) -> dict:
-    """Plan and implement one authored feature spec. Raises BuildError."""
+    """Plan and implement one authored feature spec. Raises BuildError.
+
+    A spec gets one automatic build attempt per approved content hash: a
+    build-class failure blocks a re-run until the body is re-approved (a new
+    hash) or ``retry=True``. Infrastructure failures don't consume the attempt."""
     found = objects.find(root, "contribution", contribution_ref)
     if found is None:
         raise BuildError(f"contribution not found: {contribution_ref}",
@@ -96,6 +100,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         raise BuildError("set the repo code_path to a local checkout before building",
                          reason="precondition")
     code = code.resolve()
+    anchor = code  # the user's checkout: lock + worktree lifecycle
     policy = effective(root, repo_meta)
     defaults = factory_defaults(root)
     try:
@@ -122,9 +127,23 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     default = (repo_meta.get("default_branch") or "main").strip()
     base_run = runner or _git_run
     branch = branch_for(spec)
+    # M0.6: one automatic attempt per approved content hash. A build-class
+    # failure blocks a re-run until re-approval (a new hash) or --retry. This
+    # is a validation refusal, so it sits before the lock and writes no record.
+    if not resume and not retry:
+        from ctx import spec as spec_approval_mod
+        from ctx import writeback as writeback_mod
+        attempts = writeback_mod.build_failure_attempts(
+            root, str(repo_meta.get("id") or ""),
+            spec_approval_mod.body_hash(body))
+        if attempts:
+            raise BuildError(
+                "this spec already had a failed build attempt for its approved "
+                "content. Re-approve the spec (changing its body) to start over, "
+                "or pass --retry to try the same content again.", reason="precondition")
     started = time.monotonic()
     deadline = started + max(1, max_minutes) * 60
-    lock = _lock(code)
+    lock = _lock(anchor)
     # Every git call Stead makes runs with the checkout's hooks and fsmonitor
     # disabled: checks execute model-written code that could plant either.
     hooks_dir = Path(tempfile.mkdtemp(prefix="stead-no-hooks-"))
@@ -132,12 +151,18 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     def run(argv, cwd):
         return base_run(safety.disable_hooks(argv, hooks_dir), cwd)
 
+    # A killed build leaves a "started" marker AND a registered worktree;
+    # reclaim both (as an infrastructure failure record) so the spec is not
+    # stuck on the branch the dead process left checked out.
+    _reclaim_stale_started(run, anchor, root, spec, body)
+
     replies: list[str] = []
     transcript: list[str] = []
     actions: list[dict] = []
     git_before: dict = {}
     initial_dirty: set[str] = set()
     on_branch = False
+    wt: Path | None = None
     plan = ""
     files: dict[str, str] = {}
     deleted: list[str] = []
@@ -148,26 +173,36 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     base_tracked_cf: set[str] = set()
     branch_tracked: set[str] = set()
     try:
-        current = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
+        # Every build runs in its own git worktree, so the user's checkout is
+        # never touched: no "must be on default", no "must be clean", and no
+        # `git clean`. The branch lives in the shared repo; the worktree is
+        # discarded when the build ends.
         if resume:
-            if current != branch:
-                raise BuildError(f"--resume needs the build branch checked out ({branch}), now on {current}.",
-                                 reason="precondition")
-            initial_dirty = set(_porcelain_paths(run, code))
-            on_branch = True
+            if not _git(run, anchor, ["branch", "--list", branch]).strip():
+                raise BuildError(
+                    f"--resume needs the build branch ({branch}); it does not exist.",
+                    reason="precondition")
+            wt = Path(tempfile.mkdtemp(prefix="stead-wt-"))
+            _git(run, anchor, ["worktree", "add", str(wt), branch])
         else:
-            dirty_paths = _dirty_paths(run, code)
-            if dirty_paths:
-                raise BuildError("the checkout has uncommitted changes. Commit, stash, or use --resume.",
-                                 reason="precondition")
-            if current != default:
-                raise BuildError(f"check out {default} before building (now on {current}).",
-                                 reason="precondition")
-            if _git(run, code, ["branch", "--list", branch]).strip():
-                raise BuildError(f"branch {branch} already exists. Use --resume or remove it.",
-                                 reason="precondition")
-            _git(run, code, ["checkout", "-b", branch])
-            on_branch = True
+            if _git(run, anchor, ["branch", "--list", branch]).strip():
+                # A failed attempt left its branch behind. A fresh attempt
+                # (--retry or a re-approved hash) moves it aside and starts clean.
+                from ctx import writeback
+                rec = writeback.record_for_branch(
+                    root, str(repo_meta.get("id") or ""), branch)
+                if rec is not None and str(rec.get("outcome") or "") == "failed":
+                    retired = f"stead/failed/{branch.removeprefix('stead/')}-{_stamp()}"
+                    _git(run, anchor, ["branch", "-m", branch, retired])
+                else:
+                    raise BuildError(
+                        f"branch {branch} already exists. Use --resume or remove it.",
+                        reason="precondition")
+            wt = Path(tempfile.mkdtemp(prefix="stead-wt-"))
+            _git(run, anchor, ["worktree", "add", "-b", branch, str(wt), default])
+        code = wt
+        on_branch = True
+        _write_started(root, spec, body, worktree=str(wt))
         # Where this run starts, what the default branch tracks, and what the
         # branch already tracks (for --resume). The commit guard uses these:
         # HEAD must still be commit_base, and the committed range must be the
@@ -436,10 +471,10 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                                 "passes with it.", reason="gate")
                         transcript.append(
                             "The spec has acceptance criteria, but you changed no test. "
-                            "Add a test under tests/ that fails without your change and "
-                            "passes with it. Edit the real files the spec names (for "
-                            "example ctx/metrics.py and ctx/cli.py), not an invented path. "
-                            "Then run check and finish again. Do not finish yet.")
+                            "Add a brand-new test under tests/ that fails without your "
+                            "change and passes with it, using the real file paths shown "
+                            "in the repository tree — not an invented path. Then run "
+                            "check and finish again. Do not finish yet.")
                         continue
                 if checks and not ghost:
                     ok, output, checks_mode = _run_checks(code, checks, repo_meta, deadline)
@@ -542,7 +577,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if publish:
                     from ctx.publish import PublishError, publish as publish_pr
                     try:
-                        opened = publish_pr(root, contribution_ref)
+                        opened = publish_pr(root, contribution_ref, code=code)
                     except PublishError as exc:
                         raise BuildError(f"committed on {branch}, but publish failed: {exc}") from exc
                     result["published"] = True
@@ -552,7 +587,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     if merge:
                         from ctx.merge import MergeError, merge as merge_pr
                         try:
-                            merged = merge_pr(root, contribution_ref)
+                            merged = merge_pr(root, contribution_ref, code=code)
                         except MergeError as exc:
                             raise BuildError(
                                 f"opened {opened['url']}, but merge failed: {exc}") from exc
@@ -578,14 +613,13 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         reason = _failure_reason(exc)
         model_worked = bool(replies)
         # Only a build that actually reached the model is a build attempt: it
-        # gets a record and spends the budget. A precondition failure (dirty
-        # checkout, no approval) or an unreachable model does not, and its
+        # gets a record and spends the budget. A precondition failure (no
+        # approval, missing repo) or an unreachable model does not, and its
         # empty branch is removed so the spec stays eligible.
         if model_worked:
             _record_failure(root, spec, replies, transcript, actions, exc, reason)
-        _cleanup_failure(run, code, branch, default, files, deleted,
-                         initial_dirty, git_before, on_branch, commit_base,
-                         model_worked, repo_meta, reason)
+        _cleanup_failure(run, anchor, code, branch, default, files, deleted,
+                         git_before, on_branch, model_worked, reason)
         if model_worked:
             from ctx import writeback
             try:
@@ -597,6 +631,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 pass
         raise
     finally:
+        _clear_started(root, body)
+        try:
+            if wt is not None:
+                _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
+        except Exception:
+            pass
         _unlock(lock)
         shutil.rmtree(hooks_dir, ignore_errors=True)
 
@@ -683,6 +723,84 @@ def _unlock(path: Path) -> None:
         path.unlink()
     except OSError:
         pass
+
+
+def _stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+def _marker_path(root: Path, body: str) -> Path:
+    from ctx import spec as spec_approval
+    digest = spec_approval.body_hash(body)
+    folder = root / "factories" / "feature-builder" / "runs"
+    return folder / f".build-started-{digest[:16]}.json"
+
+
+def _write_started(root: Path, spec: dict, body: str, *, worktree: str = "") -> None:
+    """A "started" marker, removed on normal exit. A hard kill — Task Scheduler
+    or Task Manager, which skips exception handlers and finally — leaves it
+    behind; the next run reclaims it as an infrastructure failure record and
+    removes the worktree it records."""
+    try:
+        path = _marker_path(root, body)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "started": datetime.now(timezone.utc).isoformat(),
+            "contribution": spec.get("id"),
+            "worktree": worktree,
+        }), encoding="utf-8")
+    except OSError:
+        pass  # a missing marker only means a hard kill cannot be detected
+
+
+def _clear_started(root: Path, body: str) -> None:
+    try:
+        _marker_path(root, body).unlink()
+    except OSError:
+        pass
+
+
+def _reclaim_stale_started(run, anchor: Path, root: Path, spec: dict,
+                           body: str) -> None:
+    """Turn a stale started marker into an infrastructure failure record.
+
+    Only a hard kill leaves the marker (normal failure and success both clear
+    it). The dead process may also have left its worktree registered with the
+    branch checked out — remove it so the spec is not stuck. If the recorded
+    PID is still alive, a build of this spec is genuinely in progress and the
+    marker is left alone."""
+    path = _marker_path(root, body)
+    if not path.is_file():
+        return
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        pid = int(data.get("pid") or 0)
+    except (OSError, json.JSONDecodeError, ValueError):
+        _clear_started(root, body)
+        return
+    if _pid_alive(pid):
+        return
+    wt = data.get("worktree")
+    if wt:
+        try:
+            _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
+        except Exception:
+            pass
+    try:
+        _git(run, anchor, ["worktree", "prune"])
+    except Exception:
+        pass
+    from ctx import writeback
+    try:
+        writeback.record_failure(
+            root, str(data.get("contribution") or spec.get("id") or ""),
+            BuildError("the previous build was killed before it could record a result"),
+            branch=branch_for(spec), reason="infrastructure")
+    except Exception:
+        pass
+    _clear_started(root, body)
 
 
 def _remain_running(root: Path, deadline: float) -> None:
@@ -865,20 +983,18 @@ def _failure_reason(exc) -> str:
     return "infrastructure"
 
 
-def _cleanup_failure(run, code: Path, branch: str, default: str,
-                     files: dict, deleted: list, initial_dirty: set,
-                     git_before: dict, on_branch: bool, commit_base: str,
-                     model_worked: bool, repo_meta: dict,
+def _cleanup_failure(run, anchor: Path, code: Path, branch: str, default: str,
+                     files: dict, deleted: list, git_before: dict,
+                     on_branch: bool, model_worked: bool,
                      reason: str = "build") -> None:
-    """Best-effort: leave the checkout usable after a failed build.
+    """Best-effort after a failed build.
 
-    Only a build that reached the model is an attempt. A precondition or
-    infrastructure failure removes an empty branch and touches nothing the
-    user owns. A model failure commits its own work as WIP on the isolated
-    branch (never pushed), discards what checks did, and returns to the
-    default branch — without deleting files the user put there. A tamper
-    failure that moved HEAD resets the branch: nothing from that run is
-    carried forward.
+    The build ran in its own worktree, so the user's checkout is never touched
+    and no `git clean` ever runs. When the model actually ran (a build-class or
+    infrastructure failure after a reply), its work is committed as WIP on the
+    build branch (never pushed). A precondition/infrastructure failure before
+    any reply, or a tampered build, carries nothing forward: its empty branch is
+    removed so the spec stays eligible. Never masks the original error.
     """
     if not on_branch:
         return
@@ -889,83 +1005,33 @@ def _cleanup_failure(run, code: Path, branch: str, default: str,
                 safety.git_state_restore(code, git_before, after)
     except Exception:
         pass
-    if not model_worked:
-        # Nothing was built. Do not touch the working tree: the checkout was
-        # clean when the branch was created, and a dirty checkout never
-        # reached here. Delete the empty branch so the spec stays eligible.
+    keep = model_worked and reason != "tamper"
+    if keep:
+        # Quarantine the model's own work so --resume can continue from it.
         try:
-            if _git(run, code, ["rev-parse", "HEAD"]).strip() == commit_base:
-                _git(run, code, ["checkout", default])
-                ahead = _git(run, code, ["rev-list", "--count",
-                                         f"{default}..{branch}"]).strip()
-                if ahead.isdigit() and int(ahead) == 0:
-                    _git(run, code, ["branch", "-D", branch])
+            owned = set(files) | set(deleted)
+            tracked = _tracked_files(run, code)
+            stage = sorted(p for p in owned if (code / p).exists() or p in tracked)
+            if stage:
+                _git(run, code, ["add", "-A", "--", *stage])
+            if _git(run, code, ["diff", "--cached", "--name-only"]).strip():
+                _git(run, code, ["commit", "-m", f"WIP: failed build on {branch}"])
         except Exception:
             pass
-        return
-    # A tampered build must not leave its commits or files behind: reset to
-    # the base, drop the model's own untracked additions, and remove the
-    # branch so a later publish or resume cannot carry them forward.
-    if reason == "tamper":
+    try:
+        _git(run, anchor, ["worktree", "remove", "--force", str(code)])
+    except Exception:
+        pass
+    if not keep:
+        # Nothing should carry forward: drop the branch if it has no commits
+        # (a tamper that committed is also discarded).
         try:
-            if _git(run, code, ["rev-parse", "HEAD"]).strip() != commit_base:
-                _git(run, code, ["reset", "--hard", commit_base])
-                base_files = {line for line in _git(
-                    run, code, ["ls-tree", "-r", "--name-only", commit_base]).splitlines()
-                    if line}
-                for path in set(files) | set(deleted):
-                    if path not in base_files:
-                        _remove_path(code / path)
-                try:
-                    _fatal, leftovers = _side_effects(run, code, set(initial_dirty),
-                                                      repo_meta)
-                    for path in leftovers:
-                        _remove_path(code / path)
-                except Exception:
-                    pass
-                _git(run, code, ["checkout", default])
-                ahead = _git(run, code, ["rev-list", "--count",
-                                         f"{default}..{branch}"]).strip()
-                if ahead.isdigit() and int(ahead) == 0:
-                    _git(run, code, ["branch", "-D", branch])
-                return
+            ahead = _git(run, anchor, ["rev-list", "--count",
+                                       f"{default}..{branch}"]).strip()
+            if reason == "tamper" or ahead == "0":
+                _git(run, anchor, ["branch", "-D", branch])
         except Exception:
             pass
-    # The model ran: quarantine its own work, then undo only what checks did.
-    # Pre-existing dirty files (--resume) are left exactly as they were.
-    try:
-        owned = set(files) | set(deleted)
-        tracked = _tracked_files(run, code)
-        stage = sorted(p for p in owned if (code / p).exists() or p in tracked)
-        if stage:
-            _git(run, code, ["add", "-A", "--", *stage])
-        if _git(run, code, ["diff", "--cached", "--name-only"]).strip():
-            _git(run, code, ["commit", "-m", f"WIP: failed build on {branch}"])
-    except Exception:
-        pass
-    try:
-        expected = set(files) | set(deleted) | initial_dirty
-        fatal, leftovers = _side_effects(run, code, expected, repo_meta)
-        head_files = {line for line in
-                      _git(run, code, ["ls-tree", "-r", "--name-only", "HEAD"]).splitlines()
-                      if line}
-        for path in fatal:
-            if path in head_files:
-                _git(run, code, ["checkout", "--", path])
-            else:
-                try:
-                    _git(run, code, ["reset", "--", path])
-                except Exception:
-                    pass
-                _remove_path(code / path)
-        for path in leftovers:
-            _remove_path(code / path)
-    except Exception:
-        pass
-    try:
-        _git(run, code, ["checkout", default])
-    except Exception:
-        pass
 
 
 def _search(code: Path, query: str) -> list[str]:
@@ -1220,15 +1286,9 @@ def _tree(code: Path) -> str:
 
 
 def branch_for(spec: dict) -> str:
-    """The isolated branch a build for this spec uses."""
-    return _branch_name(spec)
-
-
-def _branch_name(spec: dict) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", (spec.get("title") or "build").lower()).strip("-")
-    slug = slug[:40] or "build"
-    number = spec.get("number")
-    return f"stead/{number}-{slug}" if number else f"stead/{slug}"
+    """The isolated branch a build for this spec uses (shared with
+    publish/merge/review, which resolve it without a checkout)."""
+    return factory.branch_for(spec)
 
 
 def _git(run, code: Path, args: list[str]) -> str:

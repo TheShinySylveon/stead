@@ -96,7 +96,7 @@ class MetricsTest(unittest.TestCase):
         self.assertEqual(report["merged_share"], 0.5)
         self.assertEqual(report["human_edits"], 1)
         text = metrics.render(report)
-        self.assertIn("failure rate: 50%", text)
+        self.assertIn("failure rate (build-class): 50%", text)
         self.assertIn("merged after a human edit: 1", text)
 
     def test_reconcile_closed_and_open_prs(self) -> None:
@@ -144,3 +144,35 @@ class MetricsTest(unittest.TestCase):
         text = metrics.render(report)
         self.assertIn("independent reviews: approve 1", text)
         self.assertIn("cost: $0.25", text)
+
+    def test_build_failure_attempts_counts_only_build_class(self) -> None:
+        from ctx import spec as spec_approval
+        cid = self._contrib(1)
+        sha = spec_approval.body_hash("# Feature 1\n")
+        writeback.record_failure(self.root, cid, ValueError("checks failed"),
+                                 branch="stead/x", reason="checks")
+        writeback.record_failure(self.root, cid, ValueError("model down"),
+                                 branch="stead/x", reason="infrastructure")
+        self.assertEqual(
+            writeback.build_failure_attempts(self.root, "repo-me-app", sha), 1)
+
+    def test_record_failure_carries_spec_sha(self) -> None:
+        from ctx import spec as spec_approval
+        cid = self._contrib(1)
+        rec = writeback.record_failure(self.root, cid, ValueError("boom"),
+                                       branch="stead/x", reason="gate")
+        meta, _body = frontmatter.parse(
+            (self.root / rec["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(meta["outcome"], "failed")
+        self.assertEqual(meta["spec_sha"], spec_approval.body_hash("# Feature 1\n"))
+
+    def test_infrastructure_failures_are_reported_separately(self) -> None:
+        cid = self._contrib(1)
+        writeback.record_failure(self.root, cid, ValueError("model down"),
+                                 branch="stead/x", reason="infrastructure")
+        writeback.record_delivery(self.root, self._contrib(2), self._result())
+        report = metrics.collect(self.root)
+        self.assertEqual(report["infra_failures"], 1)
+        self.assertEqual(report["build_failures"], 0)
+        self.assertEqual(report["failure_rate"], 0.0)  # infra does not count
+        self.assertIn("infrastructure 1", metrics.render(report))

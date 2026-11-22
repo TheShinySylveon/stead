@@ -61,6 +61,8 @@ code execution with the permissions of your user account.
 | Step, edit, and prompt caps | 30 steps, 1 MB written, 120k prompt chars | A model cannot loop, dump unbounded output, or grow the resent transcript without bound; older read outputs are trimmed first. |
 | Token and cost budget | 2M tokens per build; USD off until prices are set | Each build accumulates token usage (provider-reported, else estimated from characters) and aborts past the budget. Set prices with `stead model set --input-price/--output-price`; override per build with `--max-tokens`/`--max-cost`. |
 | Stop file | `.stead-stop` | A build and a watched run stop between steps. `stead factory stop` creates it. |
+| Worktree build | On | Every build runs in its own `git worktree`; the user's checkout is never touched and Stead never runs `git clean`. A failed build commits its WIP to the build branch (kept, never pushed) and drops the worktree. A "started" marker is reclaimed as an infrastructure failure record if a build was killed (Task Scheduler/Task Manager). |
+| One attempt per hash | On | A build-class failure blocks a re-run of the same approved content until re-approval (a new hash) or `--retry`. Infrastructure failures and precondition failures write no record and don't consume the attempt or the daily budget; real failures carry a `reason` code. |
 
 The container is not available for every repo (it needs Docker and an image
 with the toolchain). The honest statement is: **without
@@ -278,9 +280,5 @@ agent cannot quietly rewrite the context that later builds depend on.
   header and `SameSite=Lax` session cookie. Use a proxy.
 - Container isolation is per repo and opt-in, not enforced globally. Host
   checks can still read any file your user can read.
-- Failed-build cleanup still happens in the user's checkout: an untracked file
-  created during a build (by the checks, or by the user concurrently) is
-  removed with the other leftovers. A git worktree per build would isolate the
-  build from the user's checkout entirely; that is the next containment step.
 - A model can still write a test-shaped file outside the protected globs if the
   repo's layout is unusual. Add it to `protected_paths:`.

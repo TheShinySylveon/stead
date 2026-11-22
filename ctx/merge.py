@@ -30,8 +30,11 @@ class MergeError(PublishError):
 
 
 def merge(root: Path, contribution_ref: str, *, runner=None,
-          reviewer=None) -> dict:
-    """Merge the checkout's open pull request. Raises MergeError."""
+          reviewer=None, code: Path | None = None) -> dict:
+    """Merge the checkout's open pull request. Raises MergeError.
+
+    ``code`` names the checkout whose branch is merged; a worktree build passes
+    its worktree here."""
     found = objects.find(root, "contribution", contribution_ref)
     if found is None:
         raise MergeError(f"contribution not found: {contribution_ref}")
@@ -53,15 +56,20 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
             "code those checks execute, so they can read your environment. Set "
             "`checks_isolation: docker` and `checks_image` on the repo, or set "
             "`trust_checks: host` to accept that risk explicitly.")
-    code = Path(repo_meta.get("code_path") or "")
-    if not repo_meta.get("code_path") or not code.is_dir():
-        raise MergeError("set the repo code_path to a local checkout before merging")
+    if code is None:
+        code = Path(repo_meta.get("code_path") or "")
+        if not repo_meta.get("code_path") or not code.is_dir():
+            raise MergeError("set the repo code_path to a local checkout before merging")
+        code = code.resolve()
     if code.resolve() == root.resolve():
         raise MergeError("code_path must be the project checkout, not this Stead repo")
     run = safety.safe_runner(runner or _run)
     default = (repo_meta.get("default_branch") or "main").strip()
     branch = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
-    if not branch or branch in {default, "HEAD"}:
+    if branch in {default, "HEAD", ""}:
+        # A worktree build leaves the checkout on the default branch.
+        branch = factory.branch_for(spec)
+    if not branch or branch == default:
         raise MergeError(
             f"refusing to merge from {branch or 'an unknown branch'}. Stay off {default}.")
     raw = run([
@@ -98,7 +106,7 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
     if record is not None:
         expected = str(record.get("commit") or "")
     if not expected:
-        expected = _git(run, code, ["rev-parse", "HEAD"]).strip()
+        expected = _git(run, code, ["rev-parse", branch]).strip()
     head_sha = (view.get("headRefOid") or "").strip()
     if expected and head_sha and head_sha != expected:
         raise MergeError(

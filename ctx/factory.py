@@ -15,6 +15,16 @@ from pathlib import Path
 from ctx import db, objects
 
 
+def branch_for(spec: dict) -> str:
+    """The isolated branch a build for this spec uses. Deterministic from the
+    issue number and title, so publish/merge/review can resolve it without a
+    checkout being on it (a worktree build leaves the checkout on the default)."""
+    slug = re.sub(r"[^a-z0-9]+", "-", (spec.get("title") or "build").lower()).strip("-")
+    slug = slug[:40] or "build"
+    number = spec.get("number")
+    return f"stead/{number}-{slug}" if number else f"stead/{slug}"
+
+
 def _section(title: str, items: list[tuple[Path, dict, str]], root: Path) -> str:
     parts = [f"## {title} ({len(items)})\n"]
     if not items:

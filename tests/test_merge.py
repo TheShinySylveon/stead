@@ -115,7 +115,7 @@ class MergeTest(FeatureBuilderTestCase):
                 calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+            if argv[:3] == ["git", "rev-parse", "feature/json"]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
@@ -208,7 +208,7 @@ class MergeTest(FeatureBuilderTestCase):
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+            if argv[:3] == ["git", "rev-parse", "feature/json"]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
@@ -234,7 +234,7 @@ class MergeTest(FeatureBuilderTestCase):
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+            if argv[:3] == ["git", "rev-parse", "feature/json"]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view(headRefOid="human-edited-sha")
@@ -285,7 +285,7 @@ class MergeTest(FeatureBuilderTestCase):
             argv = strip_git_hygiene(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+            if argv[:3] == ["git", "rev-parse", "feature/json"]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
@@ -312,7 +312,7 @@ class MergeTest(FeatureBuilderTestCase):
             argv = strip_git_hygiene(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
-            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+            if argv[:3] == ["git", "rev-parse", "feature/json"]:
                 return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
