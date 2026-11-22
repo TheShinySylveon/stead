@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The tamper check ignores a person's harmless git config changes.** It
+  compared `.git/config` byte for byte, so a `git push -u`, a new tracking
+  branch, or setting an identity in the same repo while a build ran its checks
+  failed the build as tampering and reverted the change. Config is now compared
+  by its parsed settings (`git config --no-includes --list`); `branch.*` and
+  `user.*` changes are ignored and kept. Any other setting, an unparseable
+  config, or any hook change still fails the build and is restored.
 - **`spec approve` refuses a spec the build would refuse.** More than 8
   acceptance criteria, or a description under 25 or over 400 words, now fails
   approval with what to fix, and `spec draft` tells the model the limit and
