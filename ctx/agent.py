@@ -294,10 +294,10 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
 
             def responder(prompt):
                 if responder._plain:
-                    return models.complete(prompt, settings, timeout=300,
+                    return models.complete(prompt, settings, timeout=settings["call_timeout"],
                                            usage=usage)
                 try:
-                    return models.complete(prompt, settings, timeout=300,
+                    return models.complete(prompt, settings, timeout=settings["call_timeout"],
                                            usage=usage,
                                            response_format=_ACTION_RESPONSE_FORMAT)
                 except models.ModelError as exc:
@@ -306,7 +306,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     # it and remember to skip it for the rest of the build.
                     if "response_format" in str(exc):
                         responder._plain = True
-                        return models.complete(prompt, settings, timeout=300,
+                        return models.complete(prompt, settings, timeout=settings["call_timeout"],
                                                usage=usage)
                     raise
 

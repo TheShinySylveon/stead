@@ -149,7 +149,8 @@ def review(root: Path, contribution_ref: str, *, responder=None,
             settings = models.resolve(root, "reviewer")
             independent = models.reviewer_configured(root)
             model_name = settings.get("name") or ""
-            responder = lambda p: models.complete(p, settings, timeout=300, temperature=0)
+            responder = lambda p: models.complete(
+                p, settings, timeout=settings["call_timeout"], temperature=0)
         text = responder(prompt)
         verdict, reason = _parse(text)
         result.update({"verdict": verdict, "reason": reason,
