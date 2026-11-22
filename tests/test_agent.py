@@ -941,6 +941,59 @@ class FailureCleanupTest(BuildFixture):
         self.assertNotEqual(rec["outcome"], "failed")
 
 
+    def test_the_newest_record_for_a_branch_wins(self) -> None:
+        from ctx import writeback
+        # A delivered build, then the branch was rebuilt and that attempt failed:
+        # the branch now holds the failed attempt, so the failure is the truth.
+        writeback.record_delivery(self.root, "contribution-me-app-issue-42",
+                                  {"branch": "stead/42-add-a-name-flag",
+                                   "commit": "old", "files": ["app.py"]})
+        writeback.record_failure(self.root, "contribution-me-app-issue-42",
+                                 agent.BuildError("killed"),
+                                 branch="stead/42-add-a-name-flag",
+                                 reason="infrastructure")
+        rec = writeback.record_for_branch(self.root, "repo-me-app",
+                                          "stead/42-add-a-name-flag")
+        self.assertEqual(rec["outcome"], "failed")
+        # Merge still pins to the newest *delivered* commit.
+        rec = writeback.delivered_record_for_branch(self.root, "repo-me-app",
+                                                    "stead/42-add-a-name-flag")
+        self.assertEqual(rec["commit"], "old")
+
+    def test_the_newest_delivered_record_is_the_one_merge_pins(self) -> None:
+        from ctx import writeback
+        for sha in ("first", "second"):
+            writeback.record_delivery(self.root, "contribution-me-app-issue-42",
+                                      {"branch": "stead/42-add-a-name-flag",
+                                       "commit": sha, "files": ["app.py"]})
+        rec = writeback.delivered_record_for_branch(self.root, "repo-me-app",
+                                                    "stead/42-add-a-name-flag")
+        self.assertEqual(rec["commit"], "second")
+
+    def test_a_killed_rebuild_after_a_delivered_build_does_not_wedge_the_spec(self) -> None:
+        from ctx import writeback
+        branch = "stead/42-add-a-name-flag"
+        # An earlier build was delivered on this branch name...
+        writeback.record_delivery(self.root, "contribution-me-app-issue-42",
+                                  {"branch": branch, "commit": "old",
+                                   "files": ["app.py"]})
+        # ...then a rebuild was hard-killed: its branch is left behind, and
+        # recovery wrote an infrastructure failure record for it.
+        _git(self.code, "branch", branch)
+        writeback.record_failure(self.root, "contribution-me-app-issue-42",
+                                 agent.BuildError("killed"), branch=branch,
+                                 reason="infrastructure")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "import argparse\nprint('hi')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+        retired = _git(self.code, "branch", "--list", "stead/failed/*").strip()
+        self.assertIn("42-add-a-name-flag", retired)
+
 class PromptBudgetTest(BuildFixture):
     def test_read_outputs_are_trimmed_to_fit_the_budget(self) -> None:
         big = "x" * 40_000
