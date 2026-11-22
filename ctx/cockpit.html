@@ -473,6 +473,11 @@ function renderHome() {
       </div>
     </div>`).join("");
   return `
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+      <input type="text" id="search-q" placeholder="Search all context (titles and bodies)" aria-label="Search context" style="flex:1">
+      <button type="button" class="quiet" data-search>Search</button>
+    </div>
+    <div id="search-result" style="margin-bottom:16px"></div>
     <div class="stats">${stats.map(([n, label]) => `<div class="stat"><b>${esc(n)}</b><span>${esc(label)}</span></div>`).join("")}</div>
     <div class="home-split">
       <section>
@@ -619,7 +624,8 @@ function renderRepos() {
       <select name="status" aria-label="Repo status">${options(choices.repo_status, "active")}</select>
       <button class="primary" type="submit">Add repo</button>
     </form>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <input type="text" id="sync-scope" placeholder="Scope: owner/name, comma-separated (blank = saved/all)" aria-label="Sync scope" style="max-width:340px">
       <button type="button" class="quiet" data-sync="0">Sync GitHub</button>
       <button type="button" class="quiet" data-sync="1">Re-index offline</button>
       <span class="meta">Read-only. Never opens a pull request.</span>
@@ -831,6 +837,9 @@ function renderFactories() {
       form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="contribution">
         <select name="contribution" aria-label="Spec for ${esc(f.name)}">${opts}</select>
         <select name="reach" aria-label="Reach for ${esc(f.name)}">${reaches}</select>
+        <input type="number" name="max_minutes" min="1" max="480" placeholder="Minutes" aria-label="Build minutes" style="width:6.5em">
+        <input type="number" name="max_tokens" min="0" placeholder="Tokens" aria-label="Max tokens" style="width:6.5em">
+        <input type="number" name="max_cost" min="0" step="0.01" placeholder="USD" aria-label="Max cost" style="width:6em">
         ${draftBox}
         <button class="primary" type="submit" ${specs.length ? "" : "disabled"}>Assemble shadow</button>
         <button type="button" class="quiet" data-build="1" ${specs.length ? "" : "disabled"}>Build with model</button></form>`;
@@ -1258,7 +1267,11 @@ document.body.addEventListener("click", async (event) => {
   if (sync) {
     try {
       sync.disabled = true;
-      await api("/api/sync", {method: "POST", body: JSON.stringify({offline: sync.dataset.sync === "1"})});
+      const scope = ((document.getElementById("sync-scope") || {}).value || "")
+        .split(",").map(s => s.trim()).filter(Boolean);
+      const body = {offline: sync.dataset.sync === "1"};
+      if (scope.length) { body.repos = scope; body.remember = true; }
+      await api("/api/sync", {method: "POST", body: JSON.stringify(body)});
       toast(sync.dataset.sync === "1" ? "Re-indexed local cache" : "GitHub cache refreshed");
       await load();
     } catch (err) {
@@ -1303,14 +1316,19 @@ document.body.addEventListener("click", async (event) => {
   const buildBtn = event.target.closest("[data-build]");
   if (buildBtn) {
     const buildForm = buildBtn.closest("form");
-    const contribution = buildForm && buildForm.querySelector('[name="contribution"]')
-      ? buildForm.querySelector('[name="contribution"]').value : "";
+    const field = (name) => buildForm && buildForm.querySelector('[name="' + name + '"]')
+      ? buildForm.querySelector('[name="' + name + '"]').value : "";
+    const contribution = field("contribution");
     if (!contribution) { toast("Pick a feature spec first"); return; }
     if (!confirm("Let the model build " + contribution +
                  "? It plans and works within the repo's reach ceiling, then commits locally. Nothing is pushed.")) return;
+    const payload = {contribution};
+    if (field("max_minutes")) payload.max_minutes = Number(field("max_minutes"));
+    if (field("max_tokens")) payload.max_tokens = Number(field("max_tokens"));
+    if (field("max_cost")) payload.max_cost = Number(field("max_cost"));
     try {
       buildBtn.disabled = true;
-      const result = await awaitTask("/api/build", {contribution}, "Build");
+      const result = await awaitTask("/api/build", payload, "Build");
       toast(result && result.branch
         ? "Built on " + result.branch + ". Publish it when you are ready."
         : "Build finished. Publish it when you are ready.");
@@ -1540,6 +1558,18 @@ document.body.addEventListener("click", async (event) => {
         ? problems.slice(0, 6).map(e => e.message).join(" · ")
         : "No problems found.";
     } catch (err) { if (out) out.textContent = err.message; toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-search]")) {
+    const q = (document.getElementById("search-q") || {}).value || "";
+    if (!q) { toast("Type a query first"); return; }
+    const out = document.getElementById("search-result");
+    try {
+      const results = await api("/api/search?q=" + encodeURIComponent(q));
+      out.innerHTML = results.length
+        ? `<div class="list">${results.map(r => `<button type="button" class="row" data-open data-type="${esc(r.type)}" data-id="${esc(r.id)}"><span><strong>${esc(r.path)}</strong><br><small>${esc(r.snippet)}</small></span></button>`).join("")}</div>`
+        : `<div class="empty">No matches.</div>`;
+    } catch (err) { toast(err.message); }
     return;
   }
   if (event.target.closest("[data-metrics]")) {

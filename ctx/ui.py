@@ -1107,6 +1107,7 @@ def _refuse_shared_remote(root: Path) -> None:
 
 
 def build_task(root: Path, contribution: str, max_minutes: int | None,
+               max_tokens: int | None, max_cost: float | None,
                tasks: TaskRunner) -> dict:
     """Build off the request; poll /api/task. Publishing and merging stay
     separate, explicit steps."""
@@ -1118,6 +1119,10 @@ def build_task(root: Path, contribution: str, max_minutes: int | None,
         kwargs = {"publish": False, "merge": False, "progress": progress}
         if max_minutes:
             kwargs["max_minutes"] = max_minutes
+        if max_tokens:
+            kwargs["max_tokens"] = max_tokens
+        if max_cost is not None:
+            kwargs["max_cost"] = max_cost
         try:
             return build(root, contribution, **kwargs)
         except (BuildError, ModelError, TimeoutError) as exc:
@@ -1171,6 +1176,14 @@ def metrics_mark(root: Path, record: str, correct: bool) -> dict:
 def doctor_report(root: Path) -> dict:
     from ctx import doctor
     return doctor.run(root)
+
+
+def search_objects(root: Path, query: str, repo: str = "") -> list[dict]:
+    from ctx import search
+    try:
+        return search.search(root, query, repo=repo or None)
+    except ValueError as exc:
+        raise UiError(str(exc)) from exc
 
 
 def set_stopped(root: Path, stopped: bool) -> dict:
@@ -1485,6 +1498,9 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                 "application/json; charset=utf-8"
         if method == "GET" and path == "/api/doctor":
             return 200, _json(doctor_report(root)), "application/json; charset=utf-8"
+        if method == "GET" and path == "/api/search":
+            return 200, _json(search_objects(root, query.get("q", ""), query.get("repo", ""))), \
+                "application/json; charset=utf-8"
         if method == "GET" and path == "/favicon.ico":
             return 204, b"", "image/x-icon"
         if method != "POST":
@@ -1676,7 +1692,9 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = approve_spec(root, payload.get("contribution") or "")
         elif path == "/api/build":
             result = build_task(root, payload.get("contribution") or "",
-                                _opt_int(payload, "max_minutes"), tasks)
+                                _opt_int(payload, "max_minutes"),
+                                _opt_int(payload, "max_tokens"),
+                                _opt_float(payload, "max_cost"), tasks)
         elif path == "/api/eval/judge":
             result = judge_eval(root, payload.get("factory") or "",
                                 payload.get("case") or "", payload.get("version") or "")

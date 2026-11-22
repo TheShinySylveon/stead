@@ -6,11 +6,12 @@
   `spec draft` (issue → spec), the independent `review`, the build ledger with
   `metrics mark`, `doctor`, and the build kill switch (`factory stop`/`start`)
   are all reachable from the browser. Builds run in the background with live
-  progress and an optional max-minutes instead of blocking the request. Publish,
-  merge, and issue comments are reachable behind an explicit confirmation, and
-  are refused on a shared server. Schedule exposes the hourly/daily monitor
-  cadence, model settings expose `call_timeout`, factory defaults expose
-  `build_minutes`, and sync is scoped.
+  progress and optional max-minutes/tokens/cost instead of blocking the request.
+  Publish, merge, and issue comments are reachable behind an explicit
+  confirmation, and are refused on a shared server. Schedule exposes the
+  hourly/daily monitor cadence, model settings expose `call_timeout`, factory
+  defaults expose `build_minutes`, sync is scoped by repo, and a context search
+  box finds any object.
 - **`spec draft --all` drafts every open `stead-build` issue with no draft
   yet.** The monitor cadence runs it automatically after `sync github`, so a
   person only approves. It never approves: each draft is still gated by

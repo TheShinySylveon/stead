@@ -338,21 +338,33 @@ class CockpitActionsTest(unittest.TestCase):
     def test_build_endpoint_runs_async_and_reports_progress(self) -> None:
         import unittest.mock as mock
         from ctx import agent
+        seen = {}
 
         def fake(root, contribution, **kw):
+            seen.update(kw)
             kw["progress"]("one line of progress")
             return {"ok": True, "files": ["app.py"], "branch": "stead/1-x",
                     "checks": ""}
 
         with mock.patch.object(agent, "build", fake):
             status, body = self._post("/api/build", {
-                "contribution": "contribution-x", "max_minutes": 90})
+                "contribution": "contribution-x", "max_minutes": 90,
+                "max_tokens": 1000000, "max_cost": 2.5})
         self.assertEqual(status, 200, body)
         self.assertIn("task", body)
         snap = self._poll_task(body["task"])
         self.assertEqual(snap["status"], "done", snap)
         self.assertEqual(snap["result"]["branch"], "stead/1-x")
         self.assertEqual(snap["progress"], ["one line of progress"])
+        self.assertEqual(seen["max_minutes"], 90)
+        self.assertEqual(seen["max_tokens"], 1000000)
+        self.assertEqual(seen["max_cost"], 2.5)
+
+    def test_search_endpoint_returns_matches(self) -> None:
+        status, body = self._get("/api/search?q=Demo")
+        self.assertEqual(status, 200)
+        self.assertIsInstance(body, list)
+        self.assertTrue(any("Demo" in (r.get("snippet") or "") for r in body), body)
 
     def test_eval_judge_uses_the_latest_draft(self) -> None:
         import unittest.mock as mock
