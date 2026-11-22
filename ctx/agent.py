@@ -767,7 +767,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
 
 
 def lock_path(code: Path) -> Path:
-    digest = hashlib.sha1(str(code).encode("utf-8")).hexdigest()[:16]
+    # Canonicalize so one checkout always maps to one lock: Windows 8.3 short
+    # names (C:\Users\RUNNER~1\...) and the long form are the same directory but
+    # hash differently as raw strings, which would let a second build slip past
+    # a held lock (and leave a "dead" lock unreclaimed).
+    key = os.path.normcase(str(Path(code).resolve()))
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
     return Path(tempfile.gettempdir()) / f"stead-build-{digest}.lock"
 
 
@@ -1118,7 +1123,7 @@ def _resolved_rel(target: Path, code: Path) -> str:
     """The path after symlinks: protection matches the real target, not the
     name the model gave (a symlinked directory must not sidestep tests/**)."""
     try:
-        return target.resolve().relative_to(code).as_posix()
+        return target.resolve().relative_to(code.resolve()).as_posix()
     except ValueError:
         raise BuildError(f"path leaves the repository: {target}")
 
@@ -1434,7 +1439,7 @@ def _safe_rel(raw: str) -> str:
 
 def _ignored(path: Path, code: Path) -> bool:
     try:
-        relative = path.resolve().relative_to(code)
+        relative = path.resolve().relative_to(code.resolve())
     except ValueError:
         raise BuildError(f"path leaves the repository: {path}")
     return any(part.casefold() in IGNORE_DIRS or part.casefold() == LOCK_NAME

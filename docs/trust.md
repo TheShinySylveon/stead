@@ -277,6 +277,9 @@ agent cannot quietly rewrite the context that later builds depend on.
 
 ## Known gaps
 
+What is built versus deferred is tracked in [MVP](mvp.md); these are the
+residual risks of the design, not the project status.
+
 - The independent reviewer is a separate model invocation, not a guarantee: it
   can be fooled by a plausible diff, and unless `stead model set --review` names
   another model it shares the builder's endpoint. The per-spec acceptance check

@@ -75,6 +75,11 @@ A PR that needed human commits before merge is **not** a first-attempt success.
 It is recorded separately as "success with human edits" (the ledger already
 detects this by comparing the merged head SHA to the recorded build commit).
 
+Record the verdict per build with
+`python -m stead --root ../stead-dogfood metrics mark ID --correct true|false`,
+so `stead metrics` keeps **committed** (mechanical) apart from **correct** (the
+rubric) and an unverified build never reads as a success.
+
 ## Pre-registered issue sets
 
 Frozen before any tuning. None of the M7 sign-off issues may have been used for

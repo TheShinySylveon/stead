@@ -46,7 +46,7 @@ class ReviewerTest(FeatureBuilderTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.seed_spec()
-        self.code = Path(tempfile.mkdtemp())
+        self.code = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(lambda: __import__("shutil").rmtree(self.code, ignore_errors=True))
         autonomy.set_repo(self.root, "repo-testuser-my-app", code_path=str(self.code))
         from ctx import spec as spec_approval
@@ -105,7 +105,7 @@ class MergeTest(FeatureBuilderTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.seed_spec()
-        self.code = Path(tempfile.mkdtemp())
+        self.code = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(lambda: __import__("shutil").rmtree(self.code, ignore_errors=True))
 
     def _allow(self, **extra) -> None:

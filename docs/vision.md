@@ -352,15 +352,10 @@ factories unless `--force`) and a cockpit delete with confirmation.
 - Stead manages Stead going forward: read the issue queue, create specs, fix
   via the factory, open PRs at ceiling `pr`, human reviews and merges. The
   ledger (`stead metrics`) is the published dogfood metric.
-- Missing capability for the full loop: **filing GitHub issues upstream**. Sync
-  is read-only and publish only opens PRs; "create" today means local
-  spec/contribution objects (and `stead spec draft` from a synced issue).
-- **Issue commenting is built:** `stead factory comment` posts (or updates) a
-  marked comment on the source issue linking the PR, gated by `allow_comment:
-  true` and `kind: own`. See [Trust](trust.md#github-writes-beyond-opening-a-pr).
-- Filing issues upstream is deferred past MVP (humans file issues for now).
-- The fail-before/pass-after gate (M1) closes most empty work: the base suite
-  must pass first, a new test must fail against the base without the code
-  change, and the branch must pass. Remaining: a per-spec `acceptance:` command
-  that exercises the feature in CI, independent of the model's tests — a
-  trivially-passing test still slips through.
+- What is built, missing, or deferred for that loop is stated once, in
+  [MVP](mvp.md) — not restated here.
+- The fail-before/pass-after gate (M1) is the main defence against empty work:
+  the base suite must pass first, a new test must fail against the base without
+  the code change, and the branch must pass. The per-spec `acceptance:` command
+  that closes what a trivially-passing test still lets through is tracked in
+  [MVP](mvp.md) and [Trust](trust.md#empty-work-ci-and-acceptance-checks).
