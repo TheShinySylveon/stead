@@ -726,6 +726,12 @@ def build_parser() -> argparse.ArgumentParser:
     au = actor.add_parser("use", help="remember who is writing. Stamped on later writes.")
     au.add_argument("id")
 
+    ctx = sub.add_parser("context", help="read-only context tools").add_subparsers(dest="sub", required=True)
+    cs = ctx.add_parser("search", help="search markdown context objects (read-only)")
+    cs.add_argument("query", help="text to find in titles or bodies")
+    cs.add_argument("--repo", help="only this repo id and objects that reference it")
+    cs.add_argument("--json", action="store_true", help="machine-readable list")
+
     account = sub.add_parser("account", help="shared-server sign-in. Not a login on this computer.").add_subparsers(dest="sub", required=True)
     ac = account.add_parser("add", help="add a person. Prints a password once.")
     ac.add_argument("--name", required=True)
@@ -1138,6 +1144,18 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_digest(root, live=args.live, generate=args.generate)
     if args.command == "status":
         return cmd_status(root, args.project)
+    if args.command == "context" and args.sub == "search":
+        from ctx import search
+        try:
+            results = search.search(root, args.query, repo=args.repo)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
+        if args.json:
+            import json as _json
+            print(_json.dumps(results, indent=2))
+        else:
+            print(search.render(results, args.query))
+        return 0
     if args.command == "run" and args.sub == "log":
         return cmd_run_log(root, args.factory, args.task, args.prompt_version,
                            args.output, args.verdict, args.project, args.mode)
