@@ -139,10 +139,11 @@ PR checks and record the outcome in the ledger.
 ## GitHub writes beyond opening a PR
 
 Today the only remote writes are `publish` (push an isolated branch, open a PR)
-and `merge`. Sync is strictly read-only. For semi-autonomy the dogfood contract
-needs Stead to **comment on issues and PRs** (status, CI results, questions) and
-eventually file issues. These are not built yet. When added they must be gated
-like publish/merge: explicit per-repo permission, never from assembly, never the
+and `merge`. Sync is strictly read-only. The [MVP](mvp.md) requires Stead to
+**comment on the source issue linking the PR** (and CI status) so a human can
+merge and close together; filing issues upstream is deferred (humans file
+issues for now). Commenting is not built yet. When added it must be gated like
+publish/merge: explicit per-repo permission, never from assembly, never the
 default, and reviewable. Commenting is lower-risk than merging but is still a
 public remote write under the user's identity.
 

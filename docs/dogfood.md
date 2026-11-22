@@ -20,31 +20,38 @@ run, then committed.
 
 ## Operating policy (the dogfood contract)
 
-Once Stead is usable, **Stead manages Stead**: it reads the issue queue, creates
-specs, and fixes them through the factory. This is the dogfood metric — not a
-demo, but the actual way work gets done on this repo.
+Once Stead is usable, **Stead manages Stead**: it monitors the issue queue,
+creates specs/docs/plans, fixes them through the factory, opens PRs, and comments
+on the issue linking the PR. This is the dogfood metric — the actual way work
+gets done on this repo. The full scope and definition of done are in
+[MVP](mvp.md).
 
 - **Ceiling `pr`: stop just short of `merge`.** Every change opens a pull
   request; a human reviews the output and merges. Stead never auto-merges its
   own work. Set the repo `reach: pr`; `merge` stays off.
-- **Read → approve → fix.** `sync github` reads issues read-only; a person
-  approves a spec (`spec approve`, bound to the body hash); `stead build
-  --publish` plans, edits, runs checks, and opens the PR. Write-back records the
-  outcome and feeds the next bundle.
+- **Monitor → spec/docs/plan → approve → fix → PR → comment.** `sync github`
+  reads issues read-only; the `ghost` rung drafts spec/docs/plan; a person
+  approves the spec (`spec approve`, bound to the body hash); `stead build
+  --publish` plans, edits, runs checks, and opens the PR; Stead comments on the
+  issue linking the PR so the human can merge and close together. Write-back
+  records the outcome and feeds the next bundle.
+- **Humans file the issues for MVP.** Stead monitors and responds; filing issues
+  upstream is deferred.
 - **Human gate on interpretation.** Decisions and glossary terms the model
   proposes go to the inbox for triage, never straight into context.
 - **The metric is the ledger.** `stead metrics` reports specs built, share
   merged after review, repair rounds, checks mode, time, and tests touched.
   Publish those numbers here as they accumulate.
 
-Honest gaps in the contract today:
+Honest gaps in the contract today (MVP blockers):
 
-- **Creating GitHub issues is not built.** Sync is read-only and publish only
-  opens PRs. "Create" currently means local spec/contribution objects; filing
-  issues upstream is a capability still needed for the full loop.
+- **Issue commenting is not built.** Posting a comment that links the PR is
+  required for the human to merge and close in one place. A gated remote write;
+  see [Trust](trust.md#github-writes-beyond-opening-a-pr).
 - **The build loop is not yet reliable on a small model.** We are stabilizing at
   `shadow` (local, hand-reviewed) until a build consistently reaches a green PR.
   The `pr` ceiling applies once it does.
+- **The monitor → ghost → approve → build path needs end-to-end validation.**
 
 ## Why a separate checkout
 
