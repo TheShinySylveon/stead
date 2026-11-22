@@ -126,6 +126,13 @@ class InboxListTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertFalse((self.root / "state.db").exists())
 
+    def test_non_utf8_note_does_not_crash(self):
+        (self.root / "inbox").mkdir()
+        (self.root / "inbox" / "bad-note.md").write_bytes(b"# Bad note\n\xff\xfe\x00\n")
+        rc, out = _run(self.root, "inbox", "list")
+        self.assertEqual(rc, 0)
+        self.assertIn("bad-note.md", out)
+
 
 if __name__ == "__main__":
     unittest.main()

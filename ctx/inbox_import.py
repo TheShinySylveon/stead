@@ -130,7 +130,7 @@ def list_notes(root: Path) -> tuple[str, list[dict]]:
         else:
             kind = "note"
         try:
-            body = path.read_text(encoding="utf-8")
+            body = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             body = ""
         title = ""

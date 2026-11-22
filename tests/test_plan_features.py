@@ -242,6 +242,20 @@ class ScheduleAndSyncTest(unittest.TestCase):
         self.assertIn(f'--root "{store}"', posix)
         self.assertIn(f'cd "{code}"', posix)
 
+    def test_interval_implies_watch_in_the_cli(self) -> None:
+        import io
+        from contextlib import redirect_stdout
+        from ctx import cli
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        buf = io.StringIO()
+        with redirect_stdout(buf):
+            rc = cli.main(["--root", str(root), "schedule", "show",
+                           "--interval", "hourly"])
+        self.assertEqual(rc, 0)
+        self.assertIn("factory watch --build --publish", buf.getvalue())
+
     def test_watch_can_build_and_publish(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
