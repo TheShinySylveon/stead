@@ -214,6 +214,15 @@ class ScheduleAndSyncTest(unittest.TestCase):
         self.assertNotIn("cd /d", text)
         self.assertIn(f'--root "{store}"', text)
 
+    def test_monitor_auto_drafts_new_specs_before_watch(self) -> None:
+        from ctx.schedule import monitor_command
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        text = monitor_command(Path(tmp.name), watch=True)
+        self.assertIn("spec draft --all", text)
+        self.assertLess(text.index("spec draft --all"),
+                        text.index("factory watch --build --publish"))
+
     def test_same_folder_store_keeps_working(self) -> None:
         from ctx import schedule as schedule_module
         code = str(Path(schedule_module.__file__).resolve().parents[1])

@@ -226,6 +226,7 @@ before turning on an hourly task.
 
 ```bash
 python -m stead spec draft --contribution ID [--redraft]
+python -m stead spec draft --all
 python -m stead spec approve --contribution ID
 python -m stead factory publish --contribution ID
 python -m stead factory merge --contribution ID
@@ -248,6 +249,11 @@ not exist while a file of the same name does elsewhere (`stead/cli.py` →
 draft: more than 8 acceptance criteria, or a description under 25 or over 400
 words. `spec approve` refuses such a spec outright, so an approval always means
 the spec is ready to build.
+
+`spec draft --all` drafts every open `stead-build`-labelled issue with no draft
+yet, in one pass, and never approves: each draft still needs a person's
+`spec approve`. The monitor cadence (`schedule show --interval`) runs it after
+`sync github`, so the loop becomes sync → draft → approve → build.
 
 `spec approve` records a SHA-256 of the contribution body and prints the body
 being approved. A build refuses an unapproved spec, and refuses a spec whose

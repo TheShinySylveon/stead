@@ -305,3 +305,33 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
             conn.close()
     return {"id": meta["id"], "path": path.relative_to(root).as_posix(),
             "drafted_from": meta["drafted_from"], "warnings": warnings}
+
+
+def auto_draft(root: Path, *, responder=None) -> dict:
+    """Draft a spec for every open ``stead-build``-labelled issue with no draft
+    yet. Never approves — a person still approves each draft.
+
+    Returns ``{"drafted": [ids], "skipped": [{"id", "reason"}]}``."""
+    from ctx import factory
+    from ctx.models import ModelError
+    drafted: list[str] = []
+    skipped: list[dict] = []
+    for _path, meta, _body in objects.iter_objects(root, "contribution"):
+        if meta.get("kind") != "issue" or meta.get("drafted_from"):
+            continue
+        if meta.get("state") not in (None, "", "open"):
+            continue
+        tags = {str(t).lower() for t in factory._tags(meta)}
+        if factory.BUILD_LABEL not in tags:
+            continue
+        source_id = str(meta.get("id") or "")
+        if _existing_draft(root, source_id) is not None:
+            skipped.append({"id": source_id, "reason": "a draft already exists"})
+            continue
+        try:
+            result = draft_spec(root, source_id, responder=responder)
+        except (SpecError, ModelError, TimeoutError) as exc:
+            skipped.append({"id": source_id, "reason": str(exc)})
+            continue
+        drafted.append(result["id"])
+    return {"drafted": drafted, "skipped": skipped}

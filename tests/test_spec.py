@@ -238,3 +238,36 @@ class SpecApprovalTest(unittest.TestCase):
         self.assertEqual(len(result["warnings"]), 1)
         self.assertIn("a build would refuse this draft", result["warnings"][0])
         self.assertIn("10 acceptance criteria", result["warnings"][0])
+
+    def _add_stead_build_issue(self, number, state="open"):
+        meta = {"id": f"contribution-me-app-issue-{number}", "type": "contribution",
+                "title": "Name flag", "created": "2026-11-21", "updated": "2026-11-21",
+                "repo": "repo-me-app", "kind": "issue", "number": number,
+                "role": "author", "state": state, "visibility": "public",
+                "tags": ["stead-build"]}
+        (self.root / "context/contributions" / f"issue-{number}.md").write_text(
+            frontmatter.dumps(meta, "Add a name flag so callers can address a person.\n"),
+            encoding="utf-8")
+
+    def test_auto_draft_drafts_open_stead_build_issues_and_never_approves(self) -> None:
+        self._seed_repo()
+        self._add_stead_build_issue(2)
+        self._add_stead_build_issue(3, state="closed")
+
+        report = spec.auto_draft(self.root, responder=lambda _p: self.DRAFT)
+
+        self.assertEqual(report["drafted"], ["contribution-me-app-issue-2-spec"])
+        draft_path = self.root / "context/contributions/me-app-issue-2-spec.md"
+        meta, _body = frontmatter.parse(draft_path.read_text(encoding="utf-8"))
+        self.assertEqual(meta["drafted_from"], "contribution-me-app-issue-2")
+        self.assertNotIn("spec_sha", meta)  # never approved
+
+    def test_auto_draft_skips_issues_with_existing_drafts(self) -> None:
+        self._seed_repo()
+        self._add_stead_build_issue(2)
+        spec.draft_spec(self.root, "contribution-me-app-issue-2",
+                        responder=lambda _p: self.DRAFT)
+        report = spec.auto_draft(self.root, responder=lambda _p: self.DRAFT)
+        self.assertEqual(report["drafted"], [])
+        self.assertTrue(any("draft already exists" in s["reason"]
+                            for s in report["skipped"]))

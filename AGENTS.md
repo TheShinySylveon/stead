@@ -133,6 +133,7 @@ python -m stead hook set                      # webhook token, printed once
 python -m stead factory publish --contribution ID  # isolated branch + pull request. Never merges.
 python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] [--max-tokens N] [--max-cost USD]  # model plans, edits, checks, commits
 python -m stead review --contribution ID        # independent reviewer pass: approve or reject the branch diff
+python -m stead spec draft --contribution ID [--all] [--redraft]  # issue -> spec (model); --all drafts every open stead-build issue
 python -m stead spec approve --contribution ID  # bind approval to the spec body hash
 python -m stead factory merge --contribution ID    # green checks + independent reviewer. Repo must say reach: merge.
 python -m stead account add --name NAME --actor ACTOR  # shared-server sign-in. Hash only.

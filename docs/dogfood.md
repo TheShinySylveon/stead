@@ -215,10 +215,10 @@ they are not lost:
    and `schedule install --interval hourly --watch` (the `SteadMonitor` hourly
    task). Note: `--interval` alone is sync-only despite its "sync + watch" help
    text, so `--watch` is required for the build step.
-3. **Auto-draft during the monitor run (optional, ask first).** After
-   `sync github`, run `spec draft` for each open `stead-build` issue with no
-   draft, so the person only approves. It must never approve. This is new work
-   under the MVP rule, so it waits until discussed.
+3. **Auto-draft during the monitor run — implemented.** `spec draft --all`
+   runs after `sync github` in the monitor cadence and drafts every open
+   `stead-build` issue with no draft yet, so the person only approves. It never
+   approves.
 
 ## Candidate specs
 

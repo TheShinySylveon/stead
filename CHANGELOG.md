@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **`spec draft --all` drafts every open `stead-build` issue with no draft
+  yet.** The monitor cadence runs it automatically after `sync github`, so a
+  person only approves. It never approves: each draft is still gated by
+  `spec approve`. An issue with an existing draft, a closed issue, or a draft
+  that fails (e.g. no fetched body) is skipped, not fatal.
 - **`schedule show` / `install` work for a store that is not the code folder.**
   The generated command changed into the store (`cd /d "<store>"`) and assumed
   the Stead code lived there, so a dogfood store (`--root C:\dev\stead-dogfood`)
