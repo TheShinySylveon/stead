@@ -1,6 +1,8 @@
 """Test suite for the ctx package (stdlib unittest only).
 
-Run from the repo root:  python3 -m unittest
+Run from the repo root:  python3 -m unittest discover -s tests -b
+``-b`` buffers stdout/stderr and shows it only for failing tests, so the
+seeding helpers' status lines don't bury a real failure.
 """
 
 

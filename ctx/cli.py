@@ -34,19 +34,41 @@ def _rel(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+def _info(msg: str) -> None:
+    """Status feedback to stderr, keeping stdout for the command's actual
+    output (tables, JSON, report text)."""
+    print(msg, file=sys.stderr)
+
+
 # --- init -----------------------------------------------------------------
 
 def cmd_init(root: Path) -> int:
+    seeded = factory.seed_builtin_factories(root)
     counts = db.init_db(root)
     print(f"state.db rebuilt from ctx/schema.sql "
           f"(tasks indexed: {counts['tasks']}, repos: {counts['repos']}, "
           f"contributions: {counts['contributions']}, evals loaded: {counts['evals']}, "
           f"prompt versions seeded: {counts['prompt_versions']})")
+    if seeded:
+        _info(f"seeded {seeded} built-in factory definition(s) into factories/")
     from ctx.onboard import needs_welcome
     if needs_welcome(root):
         print("No projects yet. First run:")
         print("  python -m stead ui")
         print("  python -m stead welcome --title \"My Project\"")
+    return 0
+
+
+def cmd_metrics_mark(root: Path, record: str, correct: bool) -> int:
+    """`stead metrics mark`: record the hand-checked correctness verdict on one
+    build record. 'Committed' is mechanical; 'correct' is the rubric check."""
+    from ctx.writeback import WritebackError, mark_correct
+    try:
+        marked = mark_correct(root, record, correct)
+    except WritebackError as exc:
+        raise SystemExit(str(exc)) from exc
+    print(f"recorded {marked['id']}: correct={marked['correct']} "
+          "(hand-checked rubric verdict; local only, nothing posted)")
     return 0
 
 
@@ -85,7 +107,7 @@ def cmd_task_add(root: Path, title: str, project: str, status: str = "to-do") ->
         conn.commit()
     finally:
         conn.close()
-    print(f"added {task_id} [{status}] -> {_rel(root, path)}")
+    _info(f"added {task_id} [{status}] -> {_rel(root, path)}")
     return 0
 
 
@@ -186,7 +208,7 @@ def cmd_repo_add(root: Path, title: str, url: str | None = None, kind: str = "os
         conn.commit()
     finally:
         conn.close()
-    print(f"added {repo_id} [{kind}] -> {_rel(root, path)}")
+    _info(f"added {repo_id} [{kind}] -> {_rel(root, path)}")
     return 0
 
 
@@ -258,7 +280,7 @@ def cmd_contribution_add(root: Path, title: str, repo: str, kind: str, number: i
         conn.commit()
     finally:
         conn.close()
-    print(f"added contribution-{stem} [{kind} #{number}, {role}] -> {_rel(root, path)}")
+    _info(f"added contribution-{stem} [{kind} #{number}, {role}] -> {_rel(root, path)}")
     return 0
 
 
@@ -480,7 +502,7 @@ def cmd_prompt_promote(root: Path, factory_name: str, version: str) -> int:
         conn.commit()
     finally:
         conn.close()
-    print(f"{factory_name}: {version} is now production (previous production retired)")
+    _info(f"{factory_name}: {version} is now production (previous production retired)")
     return 0
 
 
@@ -600,6 +622,12 @@ def build_parser() -> argparse.ArgumentParser:
     met = sub.add_parser("metrics", help="dogfood numbers from the build records")
     met.add_argument("--repo", help="only this repo id")
     met.add_argument("--json", action="store_true", help="machine-readable report")
+    met_sub = met.add_subparsers(dest="metrics_sub")
+    metmark = met_sub.add_parser("mark",
+                                 help="hand-check a build record correct/incorrect")
+    metmark.add_argument("record", help="build record id")
+    metmark.add_argument("--correct", required=True, choices=("true", "false"),
+                         help="the correctness-rubric verdict (criteria actually met)")
 
     task = sub.add_parser("task", help="manage the task queue").add_subparsers(dest="sub", required=True)
     ta = task.add_parser("add", help="add a task (writes markdown + index)")
@@ -908,6 +936,8 @@ def main(argv: list[str] | None = None) -> int:
             print(doctor.render(report))
         return 1 if report["errors"] else 0
     if args.command == "metrics":
+        if getattr(args, "metrics_sub", None) == "mark":
+            return cmd_metrics_mark(root, args.record, args.correct == "true")
         from ctx import metrics
         report = metrics.collect(root, repo=args.repo)
         if args.json:
@@ -981,7 +1011,7 @@ def main(argv: list[str] | None = None) -> int:
                 added = add_actor(root, args.title, args.kind)
             except UiError as exc:
                 raise SystemExit(str(exc)) from exc
-            print(f"added {added['id']} [{added['kind']}]")
+            _info(f"added {added['id']} [{added['kind']}]")
             return 0
         if args.sub == "use":
             from ctx.actors import ActorError, use

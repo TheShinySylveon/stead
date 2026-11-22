@@ -176,3 +176,37 @@ class MetricsTest(unittest.TestCase):
         self.assertEqual(report["build_failures"], 0)
         self.assertEqual(report["failure_rate"], 0.0)  # infra does not count
         self.assertIn("infrastructure 1", metrics.render(report))
+
+    def test_committed_is_separate_from_correct(self) -> None:
+        # A delivered build is "committed" mechanically but unverified by hand.
+        rec = writeback.record_delivery(self.root, self._contrib(1), self._result())
+        report = metrics.collect(self.root)
+        self.assertEqual(report["outcomes"]["published"], 1)
+        self.assertEqual(report["correct"], 0)
+        self.assertEqual(report["incorrect"], 0)
+        self.assertEqual(report["unverified"], 1)
+        self.assertIn("unverified: 1", metrics.render(report))
+
+        # The bad-build case: it committed, but the rubric check failed.
+        marked = writeback.mark_correct(self.root, rec["id"], False)
+        self.assertEqual(marked["correct"], "false")
+        report = metrics.collect(self.root)
+        self.assertEqual(report["incorrect"], 1)
+        self.assertEqual(report["unverified"], 0)
+        self.assertIn("incorrect: 1", metrics.render(report))
+
+        # Marking correct flips it, and "correct" is what counts as a success.
+        writeback.mark_correct(self.root, rec["id"], True)
+        report = metrics.collect(self.root)
+        self.assertEqual(report["correct"], 1)
+        self.assertEqual(report["incorrect"], 0)
+        self.assertIn("correct: 1", metrics.render(report))
+
+    def test_mark_correct_refuses_a_non_record(self) -> None:
+        doc = {"id": "document-notes", "type": "document", "title": "Notes",
+               "created": "2026-11-21", "updated": "2026-11-21",
+               "status": "active", "tags": []}
+        (self.root / "context/documents/notes.md").write_text(
+            frontmatter.dumps(doc, "# Notes\n"), encoding="utf-8")
+        with self.assertRaises(writeback.WritebackError):
+            writeback.mark_correct(self.root, "document-notes", True)

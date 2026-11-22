@@ -16,9 +16,10 @@ It is built for the solo open-source contributor first: the person with a
 dozen repos, a weekly review queue, and no wish to hand a vendor their notes.
 The same files work for a small team behind one shared container.
 
-> **Current focus: the [MVP](docs/mvp.md).** One reliable issue → spec → tested
-> change → PR loop, reviewed by a human. New features and QoL are deferred until
-> that loop works.
+> **Status and current focus: the [MVP](docs/mvp.md).** One reliable issue → spec
+> → tested change → PR loop, reviewed by a human. New features and QoL are
+> deferred until that loop works; milestone-by-milestone status lives in
+> [MVP](docs/mvp.md).
 
 Version **0.1.0**. Licensed under Apache-2.0. Copyright 2026 Tyler Rathbone.
 See [LICENSE](LICENSE). The command is `python -m stead` (or `stead.cmd` on

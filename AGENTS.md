@@ -73,6 +73,9 @@ state.db             <- GITIGNORED, rebuildable operational index (stead init)
 
 ## How to read (navigation protocol)
 
+0. The status of the Stead project itself lives in `docs/mvp.md` — the single
+   source. The README, `docs/trust.md`, and `docs/vision.md` link to it rather
+   than restating it.
 1. Start here, then read `CONVENTIONS.md` for the frontmatter schema.
 2. "What is the status of project X?" -> `python -m stead status <project-id-or-slug>`
    or read `context/projects/<slug>.md` plus the task files whose frontmatter
@@ -160,10 +163,12 @@ python -m stead factory run --factory weekly-contribution-digest [--shadow|--liv
 python -m stead factory run --factory weekly-project-status --project P [--shadow|--live]
 python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live]
 python -m stead digest                        # shortcut for the digest shadow run
+python -m stead metrics [--json] [--repo R]  # dogfood numbers: committed vs correct
+python -m stead metrics mark ID --correct true|false  # record the hand-checked rubric verdict
 python -m stead onboard --title T [--kind own|oss] [--url URL] [--path DIR] [--method spec-kit|builtin] [--no-specify]
 python -m stead welcome --title T [--url URL] # first run: one project, no Spec Kit
 python -m stead ui                            # local cockpit; empty checkout shows welcome
-python3 -m unittest discover -s tests        # run the test suite
+python3 -m unittest discover -s tests -b     # run the test suite (buffered)
 ```
 
 `factory run` assembles a context bundle and emits the prompt under

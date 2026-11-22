@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+import shutil
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -23,6 +24,36 @@ def branch_for(spec: dict) -> str:
     slug = slug[:40] or "build"
     number = spec.get("number")
     return f"stead/{number}-{slug}" if number else f"stead/{slug}"
+
+
+def seed_builtin_factories(root: Path) -> int:
+    """Copy the built-in factory *definitions* into a fresh store.
+
+    ``stead --root DIR init`` creates a bare store with no ``factories/``, so a
+    store set up exactly as ``docs/dogfood.md`` writes has no feature-builder to
+    run. This copies the definitions — ``FACTORY.md``, ``prompts/``, ``evals/`` —
+    from the package's bundled ``factories/``, never the ``runs/`` or
+    ``results/`` data, and never overwrites a factory that already exists.
+    """
+    source = Path(__file__).resolve().parent.parent / "factories"
+    if not source.is_dir():
+        return 0
+    dest = root / "factories"
+    try:
+        same = source.resolve() == dest.resolve()
+    except OSError:
+        same = False
+    if same:
+        return 0  # `--root .` in this checkout: the factories already live here
+    seeded = 0
+    dest.mkdir(parents=True, exist_ok=True)
+    for fdir in sorted(source.iterdir()):
+        if not fdir.is_dir() or (dest / fdir.name).exists():
+            continue
+        shutil.copytree(fdir, dest / fdir.name,
+                        ignore=shutil.ignore_patterns("runs", "results"))
+        seeded += 1
+    return seeded
 
 
 def _section(title: str, items: list[tuple[Path, dict, str]], root: Path) -> str:

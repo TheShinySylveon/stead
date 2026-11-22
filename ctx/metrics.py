@@ -46,6 +46,8 @@ def collect(root: Path, repo: str | None = None) -> dict:
     records.sort(key=lambda m: str(m.get("created") or ""), reverse=True)
 
     outcomes = {"merged": 0, "published": 0, "committed": 0, "failed": 0, "closed": 0}
+    # "committed" is mechanical; these three are the hand-checked rubric verdict.
+    correct = incorrect = unverified = 0
     build_failures = 0
     infra_failures = 0
     modes = {"docker": 0, "host": 0, "none": 0}
@@ -59,6 +61,14 @@ def collect(root: Path, repo: str | None = None) -> dict:
     for meta in records:
         outcome = str(meta.get("outcome") or "committed")
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
+        if outcome in ("committed", "published", "merged"):
+            verdict = str(meta.get("correct") or "").lower()
+            if verdict == "true":
+                correct += 1
+            elif verdict == "false":
+                incorrect += 1
+            else:
+                unverified += 1
         if outcome == "failed":
             if str(meta.get("reason") or "build") == "infrastructure":
                 infra_failures += 1
@@ -93,6 +103,9 @@ def collect(root: Path, repo: str | None = None) -> dict:
     return {
         "builds": total,
         "outcomes": outcomes,
+        "correct": correct,
+        "incorrect": incorrect,
+        "unverified": unverified,
         "build_failures": build_failures,
         "infra_failures": infra_failures,
         "merged_share": round(outcomes["merged"] / total, 3) if total else 0.0,
@@ -128,8 +141,11 @@ def render(report: dict) -> str:
     lines = [
         f"builds: {report['builds']}",
         f"merged: {out['merged']}  published: {out['published']}  "
-        f"committed (local): {out['committed']}  failed: {out['failed']}  "
+        f"committed: {out['committed']}  failed: {out['failed']}  "
         f"closed: {out['closed']}",
+        f"correct: {report['correct']}  incorrect: {report['incorrect']}  "
+        f"unverified: {report['unverified']}   (hand-checked rubric; "
+        f"committed is mechanical, not a success)",
         f"failures: build {report['build_failures']}  "
         f"infrastructure {report['infra_failures']}",
         f"merged share: {report['merged_share']:.0%}  "

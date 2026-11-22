@@ -210,5 +210,32 @@ class TestPrompts(CtxTestCase):
             cli.cmd_prompt_promote(self.root, "weekly-project-status", "v9")
 
 
+class TestSeedFactories(unittest.TestCase):
+    def test_seed_copies_definitions_and_skips_runs(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name) / "store"
+        root.mkdir()
+        seeded = factory.seed_builtin_factories(root)
+        self.assertGreater(seeded, 0)
+        fb = root / "factories" / "feature-builder"
+        self.assertTrue((fb / "FACTORY.md").exists())
+        self.assertTrue((fb / "prompts").is_dir())
+        self.assertTrue((fb / "evals").is_dir())
+        self.assertFalse((fb / "runs").exists())  # run logs are data, not definitions
+
+    def test_seed_is_idempotent_and_preserves_existing(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name) / "store"
+        root.mkdir()
+        first = factory.seed_builtin_factories(root)
+        self.assertGreater(first, 0)
+        marker = root / "factories" / "feature-builder" / "CUSTOM.txt"
+        marker.write_text("mine", encoding="utf-8")
+        self.assertEqual(factory.seed_builtin_factories(root), 0)
+        self.assertEqual(marker.read_text(encoding="utf-8"), "mine")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -90,6 +90,10 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         "created": today, "updated": today, "status": "active",
         "tags": [RECORD_TAG, f"repo:{repo_id}"],
         "outcome": outcome,
+        # "committed" is mechanical; "correct" is the hand-checked rubric verdict
+        # (criteria actually satisfied). Unset until a person marks it, so a
+        # build that merely committed reads as unverified, not a success.
+        "correct": "unverified",
         "contribution": str(contrib.get("id") or contribution_ref),
         "spec_sha": spec_sha_of(root, contribution_ref),
         "checks_mode": str(result.get("checks_mode") or "none"),
@@ -328,6 +332,26 @@ def mark_merged(root: Path, contribution_ref: str, *, url: str = "",
             fields["human_edits"] = "true" if head_sha != recorded else "false"
         _patch(root, "document", meta.get("id") or path.stem, fields)
     return {"outcome": "merged", "updated": updated}
+
+
+def mark_correct(root: Path, record_ref: str, correct: bool) -> dict:
+    """Record the hand-check verdict for one build record.
+
+    ``committed`` is mechanical (a change was produced); ``correct`` is the
+    correctness-rubric verdict — every acceptance criterion actually satisfied,
+    fail-before/pass-after holds, CI green. It is set by a person, never by the
+    build, so an unmarked build cannot masquerade as a success.
+    """
+    found = objects.find(root, "document", record_ref)
+    if found is None:
+        raise WritebackError(f"build record not found: {record_ref}")
+    path, meta, _body = found
+    tags = {str(t).lower() for t in (meta.get("tags") or [])}
+    if RECORD_TAG not in tags:
+        raise WritebackError(f"{record_ref} is not a build record")
+    verdict = "true" if correct else "false"
+    _patch(root, "document", meta.get("id") or path.stem, {"correct": verdict})
+    return {"id": meta.get("id") or path.stem, "correct": verdict}
 
 
 def reconcile_records(root: Path, view_pr) -> dict:
