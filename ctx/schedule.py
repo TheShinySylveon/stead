@@ -14,6 +14,15 @@ from pathlib import Path
 
 TASK_NAME = "SteadWeekly"
 _PROJECT = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
+# The folder that holds the Stead code (`ctx/` and `stead/`), where the
+# scheduled command runs so `python -m stead` resolves. The store is a separate
+# `--root`, so the two folders may differ (as they do for a dogfood run).
+_CODE_DIR = str(Path(__file__).resolve().parents[1])
+
+
+def _stead(store: str) -> str:
+    """The `python -m stead` prefix for a scheduled call, pointed at a store."""
+    return f'"{sys.executable}" -m stead --root "{store}"'
 
 
 class ScheduleError(Exception):
@@ -23,26 +32,26 @@ class ScheduleError(Exception):
 
 def weekly_command(root: Path, project: str | None = None, *,
                    watch: bool = False, merge: bool = False) -> str:
-    """One command a scheduler can run. It stays inside this checkout."""
+    """One command a scheduler can run. It changes into the code folder and
+    points every `stead` call at the store with `--root`."""
     if merge and not watch:
         raise ScheduleError("--merge needs --watch")
-    exe = sys.executable
-    folder = str(root)
+    stead = _stead(str(root))
     command = (
-        f'cd /d "{folder}" && "{exe}" -m stead sync github --limit 30 --digest '
-        f'&& "{exe}" -m stead factory run --factory context-maintenance --shadow'
+        f'cd /d "{_CODE_DIR}" && {stead} sync github --limit 30 --digest '
+        f'&& {stead} factory run --factory context-maintenance --shadow'
     )
     if project:
         project = project.strip()
         if not _PROJECT.match(project):
             raise ScheduleError("project must be a plain id, not a shell fragment")
         command += (
-            f' && "{exe}" -m stead factory run --factory weekly-project-status '
+            f' && {stead} factory run --factory weekly-project-status '
             f'--project {project} --shadow'
         )
     if watch:
         command += (
-            f' && "{exe}" -m stead factory watch --build --publish'
+            f' && {stead} factory watch --build --publish'
             + (" --merge" if merge else "")
         )
     return command
@@ -54,22 +63,20 @@ def monitor_command(root: Path, *, watch: bool = True, merge: bool = False) -> s
     the weekly schedule."""
     if merge and not watch:
         raise ScheduleError("--merge needs --watch")
-    exe = sys.executable
-    folder = str(root)
-    command = f'cd /d "{folder}" && "{exe}" -m stead sync github --limit 30'
+    stead = _stead(str(root))
+    command = f'cd /d "{_CODE_DIR}" && {stead} sync github --limit 30'
     if watch:
-        command += (f' && "{exe}" -m stead factory watch --build --publish'
+        command += (f' && {stead} factory watch --build --publish'
                     + (" --merge" if merge else ""))
     return command
 
 
 def _monitor_posix(root: Path, *, watch: bool = True, merge: bool = False) -> str:
     """The monitor command in POSIX syntax, for the cron line."""
-    exe = sys.executable
-    folder = str(root)
-    command = f'cd "{folder}" && "{exe}" -m stead sync github --limit 30'
+    stead = _stead(str(root))
+    command = f'cd "{_CODE_DIR}" && {stead} sync github --limit 30'
     if watch:
-        command += (f' && "{exe}" -m stead factory watch --build --publish'
+        command += (f' && {stead} factory watch --build --publish'
                     + (" --merge" if merge else ""))
     return command
 

@@ -210,7 +210,10 @@ run a factory. The hook is off until that token exists.
 `private/run-weekly.cmd` and registers that short path, because Task Scheduler
 rejects a command over 261 characters. The job runs a read-only sync, a local
 digest if the cache changed, a maintenance draft, and the status of
-`--project` when you pass one. It does not push or merge.
+`--project` when you pass one. It does not push or merge. The generated command
+changes into the Stead code folder and passes `--root "<store>"` to each
+`stead` call, so the store and the code can be different folders — as they must
+be for a dogfood run.
 
 `schedule show --interval hourly|daily` prints the shorter monitor cadence — a
 read-only sync followed by `factory watch --build --publish` for enabled specs.

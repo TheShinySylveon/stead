@@ -199,6 +199,27 @@ picked up by `sync github`; if the PR head SHA differs from the commit Stead
 recorded, the record flags `human_edits`. Interpretive notes the model proposes
 land in `inbox/` for triage.
 
+## Unattended operation (planned)
+
+The loop is proven by hand (#20, #30, #34). To run it on a schedule — sync →
+draft → human approves → build → PR → comment — three pieces are tracked here so
+they are not lost:
+
+1. **Schedule for a separate store (Task A, code) — implemented, pending merge.**
+   `ctx/schedule.py` now changes into the Stead code folder and passes
+   `--root "<store>"` to every `stead` call, in both Windows (`cd /d`) and
+   POSIX (`cd`) syntax, so a store that is not the code folder (like
+   `C:\dev\stead-dogfood`) no longer fails with `No module named stead`.
+2. **Settings (Task B, the person's call, after Task A merges).**
+   `factory defaults --build-minutes 90` (the 30-minute default times out on
+   Arete builds), `repo set --trigger watch`, and
+   `schedule install --interval hourly`. Installing the schedule creates a
+   Windows task, so it needs explicit go-ahead.
+3. **Auto-draft during the monitor run (optional, ask first).** After
+   `sync github`, run `spec draft` for each open `stead-build` issue with no
+   draft, so the person only approves. It must never approve. This is new work
+   under the MVP rule, so it waits until discussed.
+
 ## Candidate specs
 
 Small, real, testable improvements to Stead. Each is a build target once
