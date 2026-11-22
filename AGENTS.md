@@ -202,19 +202,20 @@ file import, and triage; local issues and feature specs (public files); a
 read-only GitHub sync; shadow factory assembly; factory scaffolding; eval
 checks and prompt promotion; filing an approved digest or status as a
 document; sign-ins, webhook token, index rebuild, and the weekly job. It calls
-a model only when Draft with model is checked. It never performs a remote
-write: publish and merge are CLI-only, and the page shows the exact commands.
+a model only when Draft with model is checked. Remote writes — publish, merge,
+and issue comments — need an explicit confirmation and are refused on a shared
+server. Long model steps (build, spec draft, review) run in the background and
+are polled for progress.
 The Wiki view is the human record for a repo as a Confluence-style space: a
 home page, a page tree, and child pages for specs, decisions, glossary, and
 tasks, with labels, metadata, and an on-page table of contents. Arrange
 reorders and pins; Request a change files a document instead of editing a
 generated page.
 A contribution body is a public spec, not a private note.
-Cockpit factory runs are local-only: shadow assembly, or a build that plans,
-edits, checks, and commits. The cockpit never publishes or merges, and it
-refuses to run a build when the deployment is a shared server. Publish and
-merge are explicit CLI commands. The page has no external assets, so it works
-offline.
+Cockpit factory runs are local: shadow assembly, or a build that plans, edits,
+checks, and commits (and may publish or merge behind a confirmation). It refuses
+to run a build or a remote write when the deployment is a shared server. The
+page has no external assets, so it works offline.
 
 ## GitHub sync (read-only, offline-capable)
 

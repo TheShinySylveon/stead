@@ -88,7 +88,7 @@ prose; it is not a second ladder. See [Trust](trust.md) for the merge gates.
 | **run ledger** | The `runs` table plus `factories/<name>/runs/<id>/`. A rebuildable index, not the durable record |
 | **write-back** | A delivered build's versioned `build-record` document, status updates, and prior records read by the next bundle |
 | **spec approval** | A person approves a spec body; `spec_sha` binds it. Any edit needs re-approval |
-| **cockpit** | The local browser UI. Same handlers as the CLI; no remote writes |
+| **cockpit** | The local browser UI. Same handlers as the CLI; remote writes need a confirmation |
 | **protected path** | A test or CI path the agent may not write without a repo opt-in |
 
 ## Relations

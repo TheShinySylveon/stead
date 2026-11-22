@@ -7,6 +7,22 @@
   quality queries, weekly and on PRs). Dependabot keeps the GitHub Actions
   current. `.coderabbit.yaml` and `.gemini/` hold review rules for the free
   CodeRabbit and Gemini Code Assist apps; none of these are required checks.
+- **The monitor cadence defaults to watch, and `inbox list` reads any encoding.**
+  `schedule show/install --interval` now implies `--watch` (the monitor cadence
+  is sync + watch by definition), matching its help text instead of producing a
+  sync-only command. `inbox list` no longer crashes on a note that is not UTF-8;
+  undecodable bytes are replaced. `docs/trust.md` records that the local cockpit
+  reaches publish/merge/comment behind a confirmation.
+- **The cockpit reaches CLI parity; remote writes are confirmation-gated.**
+  `spec draft` (issue → spec), the independent `review`, the build ledger with
+  `metrics mark`, `doctor`, and the build kill switch (`factory stop`/`start`)
+  are all reachable from the browser. Builds run in the background with live
+  progress and optional max-minutes/tokens/cost instead of blocking the request.
+  Publish, merge, and issue comments are reachable behind an explicit
+  confirmation, and are refused on a shared server. Schedule exposes the
+  hourly/daily monitor cadence, model settings expose `call_timeout`, factory
+  defaults expose `build_minutes`, sync is scoped by repo, and a context search
+  box finds any object.
 - **`spec draft --all` drafts every open `stead-build` issue with no draft
   yet.** The monitor cadence runs it automatically after `sync github`, so a
   person only approves. It never approves: each draft is still gated by

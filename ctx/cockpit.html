@@ -401,6 +401,22 @@ async function api(path, opts) {
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
+async function awaitTask(path, payload, verb) {
+  const started = await api(path, {method: "POST", body: JSON.stringify(payload)});
+  const taskId = started.task;
+  if (!taskId) throw new Error(verb + " did not start");
+  toast(verb + " started…");
+  let last = "";
+  for (let i = 0; i < 2400; i++) {
+    await new Promise(r => setTimeout(r, 1500));
+    const snap = await api("/api/task?id=" + encodeURIComponent(taskId));
+    if (snap.status === "done") return snap.result;
+    if (snap.status === "failed") throw new Error(snap.error || (verb + " failed"));
+    const line = snap.progress[snap.progress.length - 1];
+    if (line && line !== last) { last = line; toast(line); }
+  }
+  throw new Error(verb + " is taking too long; watch it in the terminal");
+}
 async function load() {
   const y = window.scrollY;
   state.snap = await api("/api/snapshot");
@@ -457,6 +473,11 @@ function renderHome() {
       </div>
     </div>`).join("");
   return `
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
+      <input type="text" id="search-q" placeholder="Search all context (titles and bodies)" aria-label="Search context" style="flex:1">
+      <button type="button" class="quiet" data-search>Search</button>
+    </div>
+    <div id="search-result" style="margin-bottom:16px"></div>
     <div class="stats">${stats.map(([n, label]) => `<div class="stat"><b>${esc(n)}</b><span>${esc(label)}</span></div>`).join("")}</div>
     <div class="home-split">
       <section>
@@ -603,7 +624,8 @@ function renderRepos() {
       <select name="status" aria-label="Repo status">${options(choices.repo_status, "active")}</select>
       <button class="primary" type="submit">Add repo</button>
     </form>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px">
+    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
+      <input type="text" id="sync-scope" placeholder="Scope: owner/name, comma-separated (blank = saved/all)" aria-label="Sync scope" style="max-width:340px">
       <button type="button" class="quiet" data-sync="0">Sync GitHub</button>
       <button type="button" class="quiet" data-sync="1">Re-index offline</button>
       <span class="meta">Read-only. Never opens a pull request.</span>
@@ -815,6 +837,9 @@ function renderFactories() {
       form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="contribution">
         <select name="contribution" aria-label="Spec for ${esc(f.name)}">${opts}</select>
         <select name="reach" aria-label="Reach for ${esc(f.name)}">${reaches}</select>
+        <input type="number" name="max_minutes" min="1" max="480" placeholder="Minutes" aria-label="Build minutes" style="width:6.5em">
+        <input type="number" name="max_tokens" min="0" placeholder="Tokens" aria-label="Max tokens" style="width:6.5em">
+        <input type="number" name="max_cost" min="0" step="0.01" placeholder="USD" aria-label="Max cost" style="width:6em">
         ${draftBox}
         <button class="primary" type="submit" ${specs.length ? "" : "disabled"}>Assemble shadow</button>
         <button type="button" class="quiet" data-build="1" ${specs.length ? "" : "disabled"}>Build with model</button></form>`;
@@ -881,6 +906,7 @@ function renderSettings() {
         <select name="provider" aria-label="Model provider">${(state.snap.choices.model_provider || []).map(p => opt(p.id, p.label)).join("")}</select>
         <input type="text" name="name" placeholder="Model name" required aria-label="Model name" value="${esc(m.name)}">
         <input type="text" name="base_url" placeholder="Base URL, optional" aria-label="Model base URL" value="${esc(m.base_url)}">
+        <input type="text" name="call_timeout" placeholder="Call timeout seconds (optional)" aria-label="Call timeout seconds" value="${esc(m.call_timeout || "")}">
         <input type="password" name="api_key" placeholder="API key, leave blank to keep" aria-label="Model API key" autocomplete="off">
         <div><button class="primary" type="submit">Save model</button></div>
       </form>
@@ -897,8 +923,21 @@ function renderSettings() {
       <form class="inline" id="set-factory">
         <select name="trigger" aria-label="Install trigger">${options(state.snap.choices.factory_trigger, (state.snap.factory || {}).trigger || "on-demand")}</select>
         <select name="reach" aria-label="Install ceiling">${options(state.snap.choices.factory_reach_install, (state.snap.factory || {}).reach || "shadow")}</select>
+        <input type="number" name="build_minutes" min="1" max="480" placeholder="Build minutes" aria-label="Build minutes" value="${esc((state.snap.factory || {}).build_minutes || 30)}" style="width:7em">
         <button class="primary" type="submit">Save factory default</button>
       </form>
+      <div class="inline" style="margin-top:8px">
+        <button type="button" class="quiet" data-stop>Stop builds</button>
+        <button type="button" class="quiet" data-start>Resume builds</button>
+        <span class="meta">Stop halts builds and watched runs between steps.</span>
+      </div>
+    </div>
+    <div class="section-title">Metrics</div>
+    <div class="panel" style="padding:14px 16px;margin-bottom:16px">
+      <strong>Build ledger</strong>
+      <p class="meta">The dogfood numbers: specs built, merged, correct, and the failure rate.</p>
+      <button type="button" class="quiet" data-metrics>Show metrics</button>
+      <div id="metrics-result" style="margin-top:8px"></div>
     </div>
     <div class="section-title">Capture and schedule</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
@@ -912,6 +951,19 @@ function renderSettings() {
       ${state.scheduleText ? `<pre style="overflow:auto;margin-top:8px"><code>${esc(state.scheduleText)}</code></pre>` : ""}
     </div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
+      <strong>Monitor cadence</strong>
+      <p class="meta">Read-only sync, an auto-draft of new specs, then a watched build + publish. Nothing merges unless reach: merge.</p>
+      <div class="inline" style="margin:0">
+        <select id="schedule-interval" aria-label="Monitor interval">
+          <option value="">Off</option>
+          <option value="hourly">Hourly</option>
+          <option value="daily">Daily</option>
+        </select>
+        <button type="button" class="quiet" data-monitor="show">Show command</button>
+        <button type="button" class="quiet" data-monitor="install" ${(state.snap.schedule || {}).platform === "windows" ? "" : "disabled"}>Install on Windows</button>
+      </div>
+    </div>
+    <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>Capture webhook</strong>
       <p class="meta">${(state.snap.hook || {}).set ? "A webhook token is set. POST /hook with X-Stead-Hook writes one inbox note." : "No webhook token. Enable it to let a scheduler drop notes into inbox/."} It never runs a factory.</p>
       <button type="button" class="quiet" data-hook>${(state.snap.hook || {}).set ? "Rotate webhook token" : "Enable webhook"}</button>
@@ -922,6 +974,8 @@ function renderSettings() {
       <strong>Index</strong>
       <p class="meta">state.db is an index. Rebuilding it reads context/ again and changes no notes.</p>
       <button type="button" class="quiet" data-init>Rebuild index</button>
+      <button type="button" class="quiet" data-doctor>Run doctor</button>
+      <div class="meta" id="doctor-result" style="margin-top:6px"></div>
     </div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>${d.deployment === "multi" ? "Shared server" : "This computer"}</strong>
@@ -1085,10 +1139,21 @@ async function openReader(type, id) {
       <div style="margin-top:8px"><button type="button" class="quiet" data-approve-spec="${esc(data.id || id)}">Approve this spec for building</button>
       <span class="meta">Approval binds the current body. Any edit needs re-approval.</span></div>
       <div class="panel" style="padding:12px 14px;margin-top:12px">
-        <strong>Remote step</strong>
-        <p class="meta">The cockpit does not write to GitHub. Run one of these in this checkout:</p>
-        <pre style="overflow:auto"><code>python -m stead factory publish --contribution ${esc(data.id || id)}
-python -m stead factory merge --contribution ${esc(data.id || id)}</code></pre>
+        <strong>Build and review</strong>
+        <div class="inline" style="margin-top:8px">
+          <button type="button" class="quiet" data-draft-spec="${esc(data.id || id)}">Draft spec from this issue</button>
+          <button type="button" class="quiet" data-review="${esc(data.id || id)}">Review</button>
+        </div>
+        <p class="meta">Draft turns a raw issue into a spec with the model — you then approve it. Review runs the independent reviewer against the approved spec.</p>
+      </div>
+      <div class="panel" style="padding:12px 14px;margin-top:12px">
+        <strong>Remote steps</strong>
+        <p class="meta">Each writes to GitHub and asks for confirmation.</p>
+        <div class="inline" style="margin-top:8px">
+          <button type="button" class="quiet" data-publish="${esc(data.id || id)}">Publish PR</button>
+          <button type="button" class="quiet" data-merge="${esc(data.id || id)}">Merge</button>
+          <button type="button" class="quiet" data-comment="${esc(data.id || id)}">Comment on issue</button>
+        </div>
         <p class="meta">Publish opens a pull request only when the repo ceiling allows it. Merge needs <code>reach: merge</code> and green checks.</p>
       </div>` : "";
     const path = data.path ? `<div class="meta">${esc(data.path)}</div>` : "";
@@ -1202,7 +1267,11 @@ document.body.addEventListener("click", async (event) => {
   if (sync) {
     try {
       sync.disabled = true;
-      await api("/api/sync", {method: "POST", body: JSON.stringify({offline: sync.dataset.sync === "1"})});
+      const scope = ((document.getElementById("sync-scope") || {}).value || "")
+        .split(",").map(s => s.trim()).filter(Boolean);
+      const body = {offline: sync.dataset.sync === "1"};
+      if (scope.length) { body.repos = scope; body.remember = true; }
+      await api("/api/sync", {method: "POST", body: JSON.stringify(body)});
       toast(sync.dataset.sync === "1" ? "Re-indexed local cache" : "GitHub cache refreshed");
       await load();
     } catch (err) {
@@ -1247,20 +1316,22 @@ document.body.addEventListener("click", async (event) => {
   const buildBtn = event.target.closest("[data-build]");
   if (buildBtn) {
     const buildForm = buildBtn.closest("form");
-    const contribution = buildForm && buildForm.querySelector('[name="contribution"]')
-      ? buildForm.querySelector('[name="contribution"]').value : "";
+    const field = (name) => buildForm && buildForm.querySelector('[name="' + name + '"]')
+      ? buildForm.querySelector('[name="' + name + '"]').value : "";
+    const contribution = field("contribution");
     if (!contribution) { toast("Pick a feature spec first"); return; }
     if (!confirm("Let the model build " + contribution +
                  "? It plans and works within the repo's reach ceiling, then commits locally. Nothing is pushed.")) return;
+    const payload = {contribution};
+    if (field("max_minutes")) payload.max_minutes = Number(field("max_minutes"));
+    if (field("max_tokens")) payload.max_tokens = Number(field("max_tokens"));
+    if (field("max_cost")) payload.max_cost = Number(field("max_cost"));
     try {
       buildBtn.disabled = true;
-      const result = await api("/api/build", {method: "POST", body: JSON.stringify({
-        contribution,
-      })});
-      toast(result.reach === "ghost"
-        ? "Ghost run: plan and spec/docs saved for review. No code was applied."
-        : "Built " + result.files.length + " file(s) on " + result.branch +
-          ". Publish with the CLI when you are ready.");
+      const result = await awaitTask("/api/build", payload, "Build");
+      toast(result && result.branch
+        ? "Built on " + result.branch + ". Publish it when you are ready."
+        : "Build finished. Publish it when you are ready.");
       await load();
     } catch (err) { toast(err.message); }
     finally { buildBtn.disabled = false; }
@@ -1318,6 +1389,69 @@ document.body.addEventListener("click", async (event) => {
         contribution: approveSpec.dataset.approveSpec,
       })});
       toast("Spec approved (" + result.sha.slice(0, 12) + "…)");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const draftSpec = event.target.closest("[data-draft-spec]");
+  if (draftSpec) {
+    try {
+      draftSpec.disabled = true;
+      const result = await awaitTask("/api/spec/draft",
+        {contribution: draftSpec.dataset.draftSpec}, "Draft spec");
+      toast("Drafted " + (result && result.id) + ". Review and approve it.");
+      closeReader();
+      await load();
+    } catch (err) { toast(err.message); }
+    finally { draftSpec.disabled = false; }
+    return;
+  }
+  const reviewBtn = event.target.closest("[data-review]");
+  if (reviewBtn) {
+    try {
+      reviewBtn.disabled = true;
+      const result = await awaitTask("/api/review",
+        {contribution: reviewBtn.dataset.review}, "Review");
+      toast((result && result.verdict ? result.verdict + ": " : "") +
+            ((result && result.reason) || "Review finished"));
+    } catch (err) { toast(err.message); }
+    finally { reviewBtn.disabled = false; }
+    return;
+  }
+  const publishBtn = event.target.closest("[data-publish]");
+  if (publishBtn) {
+    if (!confirm("Publish a pull request for this spec? This pushes a branch and opens a PR on GitHub.")) return;
+    try {
+      const result = await api("/api/factory/publish", {method: "POST", body: JSON.stringify({
+        contribution: publishBtn.dataset.publish, confirm: true,
+      })});
+      toast("Published " + (result.url || ""));
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const mergeBtn = event.target.closest("[data-merge]");
+  if (mergeBtn) {
+    if (!confirm("Merge this pull request? It merges only when the repo says reach: merge and the checks are green.")) return;
+    try {
+      const result = await api("/api/factory/merge", {method: "POST", body: JSON.stringify({
+        contribution: mergeBtn.dataset.merge, confirm: true,
+      })});
+      toast("Merged " + (result.url || ""));
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const commentBtn = event.target.closest("[data-comment]");
+  if (commentBtn) {
+    const prUrl = prompt("PR URL to link on the issue:");
+    if (!prUrl) return;
+    if (!confirm("Post a comment on the issue linking this PR?")) return;
+    try {
+      const result = await api("/api/factory/comment", {method: "POST", body: JSON.stringify({
+        contribution: commentBtn.dataset.comment, pr_url: prUrl, confirm: true,
+      })});
+      toast("Comment " + (result.updated ? "updated" : "created"));
       await load();
     } catch (err) { toast(err.message); }
     return;
@@ -1402,6 +1536,79 @@ document.body.addEventListener("click", async (event) => {
       await api("/api/init", {method: "POST", body: "{}"});
       toast("Index rebuilt");
       await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-stop]") || event.target.closest("[data-start]")) {
+    const stopping = !!event.target.closest("[data-stop]");
+    try {
+      const result = await api("/api/factory/" + (stopping ? "stop" : "start"),
+        {method: "POST", body: "{}"});
+      toast(result.stopped ? "Builds stopped" : "Builds resumed");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-doctor]")) {
+    const out = document.getElementById("doctor-result");
+    try {
+      const report = await api("/api/doctor");
+      const problems = (report.errors || []).concat(report.warnings || []);
+      if (out) out.textContent = problems.length
+        ? problems.slice(0, 6).map(e => e.message).join(" · ")
+        : "No problems found.";
+    } catch (err) { if (out) out.textContent = err.message; toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-search]")) {
+    const q = (document.getElementById("search-q") || {}).value || "";
+    if (!q) { toast("Type a query first"); return; }
+    const out = document.getElementById("search-result");
+    try {
+      const results = await api("/api/search?q=" + encodeURIComponent(q));
+      out.innerHTML = results.length
+        ? `<div class="list">${results.map(r => `<button type="button" class="row" data-open data-type="${esc(r.type)}" data-id="${esc(r.id)}"><span><strong>${esc(r.path)}</strong><br><small>${esc(r.snippet)}</small></span></button>`).join("")}</div>`
+        : `<div class="empty">No matches.</div>`;
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-metrics]")) {
+    const out = document.getElementById("metrics-result");
+    try {
+      const r = await api("/api/metrics");
+      const rows = (r.recent || []).map(rec => `<div class="row">
+        <span><strong>${esc(rec.title)}</strong><br><small>${esc(rec.created)} · ${esc(rec.outcome)} · ${esc(rec.repo)}</small></span>
+        <span class="chips">${chip(rec.correct || "unverified", rec.correct === "true" ? "done" : rec.correct === "false" ? "fail" : "doing")}
+        <button type="button" class="quiet" data-mark="${esc(rec.id)}" data-correct="true">Correct</button>
+        <button type="button" class="quiet" data-mark="${esc(rec.id)}" data-correct="false">Incorrect</button></span>
+      </div>`).join("");
+      out.innerHTML = `<p class="meta">${r.builds} builds · ${r.outcomes.merged} merged · ${r.correct} correct · ${r.incorrect} incorrect · failure rate ${Math.round((r.failure_rate || 0) * 100)}%</p>
+        <div class="list">${rows || '<div class="empty">No build records.</div>'}</div>`;
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const mark = event.target.closest("[data-mark]");
+  if (mark) {
+    try {
+      await api("/api/metrics/mark", {method: "POST", body: JSON.stringify({
+        record: mark.dataset.mark, correct: mark.dataset.correct === "true",
+      })});
+      toast("Verdict recorded");
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const monitor = event.target.closest("[data-monitor]");
+  if (monitor) {
+    const interval = (document.getElementById("schedule-interval") || {}).value || "";
+    if (!interval) { toast("Pick an interval first"); return; }
+    const install = monitor.dataset.monitor === "install";
+    if (install && !confirm("Install the " + interval + " monitor task? It syncs and builds + publishes watched specs on a schedule.")) return;
+    try {
+      const result = await api("/api/schedule", {method: "POST", body: JSON.stringify({
+        interval, watch: true, install,
+      })});
+      if (install) { toast("Monitor task installed"); }
+      else { state.scheduleText = result.text; render(); }
     } catch (err) { toast(err.message); }
     return;
   }
@@ -1604,13 +1811,14 @@ document.body.addEventListener("submit", async (event) => {
       }
       toast("Project created");
     } else if (form.id === "set-factory") {
-      await api("/api/factory/defaults", {method: "POST", body: JSON.stringify({
-        trigger: data.trigger, reach: data.reach,
-      })});
+      const body = {trigger: data.trigger, reach: data.reach};
+      if (data.build_minutes) body.build_minutes = Number(data.build_minutes);
+      await api("/api/factory/defaults", {method: "POST", body: JSON.stringify(body)});
       toast("Factory default saved");
     } else if (form.id === "set-model") {
       const body = {provider: data.provider, name: data.name, base_url: data.base_url || ""};
       if (data.api_key) body.api_key = data.api_key;
+      if (data.call_timeout) body.call_timeout = Number(data.call_timeout);
       await api("/api/model", {method: "POST", body: JSON.stringify(body)});
       toast("Model saved");
     } else if (form.id === "use-actor") {

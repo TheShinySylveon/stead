@@ -306,9 +306,9 @@ factories unless `--force`) and a cockpit delete with confirmation.
 ### CLI ↔ GUI parity
 
 Every CLI command should be reachable from the cockpit, so the browser is a
-first-class surface rather than a reduced one. Today publish and merge are
-deliberately CLI-only; parity should keep a human confirmation for those
-remote writes.
+first-class surface rather than a reduced one. Publish, merge, and issue
+comments are reachable behind a human confirmation, and long model steps
+(build, spec draft, review) run in the background with live progress.
 
 **Safety / autonomy**
 
