@@ -147,7 +147,8 @@ def collect(root: Path, repo: str | None = None, since: str | None = None) -> di
         "cost_usd": round(cost, 4),
         "by_repo": by_repo,
         "recent": [
-            {"title": m.get("title", ""), "outcome": m.get("outcome", ""),
+            {"id": m.get("id", ""), "title": m.get("title", ""),
+             "outcome": m.get("outcome", ""), "correct": m.get("correct", ""),
              "created": m.get("created", ""),
              "repo": next((str(t)[5:] for t in (m.get("tags") or [])
                            if str(t).lower().startswith("repo:")), "")}
