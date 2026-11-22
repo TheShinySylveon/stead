@@ -188,6 +188,7 @@ See [Trust](trust.md) for the full set.
 
 ```bash
 python -m stead inbox import PATH
+python -m stead inbox list [--kind decision|glossary|note]
 python -m stead hook set
 python -m stead hook show
 python -m stead schedule show [--project P] [--watch] [--merge]
@@ -197,7 +198,10 @@ python -m stead schedule install --interval hourly|daily [--watch] [--merge]
 ```
 
 `inbox import` copies a local `.eml`, `.ics`, `.md`, or `.txt` file into
-`inbox/`. It does not write `context/`. `hook set` prints a token once.
+`inbox/`. It does not write `context/`. `inbox list` is read-only: it lists
+each note in `inbox/` with its file name, kind, and title, and `--kind` limits
+it to one kind. A missing or empty inbox prints a clear message. Nothing is
+moved, edited, or deleted. `hook set` prints a token once.
 `POST /hook` with header `X-Stead-Hook` captures one inbox note and does not
 run a factory. The hook is off until that token exists.
 
