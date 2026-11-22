@@ -205,16 +205,16 @@ The loop is proven by hand (#20, #30, #34). To run it on a schedule — sync →
 draft → human approves → build → PR → comment — three pieces are tracked here so
 they are not lost:
 
-1. **Schedule for a separate store (Task A, code) — implemented, pending merge.**
+1. **Schedule for a separate store (Task A, code) — implemented, PR #38 open.**
    `ctx/schedule.py` now changes into the Stead code folder and passes
    `--root "<store>"` to every `stead` call, in both Windows (`cd /d`) and
    POSIX (`cd`) syntax, so a store that is not the code folder (like
    `C:\dev\stead-dogfood`) no longer fails with `No module named stead`.
-2. **Settings (Task B, the person's call, after Task A merges).**
-   `factory defaults --build-minutes 90` (the 30-minute default times out on
-   Arete builds), `repo set --trigger watch`, and
-   `schedule install --interval hourly`. Installing the schedule creates a
-   Windows task, so it needs explicit go-ahead.
+2. **Settings (Task B) — applied 2026-11-22.** `factory defaults
+   --build-minutes 90`, `repo set repo-theshinysylveon-stead --trigger watch`,
+   and `schedule install --interval hourly --watch` (the `SteadMonitor` hourly
+   task). Note: `--interval` alone is sync-only despite its "sync + watch" help
+   text, so `--watch` is required for the build step.
 3. **Auto-draft during the monitor run (optional, ask first).** After
    `sync github`, run `spec draft` for each open `stead-build` issue with no
    draft, so the person only approves. It must never approve. This is new work
