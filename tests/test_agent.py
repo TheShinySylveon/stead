@@ -585,6 +585,60 @@ class AttemptGateTest(BuildFixture):
         self.assertNotIn(str(wt), _git(self.code, "worktree", "list"))
 
 
+class FailBeforeTest(BuildFixture):
+    """M1.5: fail-before/pass-after — a new test must fail without the change."""
+
+    def test_a_test_that_passes_without_the_change_is_refused(self) -> None:
+        self._set_repo(require_tests="true", allow_test_edits="true",
+                       checks="python -c \"import sys; sys.exit(0)\"")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add flag + test."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "write", "path": "tests/test_flag.py",
+             "content": "def test_flag():\n    assert True\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder)
+        self.assertIn("passes without the code change", str(caught.exception))
+
+    def test_a_test_that_fails_before_and_passes_after_builds(self) -> None:
+        # checks pass only when app.py and the test agree on 'FEATURE': the
+        # test contains FEATURE, so it fails against the base (no FEATURE in
+        # app.py) and passes on the branch (FEATURE in both).
+        self._set_repo(require_tests="true", allow_test_edits="true", checks=(
+            "python -c \"import pathlib,sys,os; tp='tests/test_flag.py'; "
+            "t=pathlib.Path(tp).read_text() if os.path.exists(tp) else ''; "
+            "a=pathlib.Path('app.py').read_text(); "
+            "sys.exit(0 if ('FEATURE' in a) == ('FEATURE' in t) else 1)\""))
+        responder = self._responder([
+            {"action": "plan", "summary": "Add flag + test."},
+            {"action": "write", "path": "app.py", "content": "# FEATURE\nprint('ok')\n"},
+            {"action": "write", "path": "tests/test_flag.py",
+             "content": "# FEATURE\ndef test_flag():\n    assert True\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+        self.assertIn("tests/test_flag.py", result["tests_touched"])
+
+    def test_a_red_base_suite_is_an_infrastructure_failure(self) -> None:
+        self._set_repo(require_tests="true", allow_test_edits="true",
+                       checks="python -c \"import sys; sys.exit(1)\"")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add flag."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "write", "path": "tests/test_flag.py", "content": "assert True\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder)
+        self.assertIn("red", str(caught.exception))
+
+
 class CommitStepTest(BuildFixture):
     """Checks execute model-written code. Its side effects must not become
     commits, and must not rewrite git's own execution surface (.git)."""

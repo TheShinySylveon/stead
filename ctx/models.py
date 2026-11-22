@@ -173,8 +173,10 @@ def draft(root: Path, prompt: str, *, transport=None, timeout: float = 120) -> s
 
 def complete(prompt: str, settings: dict, *, transport=None,
              timeout: float = 120, temperature: float = 0.2,
-             usage: dict | None = None) -> str:
-    url, headers, body = _request(settings, prompt, temperature)
+             usage: dict | None = None,
+             response_format: dict | None = None) -> str:
+    url, headers, body = _request(settings, prompt, temperature,
+                                  response_format=response_format)
     key = settings.get("api_key") or ""
     if transport is None:
         raw = _post(url, body, headers, key, timeout)
@@ -427,7 +429,8 @@ def _needs_key(settings: dict) -> bool:
     return host not in _LOOPBACK
 
 
-def _request(settings: dict, prompt: str, temperature: float) -> tuple[str, dict, dict]:
+def _request(settings: dict, prompt: str, temperature: float,
+             response_format: dict | None = None) -> tuple[str, dict, dict]:
     """URL, headers, and body for one call. Headers may contain the key."""
     base = _check_url(settings["base_url"])
     key = settings.get("api_key") or ""
@@ -454,6 +457,11 @@ def _request(settings: dict, prompt: str, temperature: float) -> tuple[str, dict
         "messages": [{"role": "user", "content": prompt}],
         "temperature": temperature,
     }
+    # OpenAI-compatible structured output (LM Studio, Ollama, vLLM, ...):
+    # `{"type": "json_object"}` forces valid JSON; a JSON-schema variant pins
+    # the shape. Anthropic is handled above and gets no response_format.
+    if response_format is not None:
+        body["response_format"] = response_format
     return base + "/chat/completions", headers, body
 
 

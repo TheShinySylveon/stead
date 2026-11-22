@@ -58,6 +58,11 @@ Results live in [Dogfood](dogfood.md); safety gates in [Trust](trust.md).
   body; failures carry a `reason` code; a spec gets one automatic build attempt
   per approved hash (`--retry` to re-run); and a killed build's started marker
   is reclaimed as an infrastructure failure record.
+- **M1 (build correctness harness) — done.** The builder asks for structured
+  JSON output (`response_format`), logs characters sent/received and model
+  latency per build, and enforces the fail-before/pass-after gate: the base
+  suite must pass first, the new test must fail against the base (without the
+  code change), and the branch must pass.
 
 ## In scope (state)
 
