@@ -102,7 +102,8 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
     # --match-head-commit also guards the head moving between view and merge.
     expected = ""
     from ctx import writeback
-    record = writeback.record_for_branch(root, str(repo_meta.get("id") or ""), branch)
+    record = writeback.delivered_record_for_branch(
+        root, str(repo_meta.get("id") or ""), branch)
     if record is not None:
         expected = str(record.get("commit") or "")
     if not expected:

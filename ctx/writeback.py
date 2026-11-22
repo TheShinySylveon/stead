@@ -264,20 +264,53 @@ def record_review(root: Path, contribution_ref: str, result: dict) -> dict:
             "verdict": verdict}
 
 
-def record_for_branch(root: Path, repo_id: str, branch: str) -> dict | None:
-    """The build record for one branch, preferring a delivered one over a
-    failed one. Lets the watch loop tell 'already built' from 'failed here'."""
-    fallback = None
-    for _path, meta, _body in objects.iter_objects(root, "document"):
+_STAMP_RE = re.compile(r"(\d{8}T\d{6}Z)(?:-(\d+))?$")
+
+
+def _record_order(path: Path) -> tuple[str, int]:
+    """Sort key for build records: the UTC stamp in the file name, then the
+    same-second collision counter (`-2`, `-3`). `created` is only a date, so
+    two records from one day would tie on it."""
+    match = _STAMP_RE.search(path.stem)
+    if match is None:
+        return ("", 0)
+    return (match.group(1), int(match.group(2) or 1))
+
+
+def _records_for_branch(root: Path, repo_id: str, branch: str) -> list[dict]:
+    """Every build record for one branch, oldest first."""
+    found = []
+    for path, meta, _body in objects.iter_objects(root, "document"):
         tags = {str(t).lower() for t in (meta.get("tags") or [])}
         if RECORD_TAG not in tags or f"repo:{repo_id}".lower() not in tags:
             continue
         if meta.get("branch") != branch:
             continue
+        found.append((_record_order(path), meta))
+    found.sort(key=lambda item: item[0])
+    return [meta for _order, meta in found]
+
+
+def record_for_branch(root: Path, repo_id: str, branch: str) -> dict | None:
+    """The newest build record for one branch, whatever its outcome.
+
+    Branch names are deterministic per spec, so one name can carry several
+    attempts: a delivered build, then a rebuild that failed or was killed. The
+    branch holds the latest attempt, so the latest record is the one that
+    describes it. The watch loop and the build use this to tell 'already
+    built' from 'failed here'."""
+    records = _records_for_branch(root, repo_id, branch)
+    return records[-1] if records else None
+
+
+def delivered_record_for_branch(root: Path, repo_id: str,
+                                branch: str) -> dict | None:
+    """The newest delivered (not failed) build record for one branch. Merge
+    pins to its commit, so a later failed attempt never unpins a merge."""
+    for meta in reversed(_records_for_branch(root, repo_id, branch)):
         if str(meta.get("outcome") or "") != "failed":
             return meta
-        fallback = meta
-    return fallback
+    return None
 
 
 def _apply_merged(root: Path, contribution_ref: str) -> list[str]:
