@@ -713,6 +713,10 @@ def create_contribution(root: Path, payload: dict) -> dict:
         raise UiError("number must be a positive integer") from exc
     if number < 1:
         raise UiError("number must be a positive integer")
+    if shared_server(root) and (payload.get("criteria") or "").strip():
+        raise UiError(
+            "on a shared server, authoring a build spec is read-only. Write and "
+            "approve specs on the machine that runs builds.")
     kind = payload.get("kind") or "issue"
     method = payload.get("method") or "spec-kit"
     role = payload.get("role") or "author"
@@ -780,6 +784,17 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
     found = objects.find(root, "repo", repo_id or "")
     if found is None:
         raise UiError(f"repo not found: {repo_id}", 404)
+    if shared_server(root):
+        locked = {"trigger", "reach", "code_path", "default_branch", "checks",
+                  "checks_isolation", "checks_image", "protected_paths",
+                  "trust_checks", "allow_test_edits", "allow_ci_edits",
+                  "allow_protected", "merge_without_required_checks"}
+        touched = locked.intersection(payload)
+        if touched:
+            raise UiError(
+                "on a shared server these repo fields are read-only: "
+                + ", ".join(sorted(touched))
+                + ". Edit them on the machine that runs builds.")
     path, meta, body = found
     changed = False
     if payload.get("status"):
@@ -963,20 +978,24 @@ def watch_now(root: Path, build: bool = False) -> dict:
     return {"ok": True, **report}
 
 
+def shared_server(root: Path) -> bool:
+    """True when this process is the multi-user deployment."""
+    from ctx import config
+    if os.environ.get("STEAD_DEPLOYMENT", "").strip() == "multi":
+        return True
+    try:
+        return config.load(root).get("deployment") == "multi"
+    except config.ConfigError:
+        return False
+
+
 def require_local_execution(root: Path) -> None:
     """Refuse to run model-written code from a shared server.
 
     A build executes code on the host, and every account on a shared server is
     an admin. The cockpit is not the place for that.
     """
-    from ctx import config
-    shared = os.environ.get("STEAD_DEPLOYMENT", "").strip() == "multi"
-    if not shared:
-        try:
-            shared = config.load(root).get("deployment") == "multi"
-        except config.ConfigError:
-            shared = False
-    if shared and os.environ.get("STEAD_ALLOW_SERVER_BUILD", "").strip() != "1":
+    if shared_server(root) and os.environ.get("STEAD_ALLOW_SERVER_BUILD", "").strip() != "1":
         raise UiError(
             "the cockpit does not run builds on a shared server: a build runs "
             "model-written code on the host, and every signed-in account is an "
@@ -1030,6 +1049,18 @@ def _repo_id(root: Path, repo_ref: str) -> str:
     if found is None:
         raise UiError(f"repo not found: {repo_ref}")
     return found[1].get("id", found[0].stem)
+
+
+def approve_spec(root: Path, ref: str) -> dict:
+    if shared_server(root):
+        raise UiError(
+            "on a shared server, approving a build spec is read-only. Approve it "
+            "on the machine that runs builds.")
+    from ctx.spec import SpecError, approve
+    try:
+        return {"ok": True, **approve(root, ref)}
+    except SpecError as exc:
+        raise UiError(str(exc)) from exc
 
 
 def build_with_model(root: Path, contribution: str) -> dict:
@@ -1184,6 +1215,10 @@ def set_contribution(root: Path, payload: dict) -> dict:
     updates = {key: payload[key] for key in fields if payload.get(key)}
     if not updates:
         raise UiError("nothing to set")
+    if shared_server(root) and "role" in updates:
+        raise UiError(
+            "on a shared server the author role is read-only. Set it on the "
+            "machine that runs builds.")
     _call(cli.cmd_contribution_set, root, ref,
           updates.get("state"), updates.get("ci"), updates.get("review"),
           updates.get("role"), updates.get("method"))
@@ -1447,6 +1482,8 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                                  payload.get("version") or "")
         elif path == "/api/wiki/action":
             result = wiki_action(root, payload.get("action") or "", payload)
+        elif path == "/api/spec/approve":
+            result = approve_spec(root, payload.get("contribution") or "")
         elif path == "/api/build":
             result = build_with_model(root, payload.get("contribution") or "")
         elif path == "/api/eval/judge":

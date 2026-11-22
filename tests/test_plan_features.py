@@ -173,6 +173,8 @@ class ScheduleAndSyncTest(unittest.TestCase):
                 "tags": ["feature-spec"]}
         (root / "context/contributions/issue-7.md").write_text(
             frontmatter.dumps(spec, body), encoding="utf-8")
+        from ctx import spec as spec_approval
+        spec_approval.approve(root, "contribution-me-app-issue-7")
         with unittest.mock.patch("ctx.agent.build", lambda *a, **k: {
                 "branch": "stead/7-name-flag", "published": True, "merged": False}):
             report = factory.watch_specs(root, build=True, publish=True)

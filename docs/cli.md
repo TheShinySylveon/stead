@@ -180,11 +180,16 @@ digest if the cache changed, a maintenance draft, and the status of
 ## Publishing and merging
 
 ```bash
+python -m stead spec approve --contribution ID
 python -m stead factory publish --contribution ID
 python -m stead factory merge --contribution ID
 python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] \
     [--steps N] [--repair-rounds N] [--max-minutes N]
 ```
+
+`spec approve` records a SHA-256 of the contribution body. A build refuses an
+unapproved spec, and refuses a spec whose body changed since approval. The
+`author` role and `feature-spec` tag are labels; the hash is the gate.
 
 `factory publish` pushes the checkout's current branch and opens a pull
 request. The branch must not be the default, and it must be ahead of that
@@ -213,7 +218,15 @@ summary, checks mode, tests touched, and actions under
 `factories/feature-builder/runs/`. `--publish` pushes and opens a pull request
 when the ceiling allows it. `--wait` polls PR checks before `--merge`, and
 `--merge` runs only when the repo says `reach: merge`. `--resume` continues a
-failed build on its existing branch, keeping its uncommitted edits.
+failed build on its existing branch, keeping its uncommitted edits. The spec
+must be approved (`spec approve`) and its body unchanged since approval.
+
+On a successful build Stead writes a versioned `build-record` document under
+`context/documents/`, marks the contribution merged and closes linked tasks
+when it merged, and the next feature-builder bundle for that repo reads the
+prior records. The model may `propose` a decision or glossary term; that goes
+to `inbox/` for a person to triage, never straight into context. `repo set`
+warns when `checks:` names a runner whose config file is unprotected.
 
 ## Runs and prompts
 

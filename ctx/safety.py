@@ -19,6 +19,7 @@ from __future__ import annotations
 import fnmatch
 import json
 import os
+import re
 import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
@@ -155,6 +156,39 @@ def secret_by(path: str) -> str | None:
         if fnmatch.fnmatch(rel, pattern):
             return pattern
     return None
+
+
+def runner_configs(command: str) -> list[str]:
+    """Config files a check command is likely to execute transitively."""
+    cmd = (command or "").lower()
+    found: list[str] = []
+    if re.search(r"\bmake\b", cmd):
+        found += ["Makefile", "makefile", "GNUmakefile"]
+    if re.search(r"\b(npm|yarn|pnpm)\b", cmd):
+        found += ["package.json"]
+    if re.search(r"\bpytest\b|\bunittest\b|\btox\b|\bnox\b", cmd):
+        found += ["conftest.py", "pyproject.toml", "tox.ini", "noxfile.py",
+                  "setup.cfg", "pytest.ini"]
+    if re.search(r"\bcargo\b", cmd):
+        found += ["Cargo.toml"]
+    return found
+
+
+def runner_warnings(code: Path, repo_meta: dict) -> list[str]:
+    """Warn when a check runner's config is writable by the model."""
+    command = str(repo_meta.get("checks") or "")
+    if not command:
+        return []
+    warnings = []
+    for name in runner_configs(command):
+        if not (code / name).is_file():
+            continue
+        if protected_by(name, repo_meta) is None:
+            warnings.append(
+                f"checks runs `{command.split()[0]}` but {name} is not protected. "
+                f"The model could edit it to change what checks do. Add it to "
+                f"protected_paths, or allow it deliberately.")
+    return warnings
 
 
 def checks_trusted(repo_meta: dict) -> bool:

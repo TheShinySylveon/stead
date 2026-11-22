@@ -34,7 +34,7 @@ See [First run](first-run.md).
 | Tasks | Add a task, move its status. The title opens the note. |
 | Projects | Onboard a later project (repo + constitution, optional Spec Kit). Or add a project with no repo. Change a project's status. |
 | Library | Add and edit documents and meetings. Rename them. The id does not change. |
-| Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. |
+| Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. On a shared server, trigger, reach, code_path, and the checks/protected-path fields are read-only. |
 | Wiki | A Confluence-style space per repo: home, page tree, child pages, labels, metadata, on-page table of contents. Arrange reorders and pins; Request a change files a request document instead of editing generated pages. |
 | Inbox | Drop a note, or import a local `.eml`, `.ics`, `.md`, or `.txt` file. File it as a document, meeting, or task, or delete it. |
 | Factories | Assemble a shadow run. Check Draft with model to write `output.md`. Watch now assembles; Watch and build plans, edits, checks, and commits locally. Publish and merge are CLI-only. New factory, per-case eval results, Judge, Promote prompt. A shared server refuses any build. |
@@ -53,7 +53,10 @@ repo with cached contributions, asks before forcing.
 chips, and counts once.
 
 A contribution opens as a **public spec**. The banner is there because that
-file can be shared. Private notes belong in Library.
+file can be shared. Private notes belong in Library. **Approve this spec for
+building** records a hash of the current body; any later edit needs
+re-approval. On a shared server, approval, the author role, and authoring a
+spec with acceptance criteria are read-only.
 
 ## GitHub sync
 

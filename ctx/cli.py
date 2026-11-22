@@ -713,6 +713,10 @@ def build_parser() -> argparse.ArgumentParser:
     bld.add_argument("--max-minutes", type=int, default=30,
                      help="wall-clock budget for this build (default 30)")
 
+    sp = sub.add_parser("spec", help="approve a feature spec by its body hash").add_subparsers(dest="sub", required=True)
+    spa = sp.add_parser("approve", help="approve the current body of a contribution as a build spec")
+    spa.add_argument("--contribution", required=True)
+
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
     sg.add_argument("--author", default="@me")
@@ -897,6 +901,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{args.id}: trigger {policy['trigger']}, ceiling {policy['ceiling']}")
             if policy["ceiling"] == "merge":
                 print("merge is explicit on this repo. It is not the install default.")
+            from ctx import objects, safety
+            found = objects.find(root, "repo", args.id)
+            if found is not None:
+                meta = found[1]
+                code = Path(meta.get("code_path") or "")
+                if code.is_dir():
+                    for warning in safety.runner_warnings(code, meta):
+                        print(f"warning: {warning}")
             print("nothing was pushed, opened, or merged")
             return 0
     if args.command == "contribution":
@@ -1004,6 +1016,16 @@ def main(argv: list[str] | None = None) -> int:
         for item in written:
             print(f"inbox {item['name']}")
         print("triage into context/. Nothing was posted.")
+        return 0
+    if args.command == "spec" and args.sub == "approve":
+        from ctx.spec import SpecError, approve
+        try:
+            approved = approve(root, args.contribution)
+        except SpecError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"approved {approved['id']}")
+        print(f"spec sha256: {approved['sha']}")
+        print("any change to the body needs re-approval before a build")
         return 0
     if args.command == "build":
         from ctx.agent import BuildError, build as run_build

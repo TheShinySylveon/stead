@@ -128,6 +128,7 @@ python -m stead inbox import PATH             # local .eml .ics .md .txt into in
 python -m stead hook set                      # webhook token, printed once
 python -m stead factory publish --contribution ID  # isolated branch + pull request. Never merges.
 python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait]  # model plans, edits, checks, commits
+python -m stead spec approve --contribution ID  # bind approval to the spec body hash
 python -m stead factory merge --contribution ID    # green checks only. Repo must say reach: merge.
 python -m stead account add --name NAME --actor ACTOR  # shared-server sign-in. Hash only.
 python -m stead init                          # rebuild state.db from schema.sql + files
@@ -282,6 +283,19 @@ default branch must have required status checks (or an explicit
 file (`stead factory stop` / `.stead-stop`). Watched builds stop at
 `max_builds_per_day`. `stead doctor` lints the store; `docs/trust.md` is the
 threat model and egress table.
+
+**Spec approval is bound to content.** `stead spec approve` stores a SHA-256 of
+the body; a build refuses an unapproved spec or one whose body changed. The
+`author` role and `feature-spec` tag are labels, not permissions. Bundle text
+that is not the approved spec is marked untrusted.
+
+**Write-back.** A successful build writes a versioned `build-record` document,
+updates contribution/task status on merge, and prior records feed the next
+bundle. Interpretive notes (decisions, glossary) are only proposed to `inbox/`
+for a person to triage. On a shared server the cockpit makes execution fields
+(checks, protected_paths, reach, trigger, code_path, author role, spec
+approval) read-only, so an account cannot reach a shell through a later
+scheduled build.
 
 **Hard rules (every mode):** never push to main/default branch; merge only
 when the repo says `reach: merge` and checks are green; no `--admin`; vague or

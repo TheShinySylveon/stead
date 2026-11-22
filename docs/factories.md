@@ -62,7 +62,10 @@ python -m stead factory run --factory weekly-project-status \
 
 Turns a feature spec you authored into a build bundle. The spec is a
 contribution with `kind: issue`, `role: author`, tag `feature-spec`, and a
-`## Acceptance criteria` checklist.
+`## Acceptance criteria` checklist. A person must also approve the body with
+`stead spec approve`; the approval is a hash, so any edit needs re-approval.
+The bundle marks everything that is not the approved spec as untrusted, and
+includes prior `build-record` documents for the repo.
 
 ```bash
 python -m stead factory run --factory feature-builder \
@@ -81,8 +84,12 @@ runs the repo's `checks:` command, feeds failures back for repair, commits on
 an isolated branch, and stops. `--publish` opens the pull request; `--wait`
 waits for its checks and `--merge` merges under `reach: merge`. `--resume`
 continues a failed build. The model never chooses a shell command, cannot
-touch `.git`, and cannot leave the checkout. Each build records its plan and
-summary under `factories/feature-builder/runs/`.
+touch `.git`, cannot leave the checkout, and cannot write protected test or CI
+paths unless the repo opts in. It may `propose` a decision or glossary term to
+the inbox. Each build records its plan and summary under
+`factories/feature-builder/runs/`, and writes a versioned `build-record`
+document under `context/documents/`. On merge it marks the contribution merged
+and closes linked tasks; the next bundle reads the prior records.
 
 ### context-maintenance
 

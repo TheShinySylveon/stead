@@ -85,8 +85,9 @@ prose; it is not a second ladder. See [Trust](trust.md) for the merge gates.
 | **contribution** | A cached GitHub issue or PR, or a local public spec. The build target for `feature-builder` |
 | **actor** | The human or agent a write is attributed to. A label, not a permission |
 | **bundle** | The deterministic context assembled for one factory run, saved as `bundle.md` |
-| **run ledger** | The `runs` table plus `factories/<name>/runs/<id>/`. Records what happened |
-| **write-back** | A build's plan, summary, files, checks mode, and outcome recorded in the ledger |
+| **run ledger** | The `runs` table plus `factories/<name>/runs/<id>/`. A rebuildable index, not the durable record |
+| **write-back** | A delivered build's versioned `build-record` document, status updates, and prior records read by the next bundle |
+| **spec approval** | A person approves a spec body; `spec_sha` binds it. Any edit needs re-approval |
 | **cockpit** | The local browser UI. Same handlers as the CLI; no remote writes |
 | **protected path** | A test or CI path the agent may not write without a repo opt-in |
 
