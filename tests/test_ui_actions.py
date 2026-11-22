@@ -468,3 +468,198 @@ def _read(req) -> tuple[int, dict]:
             return resp.status, json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return exc.status, json.loads(exc.read().decode("utf-8"))
+
+
+class PipelineStageTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        (self.root / "context/contributions").mkdir(parents=True)
+        (self.root / "context/documents").mkdir(parents=True)
+
+    def _contrib(self, meta, stem, body):
+        (self.root / "context/contributions" / f"{stem}.md").write_text(
+            frontmatter.dumps(meta, body), encoding="utf-8")
+
+    def _row(self):
+        rows = ui._pipeline_contribs(self.root)
+        return rows[0]
+
+    def _source(self, tags=("stead-build",), state="open"):
+        meta = {"id": "contribution-me-app-issue-9", "type": "contribution",
+                "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                "repo": "repo-me-app", "kind": "issue", "number": 9,
+                "role": "author", "state": state, "visibility": "public",
+                "tags": list(tags)}
+        self._contrib(meta, "issue-9", "# Flag\n")
+        return meta
+
+    def _draft(self, body="# Flag spec\n", spec_sha=None, state="open"):
+        meta = {"id": "contribution-me-app-issue-9-spec", "type": "contribution",
+                "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                "repo": "repo-me-app", "kind": "issue", "number": 9,
+                "role": "author", "state": state, "visibility": "public",
+                "tags": ["feature-spec"], "drafted_from": "contribution-me-app-issue-9"}
+        if spec_sha is not None:
+            meta["spec_sha"] = spec_sha
+        self._contrib(meta, "issue-9-spec", body)
+        return meta
+
+    def _record(self, outcome, branch="stead/9-flag", spec_sha="", pr_url=None,
+                commented=False):
+        rec = {"id": "document-rec", "type": "document", "title": "rec",
+               "created": "2026-11-21", "updated": "2026-11-21",
+               "tags": ["build-record"],
+               "contribution": "contribution-me-app-issue-9-spec",
+               "branch": branch, "outcome": outcome, "spec_sha": spec_sha}
+        if pr_url:
+            rec["pr_url"] = pr_url
+        if commented:
+            rec["commented"] = "true"
+        (self.root / "context/documents/rec.md").write_text(
+            frontmatter.dumps(rec, "# rec\n"), encoding="utf-8")
+
+    def test_ready_to_draft_when_no_spec_exists(self):
+        self._source()
+        row = self._row()
+        self.assertEqual(row["stage"], "draft")
+        self.assertEqual([a["key"] for a in row["actions"]], ["draft"])
+
+    def test_drafted_needs_approval(self):
+        self._source()
+        self._draft()
+        row = self._row()
+        self.assertEqual(row["stage"], "drafted")
+        self.assertEqual([a["key"] for a in row["actions"]], ["approve"])
+        self.assertEqual(row["act_id"], "contribution-me-app-issue-9-spec")
+
+    def test_approved_needs_build(self):
+        from ctx import spec
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        row = self._row()
+        self.assertEqual(row["stage"], "approved")
+        self.assertEqual([a["key"] for a in row["actions"]], ["build"])
+
+    def test_changed_body_needs_reapproval(self):
+        from ctx import spec
+        self._source()
+        self._draft(body="# Flag spec\n", spec_sha=spec.body_hash("# Old body\n"))
+        row = self._row()
+        self.assertEqual(row["stage"], "drafted")
+        self.assertEqual([a["key"] for a in row["actions"]], ["approve"])
+
+    def test_authored_spec_needs_no_drafting(self):
+        self._source(tags=("feature-spec",))
+        row = self._row()
+        self.assertEqual(row["stage"], "drafted")
+        self.assertEqual([a["key"] for a in row["actions"]], ["approve"])
+        self.assertEqual(row["act_id"], "contribution-me-app-issue-9")
+
+    def test_failed_build_is_not_built(self):
+        from ctx import spec
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("failed", spec_sha=spec.body_hash(body))
+        row = self._row()
+        self.assertEqual(row["stage"], "approved")
+        self.assertEqual([a["key"] for a in row["actions"]], ["build"])
+
+    def test_stale_record_for_an_old_hash_is_not_built(self):
+        from ctx import spec
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("committed", spec_sha=spec.body_hash("# Old body\n"))
+        row = self._row()
+        self.assertEqual(row["stage"], "approved")
+
+    def test_successful_build_offers_publish(self):
+        from ctx import spec
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("committed", spec_sha=spec.body_hash(body))
+        row = self._row()
+        self.assertEqual(row["stage"], "built")
+        self.assertEqual([a["key"] for a in row["actions"]], ["publish"])
+
+    def _repo(self, reach="merge", allow_comment=True, kind="own"):
+        (self.root / "context/repos").mkdir(parents=True, exist_ok=True)
+        meta = {"id": "repo-me-app", "type": "repo", "title": "App",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "active", "kind": kind, "default_branch": "main",
+                "reach": reach}
+        if allow_comment:
+            meta["allow_comment"] = True
+        (self.root / "context/repos/app.md").write_text(
+            frontmatter.dumps(meta, "# App\n"), encoding="utf-8")
+
+    def test_published_offers_merge_and_comment(self):
+        from ctx import spec
+        self._repo()
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("published", spec_sha=spec.body_hash(body),
+                     pr_url="https://github.com/me/app/pull/7")
+        row = self._row()
+        self.assertEqual(row["stage"], "published")
+        self.assertEqual([a["key"] for a in row["actions"]], ["merge", "comment"])
+
+    def test_published_without_comment_offers_merge_only(self):
+        from ctx import spec
+        self._repo(allow_comment=False)
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("published", spec_sha=spec.body_hash(body),
+                     pr_url="https://github.com/me/app/pull/7")
+        row = self._row()
+        self.assertEqual(row["stage"], "published")
+        self.assertEqual([a["key"] for a in row["actions"]], ["merge"])
+
+    def test_merged_build_shows_merged(self):
+        from ctx import spec
+        self._repo()
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("merged", spec_sha=spec.body_hash(body),
+                     pr_url="https://github.com/me/app/pull/7")
+        row = self._row()
+        self.assertEqual(row["stage"], "merged")
+        self.assertEqual(row["actions"], [])
+
+    def test_closed_source_does_not_offer_build(self):
+        from ctx import spec
+        self._source(state="closed")
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        row = self._row()
+        self.assertEqual(row["stage"], "closed")
+        self.assertEqual(row["actions"], [])
+
+    def test_merged_draft_wins_when_source_is_closed(self):
+        from ctx import spec
+        self._source(state="closed")
+        self._draft(body="# Flag spec\n", spec_sha=spec.body_hash("# Flag spec\n"),
+                    state="merged")
+        row = self._row()
+        self.assertEqual(row["stage"], "merged")
+        self.assertEqual(row["actions"], [])
+
+    def test_commented_record_skips_comment(self):
+        from ctx import spec
+        self._repo()
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("published", spec_sha=spec.body_hash(body),
+                     pr_url="https://github.com/me/app/pull/7", commented=True)
+        row = self._row()
+        self.assertEqual(row["stage"], "published")
+        self.assertEqual([a["key"] for a in row["actions"]], ["merge"])

@@ -305,6 +305,13 @@ class ScheduleAndSyncTest(unittest.TestCase):
              unittest.mock.patch("ctx.cli.cmd_digest", return_value=0) as digest:
             self.assertEqual(cli.cmd_sync_github(root, digest=True), 0)
             digest.assert_called_once()
+        # A merge-only reconciliation (no fetched/new/updated) also counts as a
+        # change, so the digest still assembles.
+        reconciled = dict(unchanged, reconciled_prs=1)
+        with unittest.mock.patch("ctx.sync.sync_github", return_value=reconciled), \
+             unittest.mock.patch("ctx.cli.cmd_digest", return_value=0) as digest:
+            self.assertEqual(cli.cmd_sync_github(root, digest=True), 0)
+            digest.assert_called_once()
 
 
 class HookTest(unittest.TestCase):

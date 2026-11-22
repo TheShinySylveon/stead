@@ -398,6 +398,21 @@ def mark_published(root: Path, repo_id: str, branch: str, url: str) -> dict | No
     return {"id": meta.get("id"), **fields}
 
 
+def mark_commented(root: Path, contribution_ref: str) -> None:
+    """Mark the newest build record for a spec as commented, so the cockpit
+    pipeline stops offering the (idempotent) comment action after it runs."""
+    best = None
+    for path, meta, _body in objects.iter_objects(root, "document"):
+        if RECORD_TAG not in {str(t).lower() for t in (meta.get("tags") or [])}:
+            continue
+        if str(meta.get("contribution") or "") != contribution_ref:
+            continue
+        if best is None or str(meta.get("updated") or "") >= str(best[1].get("updated") or ""):
+            best = (path, meta)
+    if best is not None:
+        _patch(root, "document", str(best[1].get("id") or ""), {"commented": "true"})
+
+
 def _git_out(code: Path, args: list[str], stdin: str | None = None) -> str | None:
     """stdout of one local git command, or None when it fails."""
     try:
@@ -550,6 +565,54 @@ def reconcile_records(root: Path, view_pr) -> dict:
         _patch(root, "document", meta.get("id") or path.stem, fields)
         reconciled.append(str(meta.get("id") or path.stem))
     return {"reconciled": len(reconciled), "ids": reconciled}
+
+
+def reconcile_pr_state(root: Path, view_pr, repos: list[str] | None = None) -> dict:
+    """Reconcile cached open PR contributions against live PR state. READ-ONLY:
+    view_pr(url) returns the gh pr view JSON ({state, ...}) or None. A merged or
+    closed PR stops showing as open, so the contribution list stays honest.
+
+    ``repos`` (OWNER/NAME, the resolved sync scope) limits which cached PRs are
+    checked; an empty/None scope means every repo."""
+    scope = {n.lower() for n in (repos or [])}
+    reconciled: list[str] = []
+    for path, meta, _body in objects.iter_objects(root, "contribution"):
+        if str(meta.get("kind") or "") != "pr":
+            continue
+        if str(meta.get("state") or "") != "open":
+            continue
+        pr_url = str(meta.get("url") or "")
+        if not pr_url:
+            continue
+        if scope and _pr_owner_name(pr_url).lower() not in scope:
+            continue
+        try:
+            data = view_pr(pr_url)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        state = str(data.get("state") or "").upper()
+        if state == "MERGED":
+            new_state = "merged"
+        elif state == "CLOSED":
+            new_state = "closed"
+        else:
+            continue
+        _patch(root, "contribution", meta.get("id") or path.stem, {"state": new_state})
+        reconciled.append(str(meta.get("id") or path.stem))
+    return {"reconciled": len(reconciled), "ids": reconciled}
+
+
+def _pr_owner_name(url: str) -> str:
+    """OWNER/NAME from a GitHub PR/issue url, or "" when it can't be read."""
+    url = (url or "").rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+        if url.startswith(prefix):
+            parts = url[len(prefix):].split("/")
+            if len(parts) >= 2:
+                return f"{parts[0]}/{parts[1]}"
+    return ""
 
 
 def _patch(root: Path, otype: str, ref: str, fields: dict) -> None:

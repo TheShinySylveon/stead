@@ -124,7 +124,7 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
     }
     for key in ("status", "project", "repo", "kind", "url", "role", "state",
                 "ci", "review", "method", "number", "trigger", "reach",
-                "code_path", "default_branch"):
+                "code_path", "default_branch", "drafted_from", "spec_sha"):
         if meta.get(key) not in (None, ""):
             item[key] = meta[key]
     if otype == "repo":
@@ -142,6 +142,194 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
 def _list(root: Path, otype: str) -> list[dict]:
     return [_summary(root, otype, path, meta)
             for path, meta, _body in objects.iter_objects(root, otype)]
+
+
+_FLOW_ACTIONS = {
+    "draft": ("Draft spec", "primary"),
+    "approve": ("Approve spec", "primary"),
+    "build": ("Build", "primary"),
+    "publish": ("Publish PR", "primary"),
+    "comment": ("Comment on issue", "quiet"),
+    "merge": ("Merge", "quiet"),
+}
+
+
+def _flow(stage: str, label: str, act_id: str, keys: list[str]) -> dict:
+    """A pipeline stage plus the actions reachable from it (usually one)."""
+    return {"stage": stage, "stage_label": label, "act_id": act_id,
+            "actions": [{"key": k, "label": _FLOW_ACTIONS[k][0],
+                         "tone": _FLOW_ACTIONS[k][1]} for k in keys]}
+
+
+def _build_records(root: Path) -> dict[str, dict]:
+    """The newest build record per contribution id."""
+    records: dict[str, dict] = {}
+    for _path, meta, _body in objects.iter_objects(root, "document"):
+        if "build-record" not in {str(t).lower() for t in _tags(meta)}:
+            continue
+        cid = str(meta.get("contribution") or "")
+        if not cid:
+            continue
+        prev = records.get(cid)
+        if prev is None or str(meta.get("updated") or "") >= str(prev.get("updated") or ""):
+            records[cid] = meta
+    return records
+
+
+def _pipeline_contribs(root: Path) -> list[dict]:
+    """One flow card per build target (a source issue, an authored spec, or a
+    PR), with the drafted spec collapsed into its source issue."""
+    records = _build_records(root)
+    objs = list(objects.iter_objects(root, "contribution"))
+    drafts = {str(meta["drafted_from"]): (meta, body)
+              for _path, meta, body in objs if meta.get("drafted_from")}
+    out = []
+    for path, meta, body in objs:
+        if meta.get("drafted_from"):
+            continue
+        summary = _summary(root, "contribution", path, meta)
+        summary.update(_flow_for(root, meta, body, drafts, records))
+        out.append(summary)
+    return out
+
+
+def _contribution_flow(root: Path, cid: str) -> dict:
+    records = _build_records(root)
+    objs = list(objects.iter_objects(root, "contribution"))
+    drafts = {str(meta["drafted_from"]): (meta, body)
+              for _path, meta, body in objs if meta.get("drafted_from")}
+    for _path, meta, body in objs:
+        if str(meta.get("id") or "") == cid:
+            return _flow_for(root, meta, body, drafts, records)
+    return {}
+
+
+def _flow_for(root: Path, meta: dict, body: str, drafts: dict,
+              records: dict) -> dict:
+    """The flow for one contribution, collapsing a source issue onto its draft
+    and a Stead PR onto its build spec."""
+    kind = str(meta.get("kind") or "")
+    state = str(meta.get("state") or "").lower()
+    cid = str(meta.get("id") or "")
+
+    if meta.get("drafted_from"):
+        return _active_flow(root, meta, body, records)
+
+    if kind == "pr":
+        spec_id = _spec_for_pr(meta, records)
+        if spec_id:
+            found = objects.find(root, "contribution", spec_id)
+            if found is not None:
+                return _active_flow(root, found[1], found[2], records)
+        if state == "merged":
+            return _flow("merged", "Merged", cid, [])
+        if state == "closed":
+            return _flow("closed", "Closed", cid, [])
+        return _flow("pr", "PR open", cid, [])
+
+    # A draft's terminal state (merged/closed) wins, but otherwise the source
+    # issue's own terminal state wins: a source closed by hand must not keep
+    # offering Build through its still-open draft.
+    draft = drafts.get(cid)
+    if draft is not None and str(draft[0].get("state") or "").lower() in ("merged", "closed"):
+        return _active_flow(root, draft[0], draft[1], records)
+    if state == "merged":
+        return _flow("merged", "Merged", cid, [])
+    if state == "closed":
+        return _flow("closed", "Closed", cid, [])
+    if draft is not None:
+        return _active_flow(root, draft[0], draft[1], records)
+    if _is_authored_spec(meta):
+        return _active_flow(root, meta, body, records)
+    return _flow("draft", "Ready to draft", cid, ["draft"])
+
+
+def _active_flow(root: Path, meta: dict, body: str, records: dict) -> dict:
+    """The flow for an active spec (a draft or an authored spec)."""
+    from ctx import spec as specmod
+    cid = str(meta.get("id") or "")
+    state = str(meta.get("state") or "").lower()
+    if state == "merged":
+        return _flow("merged", "Merged", cid, [])
+    if state == "closed":
+        return _flow("closed", "Closed", cid, [])
+    if not specmod.is_approved(meta, body):
+        return _flow("drafted", "Drafted", cid, ["approve"])
+    record = records.get(cid)
+    if _valid_build(record, meta):
+        if record.get("pr_url"):
+            return _published_flow(root, meta, record)
+        if record.get("branch"):
+            return _flow("built", "Built", cid, ["publish"])
+    return _flow("approved", "Approved", cid, ["build"])
+
+
+def _published_flow(root: Path, meta: dict, record: dict) -> dict:
+    cid = str(meta.get("id") or "")
+    outcome = str(record.get("outcome") or "") if record else ""
+    if outcome == "merged":
+        return _flow("merged", "Merged", cid, [])
+    if outcome == "closed":
+        return _flow("closed", "Closed", cid, [])
+    actions = []
+    if _merge_eligible(root, meta):
+        actions.append("merge")
+    if _comment_eligible(root, meta) and not _is_commented(record):
+        actions.append("comment")
+    return _flow("published", "PR opened", cid, actions)
+
+
+def _is_commented(record: dict | None) -> bool:
+    return bool(record) and str(record.get("commented") or "").lower() == "true"
+
+
+def _is_authored_spec(meta: dict) -> bool:
+    return "feature-spec" in {str(t).lower() for t in _tags(meta)}
+
+
+def _valid_build(record: dict | None, meta: dict) -> bool:
+    """A build only advances the stage when it is a successful record for the
+    currently approved text (a failed build, or one for an older hash, does
+    not count as built)."""
+    if not record:
+        return False
+    if str(record.get("outcome") or "") == "failed":
+        return False
+    return str(record.get("spec_sha") or "") == str(meta.get("spec_sha") or "")
+
+
+def _spec_for_pr(meta: dict, records: dict) -> str | None:
+    pr_url = str(meta.get("url") or "")
+    if not pr_url:
+        return None
+    for cid, record in records.items():
+        if str(record.get("pr_url") or "") == pr_url:
+            return cid
+    return None
+
+
+def _repo_for(root: Path, meta: dict) -> dict | None:
+    found = objects.find(root, "repo", str(meta.get("repo") or ""))
+    return found[1] if found else None
+
+
+def _merge_eligible(root: Path, meta: dict) -> bool:
+    repo_meta = _repo_for(root, meta)
+    if repo_meta is None:
+        return False
+    return bool(autonomy.effective(root, repo_meta).get("merge_explicit"))
+
+
+def _comment_eligible(root: Path, meta: dict) -> bool:
+    repo_meta = _repo_for(root, meta)
+    if repo_meta is None:
+        return False
+    if str(repo_meta.get("kind") or "") != "own":
+        return False
+    if not bool(repo_meta.get("allow_comment")):
+        return False
+    # The comment posts on the spec's source issue number; without one it fails.
+    return bool(meta.get("number"))
 
 
 def list_inbox(root: Path) -> list[dict]:
@@ -383,6 +571,7 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
     """Everything the page needs, except object bodies (loaded on open)."""
     tasks = _list(root, "task")
     contribs = _list(root, "contribution")
+    pipeline = _pipeline_contribs(root)
     inbox = list_inbox(root)
     runs = _runs(root)
     projects = _list(root, "project")
@@ -429,6 +618,7 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
         "meetings": _list(root, "meeting"),
         "repos": _list(root, "repo"),
         "contributions": contribs,
+        "pipeline": pipeline,
         "inbox": inbox,
         "factories": factories,
         "runs": runs,
@@ -473,6 +663,8 @@ def object_detail(root: Path, otype: str, ref: str) -> dict:
     }
     if otype == "project":
         detail["rollup"] = _project_rollup(root, meta.get("id", path.stem))
+    if otype == "contribution":
+        detail["flow"] = _contribution_flow(root, detail["id"])
     return detail
 
 
@@ -1195,9 +1387,16 @@ def publish_contribution(root: Path, contribution: str) -> dict:
     _refuse_shared_remote(root)
     from ctx.publish import PublishError, publish
     try:
-        return {"ok": True, **publish(root, contribution)}
+        result = publish(root, contribution)
     except PublishError as exc:
         raise UiError(str(exc)) from exc
+    # Point the branch's build record at the PR, so the pipeline advances past
+    # Built and a second publish is not offered.
+    from ctx import writeback
+    writeback.mark_published(root, str(result.get("repo") or ""),
+                             str(result.get("branch") or ""),
+                             str(result.get("url") or ""))
+    return {"ok": True, **result}
 
 
 def merge_contribution(root: Path, contribution: str) -> dict:
@@ -1213,9 +1412,13 @@ def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
     _refuse_shared_remote(root)
     from ctx.comment import CommentError, comment
     try:
-        return {"ok": True, **comment(root, contribution, pr_url)}
+        result = comment(root, contribution, pr_url)
     except CommentError as exc:
         raise UiError(str(exc)) from exc
+    # Record that the comment is done, so the pipeline stops offering it.
+    from ctx import writeback
+    writeback.mark_commented(root, contribution)
+    return {"ok": True, **result}
 
 
 def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -> dict:

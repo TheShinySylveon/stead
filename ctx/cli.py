@@ -393,7 +393,8 @@ def cmd_sync_github(root: Path, author: str = "@me", limit: int = 30,
         print(f"sync github: fetched {result['fetched']} items via gh (read-only); "
               f"{result['new']} new, {result['updated']} updated contribution files")
         print(f"index now: {result['repos']} repos, {result['contributions']} contributions")
-    changed = int(result.get("new") or 0) + int(result.get("updated") or 0)
+    changed = (int(result.get("new") or 0) + int(result.get("updated") or 0)
+               + int(result.get("reconciled_prs") or 0))
     if digest and changed:
         print("cache changed. assembling the digest. nothing is posted.")
         return cmd_digest(root)
