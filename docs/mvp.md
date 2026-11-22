@@ -71,6 +71,9 @@ Results live in [Dogfood](dogfood.md); safety gates in [Trust](trust.md).
   watch gates drop the `role: author` requirement in favour of "enabled (label
   or `feature-spec` tag) + approved hash"; and `stead schedule show --interval
   hourly|daily` prints the shorter monitor cadence.
+- **M2 (issue comment) — done.** A gated, idempotent comment links the PR on the
+  source issue (`allow_comment: true`, `kind: own` only, never from assembly);
+  auto-runs on `build --publish` when enabled, or via `stead factory comment`.
 
 ## In scope (state)
 

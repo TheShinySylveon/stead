@@ -660,6 +660,13 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         raise BuildError(f"committed on {branch}, but publish failed: {exc}") from exc
                     result["published"] = True
                     result["pr_url"] = opened["url"]
+                    if safety.truthy(repo_meta.get("allow_comment")):
+                        try:
+                            from ctx.comment import CommentError, comment
+                            result["comment"] = comment(root, contribution_ref,
+                                                        opened["url"])
+                        except CommentError as exc:
+                            result["comment_error"] = str(exc)
                     if wait:
                         _wait_for_checks(code, spec.get("number"), wait_minutes)
                     if merge:
