@@ -828,7 +828,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="do not run specify init, even if it is installed")
 
     cockpit = sub.add_parser("ui", help="open the local cockpit in a browser (loopback only)")
-    cockpit.add_argument("--port", type=int, default=None)
+    cockpit.add_argument("--port", type=int, default=None,
+                         help="listen port (default 8765; stead.json may also set port)")
     cockpit.add_argument("--host", default=None,
                          help="single-user: loopback only. multi-user --deploy: 0.0.0.0")
     cockpit.add_argument("--deploy", action="store_true",

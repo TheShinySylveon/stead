@@ -32,7 +32,8 @@ cd stead
 python -m stead ui
 ```
 
-That opens a browser on `127.0.0.1`. A fresh checkout has an empty `context/`
+That opens a browser on **http://127.0.0.1:8765/** (port 8765 by default;
+`--port N` changes it). A fresh checkout has an empty `context/`
 folder. The page asks for a project title, an optional GitHub URL, and whether this
 copy is for this computer or a shared Docker server. Details:
 [First run](first-run.md) and [Deploy](deploy.md).

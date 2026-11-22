@@ -20,7 +20,9 @@ python -m stead welcome --title "My Project" [--url URL] [--deployment single|mu
 python -m stead init
 ```
 
-`ui` opens the cockpit. On an empty checkout it shows Welcome. Without
+`ui` opens the cockpit at **http://127.0.0.1:8765/** — port **8765** by
+default, printed at startup. `--port N` changes it; `stead.json` can also
+set `port`. On an empty checkout it shows Welcome. Without
 `--deploy` it stays on loopback, even if `stead.json` says multi.
 `--deploy` is the shared server. It refuses to start unless an account
 exists, or `STEAD_ACCESS_TOKEN` is set for a server that has no accounts yet.

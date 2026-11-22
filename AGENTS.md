@@ -178,8 +178,9 @@ scheduler-agnostic: any cron/Task Scheduler/systemd timer can invoke the CLI.
 
 ## Local cockpit
 
-`python -m stead ui` opens a browser on `127.0.0.1` (`--no-browser` to serve
-without opening one). A normal start stays on loopback even if Settings says
+`python -m stead ui` opens a browser on `127.0.0.1:8765` (default port 8765,
+printed at startup; `--port N` overrides, `--no-browser` serves without
+opening one). A normal start stays on loopback even if Settings says
 shared server. `--deploy`, or the Docker image, is the shared server: it
 binds `0.0.0.0` and will not start unless an account exists, or
 `STEAD_ACCESS_TOKEN` is set and no account exists yet. Human docs:

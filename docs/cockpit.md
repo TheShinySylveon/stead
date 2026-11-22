@@ -7,6 +7,10 @@ python -m stead ui
 python -m stead ui --no-browser --port 8765
 ```
 
+The cockpit lives at **http://127.0.0.1:8765/** by default. `stead ui` prints
+the URL at startup. Change the port with `--port N`, or a `port` field in
+gitignored `stead.json`.
+
 On this computer the server refuses any address except loopback
 (`127.0.0.1`, `localhost`, `::1`). A shared server is the Docker image, or
 `stead ui --deploy`. It starts if a person account exists, or if
