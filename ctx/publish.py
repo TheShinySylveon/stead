@@ -12,7 +12,7 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from ctx import objects, safety
+from ctx import factory, objects, safety
 from ctx.autonomy import AutonomyError, effective, permit
 
 
@@ -56,15 +56,19 @@ def publish(root: Path, contribution_ref: str, *, runner=None,
     run = safety.safe_runner(runner or _run)
     default = (repo_meta.get("default_branch") or "main").strip()
     branch = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
-    if not branch or branch in {default, "HEAD"}:
+    if branch in {default, "HEAD", ""}:
+        # A worktree build leaves the checkout on the default branch; the build
+        # branch is named deterministically from the spec, so publish by that ref.
+        branch = factory.branch_for(spec)
+    if not branch or branch == default:
         raise PublishError(
             f"refusing to publish from {branch or 'an unknown branch'}. "
             f"Stay off {default}.")
-    ahead = _git(run, code, ["rev-list", "--count", f"{default}..HEAD"]).strip()
+    ahead = _git(run, code, ["rev-list", "--count", f"{default}..{branch}"]).strip()
     if not ahead.isdigit() or int(ahead) < 1:
         raise PublishError(
             f"{branch} has no commits ahead of {default}. Nothing to publish.")
-    _git(run, code, ["push", "-u", "origin", f"HEAD:{branch}"])
+    _git(run, code, ["push", "-u", "origin", f"{branch}:{branch}"])
     number = spec.get("number")
     title = spec.get("title") or branch
     link = f"Tracks #{number}." if number else "No issue number on the spec."
@@ -78,7 +82,7 @@ def publish(root: Path, contribution_ref: str, *, runner=None,
     )
     changed = []
     deleted = []
-    for line in _git(run, code, ["diff", "--name-status", f"{default}..HEAD"]).splitlines():
+    for line in _git(run, code, ["diff", "--name-status", f"{default}..{branch}"]).splitlines():
         parts = line.split("\t")
         if len(parts) < 2:
             continue

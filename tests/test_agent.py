@@ -320,7 +320,7 @@ class BuildTest(BuildFixture):
         (self.code / "tests").mkdir()
         (self.code / "tests/test_app.py").write_text("assert True\n", encoding="utf-8")
         try:
-            os.symlink(self.code / "tests", self.code / "tlink", target_is_directory=True)
+            os.symlink("tests", self.code / "tlink", target_is_directory=True)
         except (OSError, NotImplementedError):
             self.skipTest("symlinks not available on this platform")
         _git(self.code, "add", "-A")
@@ -533,6 +533,56 @@ class AttemptGateTest(BuildFixture):
         result = agent.build(self.root, "contribution-me-app-issue-42",
                              responder=responder)
         self.assertTrue(result["ok"])
+
+    def test_retry_moves_a_failed_branch_aside_and_starts_clean(self) -> None:
+        from ctx import writeback
+        # A prior failed attempt left its branch + a failed record behind.
+        _git(self.code, "checkout", "-b", "stead/42-add-a-name-flag")
+        (self.code / "app.py").write_text("print('bad')\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "WIP")
+        _git(self.code, "checkout", "main")
+        writeback.record_failure(self.root, "contribution-me-app-issue-42",
+                                 agent.BuildError("checks failed"),
+                                 branch="stead/42-add-a-name-flag", reason="checks")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "import argparse\nprint('hi')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder, retry=True)
+        self.assertTrue(result["ok"])
+        branches = _git(self.code, "branch", "--format=%(refname:short)").split()
+        self.assertIn("stead/42-add-a-name-flag", branches)
+        self.assertTrue(any(b.startswith("stead/failed/42-add-a-name-flag-")
+                           for b in branches), branches)
+
+    def test_reclaim_removes_a_stale_worktree_from_a_killed_build(self) -> None:
+        import json
+        import socket
+        from ctx import agent as agent_mod
+        # A killed build left the branch checked out in a registered worktree
+        # and a stale started marker recording that worktree.
+        wt = self.root / "stale-wt"
+        _git(self.code, "worktree", "add", "-b", "stead/42-add-a-name-flag",
+             str(wt), "main")
+        body = frontmatter.parse(
+            (self.root / "context/contributions/issue-42.md").read_text(encoding="utf-8"))[1]
+        marker = agent_mod._marker_path(self.root, body)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({
+            "pid": 999999, "host": socket.gethostname(), "worktree": str(wt),
+        }), encoding="utf-8")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "import argparse\nprint('hi')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+        self.assertNotIn(str(wt), _git(self.code, "worktree", "list"))
 
 
 class CommitStepTest(BuildFixture):

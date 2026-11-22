@@ -46,6 +46,8 @@ def collect(root: Path, repo: str | None = None) -> dict:
     records.sort(key=lambda m: str(m.get("created") or ""), reverse=True)
 
     outcomes = {"merged": 0, "published": 0, "committed": 0, "failed": 0, "closed": 0}
+    build_failures = 0
+    infra_failures = 0
     modes = {"docker": 0, "host": 0, "none": 0}
     elapsed = 0.0
     repairs = 0
@@ -57,6 +59,11 @@ def collect(root: Path, repo: str | None = None) -> dict:
     for meta in records:
         outcome = str(meta.get("outcome") or "committed")
         outcomes[outcome] = outcomes.get(outcome, 0) + 1
+        if outcome == "failed":
+            if str(meta.get("reason") or "build") == "infrastructure":
+                infra_failures += 1
+            else:
+                build_failures += 1
         mode = str(meta.get("checks_mode") or "none")
         modes[mode] = modes.get(mode, 0) + 1
         elapsed += _num(meta.get("elapsed_seconds"))
@@ -82,11 +89,14 @@ def collect(root: Path, repo: str | None = None) -> dict:
             if verdict in reviews:
                 reviews[verdict] += 1
     total = len(records)
+    attempts = total - infra_failures  # an infrastructure failure is not a build attempt
     return {
         "builds": total,
         "outcomes": outcomes,
+        "build_failures": build_failures,
+        "infra_failures": infra_failures,
         "merged_share": round(outcomes["merged"] / total, 3) if total else 0.0,
-        "failure_rate": round(outcomes["failed"] / total, 3) if total else 0.0,
+        "failure_rate": round(build_failures / attempts, 3) if attempts else 0.0,
         "human_edits": human_edits,
         "reviews": reviews,
         "checks_modes": modes,
@@ -120,8 +130,10 @@ def render(report: dict) -> str:
         f"merged: {out['merged']}  published: {out['published']}  "
         f"committed (local): {out['committed']}  failed: {out['failed']}  "
         f"closed: {out['closed']}",
+        f"failures: build {report['build_failures']}  "
+        f"infrastructure {report['infra_failures']}",
         f"merged share: {report['merged_share']:.0%}  "
-        f"failure rate: {report['failure_rate']:.0%}",
+        f"failure rate (build-class): {report['failure_rate']:.0%}",
         f"merged after a human edit: {report['human_edits']}",
         f"checks: docker {report['checks_modes'].get('docker', 0)}  "
         f"host {report['checks_modes'].get('host', 0)}  "

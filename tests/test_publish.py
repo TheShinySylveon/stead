@@ -108,22 +108,29 @@ class PublishTest(FeatureBuilderTestCase):
         self.assertIn("deletes tests", captured["body"])
         self.assertIn("tests/test_old.py", captured["body"])
 
-    def test_refuses_the_default_branch(self) -> None:
+    def test_publish_from_default_resolves_the_spec_branch(self) -> None:
         autonomy.set_repo(self.root, "repo-testuser-my-app", reach="draft-pr",
                           code_path=str(self.code))
-        calls = []
 
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
-            calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "main\n"
+            if argv[:3] == ["git", "rev-list", "--count"]:
+                self.assertEqual(argv[3], "main..stead/201-add-json-output")
+                return "1\n"
+            if argv[:3] == ["git", "diff", "--name-status"]:
+                return "M\tapp.py\n"
+            if argv[:3] == ["git", "push", "-u"]:
+                self.assertEqual(argv[4],
+                                 "stead/201-add-json-output:stead/201-add-json-output")
+                return ""
+            if argv[:3] == ["gh", "pr", "create"]:
+                return "https://github.com/testuser/my-app/pull/9\n"
             raise AssertionError(argv)
 
-        with self.assertRaises(PublishError) as caught:
-            publish(self.root, SPEC_ID, runner=runner)
-        self.assertIn("refusing", str(caught.exception))
-        self.assertFalse(any(argv[1] == "push" for argv in calls if len(argv) > 1))
+        opened = publish(self.root, SPEC_ID, runner=runner)
+        self.assertEqual(opened["branch"], "stead/201-add-json-output")
 
     def test_draft_pr_pushes_the_isolated_branch_and_does_not_merge(self) -> None:
         autonomy.set_repo(self.root, "repo-testuser-my-app", reach="draft-pr",
@@ -136,12 +143,12 @@ class PublishTest(FeatureBuilderTestCase):
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
-                self.assertEqual(argv[3], "main..HEAD")
+                self.assertEqual(argv[3], "main..feature/json")
                 return "2\n"
             if argv[:3] == ["git", "diff", "--name-status"]:
                 return "M\tapp.py\n"
             if argv[:3] == ["git", "push", "-u"]:
-                self.assertEqual(argv[4], "HEAD:feature/json")
+                self.assertEqual(argv[4], "feature/json:feature/json")
                 return ""
             if argv[:3] == ["gh", "pr", "create"]:
                 self.assertIn("--draft", argv)

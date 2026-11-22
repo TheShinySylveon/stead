@@ -66,7 +66,10 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
     run = safety.safe_runner(runner or _run)
     default = (repo_meta.get("default_branch") or "main").strip()
     branch = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
-    if not branch or branch in {default, "HEAD"}:
+    if branch in {default, "HEAD", ""}:
+        # A worktree build leaves the checkout on the default branch.
+        branch = factory.branch_for(spec)
+    if not branch or branch == default:
         raise MergeError(
             f"refusing to merge from {branch or 'an unknown branch'}. Stay off {default}.")
     raw = run([
@@ -103,7 +106,7 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
     if record is not None:
         expected = str(record.get("commit") or "")
     if not expected:
-        expected = _git(run, code, ["rev-parse", "HEAD"]).strip()
+        expected = _git(run, code, ["rev-parse", branch]).strip()
     head_sha = (view.get("headRefOid") or "").strip()
     if expected and head_sha and head_sha != expected:
         raise MergeError(

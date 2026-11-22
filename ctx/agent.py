@@ -144,16 +144,17 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     started = time.monotonic()
     deadline = started + max(1, max_minutes) * 60
     lock = _lock(anchor)
-    # A killed build leaves a "started" marker; reclaim it (as an infrastructure
-    # failure record) so a Task Scheduler/Task Manager kill is never silent.
-    _reclaim_stale_started(root, spec, body)
-    _write_started(root, spec, body)
     # Every git call Stead makes runs with the checkout's hooks and fsmonitor
     # disabled: checks execute model-written code that could plant either.
     hooks_dir = Path(tempfile.mkdtemp(prefix="stead-no-hooks-"))
 
     def run(argv, cwd):
         return base_run(safety.disable_hooks(argv, hooks_dir), cwd)
+
+    # A killed build leaves a "started" marker AND a registered worktree;
+    # reclaim both (as an infrastructure failure record) so the spec is not
+    # stuck on the branch the dead process left checked out.
+    _reclaim_stale_started(run, anchor, root, spec, body)
 
     replies: list[str] = []
     transcript: list[str] = []
@@ -185,12 +186,23 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             _git(run, anchor, ["worktree", "add", str(wt), branch])
         else:
             if _git(run, anchor, ["branch", "--list", branch]).strip():
-                raise BuildError(f"branch {branch} already exists. Use --resume or remove it.",
-                                 reason="precondition")
+                # A failed attempt left its branch behind. A fresh attempt
+                # (--retry or a re-approved hash) moves it aside and starts clean.
+                from ctx import writeback
+                rec = writeback.record_for_branch(
+                    root, str(repo_meta.get("id") or ""), branch)
+                if rec is not None and str(rec.get("outcome") or "") == "failed":
+                    retired = f"stead/failed/{branch.removeprefix('stead/')}-{_stamp()}"
+                    _git(run, anchor, ["branch", "-m", branch, retired])
+                else:
+                    raise BuildError(
+                        f"branch {branch} already exists. Use --resume or remove it.",
+                        reason="precondition")
             wt = Path(tempfile.mkdtemp(prefix="stead-wt-"))
             _git(run, anchor, ["worktree", "add", "-b", branch, str(wt), default])
         code = wt
         on_branch = True
+        _write_started(root, spec, body, worktree=str(wt))
         # Where this run starts, what the default branch tracks, and what the
         # branch already tracks (for --resume). The commit guard uses these:
         # HEAD must still be commit_base, and the committed range must be the
@@ -713,6 +725,10 @@ def _unlock(path: Path) -> None:
         pass
 
 
+def _stamp() -> str:
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
 def _marker_path(root: Path, body: str) -> Path:
     from ctx import spec as spec_approval
     digest = spec_approval.body_hash(body)
@@ -720,10 +736,11 @@ def _marker_path(root: Path, body: str) -> Path:
     return folder / f".build-started-{digest[:16]}.json"
 
 
-def _write_started(root: Path, spec: dict, body: str) -> None:
+def _write_started(root: Path, spec: dict, body: str, *, worktree: str = "") -> None:
     """A "started" marker, removed on normal exit. A hard kill — Task Scheduler
     or Task Manager, which skips exception handlers and finally — leaves it
-    behind; the next run reclaims it as an infrastructure failure record."""
+    behind; the next run reclaims it as an infrastructure failure record and
+    removes the worktree it records."""
     try:
         path = _marker_path(root, body)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -732,6 +749,7 @@ def _write_started(root: Path, spec: dict, body: str) -> None:
             "host": socket.gethostname(),
             "started": datetime.now(timezone.utc).isoformat(),
             "contribution": spec.get("id"),
+            "worktree": worktree,
         }), encoding="utf-8")
     except OSError:
         pass  # a missing marker only means a hard kill cannot be detected
@@ -744,12 +762,15 @@ def _clear_started(root: Path, body: str) -> None:
         pass
 
 
-def _reclaim_stale_started(root: Path, spec: dict, body: str) -> None:
+def _reclaim_stale_started(run, anchor: Path, root: Path, spec: dict,
+                           body: str) -> None:
     """Turn a stale started marker into an infrastructure failure record.
 
     Only a hard kill leaves the marker (normal failure and success both clear
-    it). If the recorded PID is still alive, a build of this spec is genuinely
-    in progress and the marker is left alone."""
+    it). The dead process may also have left its worktree registered with the
+    branch checked out — remove it so the spec is not stuck. If the recorded
+    PID is still alive, a build of this spec is genuinely in progress and the
+    marker is left alone."""
     path = _marker_path(root, body)
     if not path.is_file():
         return
@@ -761,6 +782,16 @@ def _reclaim_stale_started(root: Path, spec: dict, body: str) -> None:
         return
     if _pid_alive(pid):
         return
+    wt = data.get("worktree")
+    if wt:
+        try:
+            _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
+        except Exception:
+            pass
+    try:
+        _git(run, anchor, ["worktree", "prune"])
+    except Exception:
+        pass
     from ctx import writeback
     try:
         writeback.record_failure(
@@ -1255,15 +1286,9 @@ def _tree(code: Path) -> str:
 
 
 def branch_for(spec: dict) -> str:
-    """The isolated branch a build for this spec uses."""
-    return _branch_name(spec)
-
-
-def _branch_name(spec: dict) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", (spec.get("title") or "build").lower()).strip("-")
-    slug = slug[:40] or "build"
-    number = spec.get("number")
-    return f"stead/{number}-{slug}" if number else f"stead/{slug}"
+    """The isolated branch a build for this spec uses (shared with
+    publish/merge/review, which resolve it without a checkout)."""
+    return factory.branch_for(spec)
 
 
 def _git(run, code: Path, args: list[str]) -> str:
