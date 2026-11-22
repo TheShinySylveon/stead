@@ -63,7 +63,7 @@ project: project-shared-context-rollout  # optional; set by stead onboard
 trigger: on-demand                   # optional: on-demand | watch. Default on-demand.
 code_path: /path/to/the/checkout   # optional local git checkout for publish
 reach: shadow                        # optional ceiling: ghost | shadow | draft-pr | pr | merge.
-                                     # ghost = plan + spec/doc changes + a full proposed diff;
+                                     # ghost = purely spec, docs, and a code plan for approval;
                                      # zero code applied. merge is never inherited from the
                                      # install default.
 checks: python -m pytest -q          # optional command `stead build` runs before it commits

@@ -327,12 +327,12 @@ def spec_flags(description: str, criteria: list[tuple[bool, str]]) -> list[str]:
 
 _REACH_SAFETY = {
     "ghost": (
-        "Mode: **GHOST**. Deliver the plan, spec/doc changes (markdown), and a\n"
-        "FULL proposed diff for human review. ZERO code is applied to the checkout:\n"
-        "no source, test, or CI edits, no checks run. Code snippets belong in the\n"
-        "plan or the diff. NO remote writes of any kind: no push, no branch creation\n"
-        "on the remote, no PR/issue/comment/label creation. A human approves the\n"
-        "diff before any code lands or a pull request is opened."
+        "Mode: **GHOST**. Purely spec, docs, and a code plan, for human approval.\n"
+        "Write the plan and spec/doc changes (markdown) ONLY. Code snippets inside\n"
+        "the plan or docs are fine. ZERO code is applied to the checkout: no source,\n"
+        "test, or CI edits, no checks run. NO remote writes of any kind: no push, no\n"
+        "branch creation on the remote, no PR/issue/comment/label creation. A human\n"
+        "approves the plan before any code is written."
     ),
     "shadow": (
         "Mode: **SHADOW** (default). Propose a plan and a proposed diff ONLY.\n"

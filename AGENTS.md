@@ -264,9 +264,10 @@ turns that into issue-to-delivery without a person in the loop. Shadow and
 draft-PR remain the safe defaults.
 
 **Autonomy ladder (a repo may sit on any rung):**
-1. **GHOST:** plan + spec/doc (markdown) changes + a FULL proposed diff for
-   approval. Zero code applied to the checkout, no checks run, zero remote
-   writes. A human approves the diff before any code lands or a PR is opened.
+1. **GHOST:** purely spec, docs, and a code plan for approval — the plan plus
+   markdown spec/doc changes only (code snippets inside the plan are fine).
+   Zero code applied to the checkout, no checks run, zero remote writes.
+   A human approves before any code is written.
 2. **SHADOW (default):** plan + proposed diff only; zero remote writes.
 3. **DRAFT-PR:** isolated branch + `gh pr create --draft`; a HUMAN merges.
    `stead factory publish` does this when the ceiling allows it.

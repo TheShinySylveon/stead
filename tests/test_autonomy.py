@@ -84,7 +84,7 @@ class AutonomyRunTest(FeatureBuilderTestCase):
         self.assertEqual(info["remote"], "not-implemented")
         self.assertIn("did not push", (self.root / info["run_dir"] / "bundle.md").read_text(encoding="utf-8"))
 
-    def test_ghost_assembly_is_local_only_and_asks_for_a_full_diff(self) -> None:
+    def test_ghost_assembly_is_local_only_and_purely_planning(self) -> None:
         self.seed_spec()
         autonomy.set_repo(self.root, "repo-testuser-my-app", reach="ghost")
         boom = AssertionError("remote write during a ghost run")
@@ -95,7 +95,7 @@ class AutonomyRunTest(FeatureBuilderTestCase):
         self.assertEqual(info["remote"], "none")
         bundle = (self.root / info["run_dir"] / "bundle.md").read_text(encoding="utf-8")
         self.assertIn("GHOST", bundle)
-        self.assertIn("FULL proposed diff", bundle)
+        self.assertIn("Purely spec, docs, and a code plan", bundle)
         self.assertIn("ZERO code is applied", bundle)
 
     def test_watch_skips_on_demand_and_flagged_specs(self) -> None:

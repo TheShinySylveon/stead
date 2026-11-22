@@ -37,12 +37,11 @@ protection, and it does not push the default branch.
 
 The reaches above are the rungs. A repo may sit on any rung.
 
-1. **GHOST.** The build delivers the **plan, spec/doc (markdown) changes, and
-   a FULL proposed diff** for human approval. The diff is recorded as
-   `proposed.diff` in the run directory and verified read-only with
-   `git apply --check`. ZERO code is applied to the checkout: no source,
-   test, or CI edits, no checks run, no push, no PR. Code snippets belong in
-   the plan or the diff. A human approves the diff before any code lands.
+1. **GHOST.** Purely **spec, docs, and a code plan**, for human approval.
+   The build plans first and may write or delete markdown spec/doc files
+   only; code snippets inside the plan or docs are fine. ZERO code is
+   applied to the checkout: no source, test, or CI edits, no checks run,
+   no push, no PR. A human approves before any code is written.
 2. **SHADOW (default, current).** The agent reads `prompt.md` and proposes a
    **plan + proposed diff only**. NO remote writes, NO push, NO PR/issue/
    comment/label creation. A human reviews the plan and diff locally before

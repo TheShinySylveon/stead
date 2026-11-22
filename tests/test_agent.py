@@ -330,24 +330,23 @@ class BuildTest(BuildFixture):
         self.assertIn("checks_image", str(caught.exception))
 
 
-GHOST_DIFF = ("--- a/app.py\n+++ b/app.py\n@@ -1 +1,2 @@\n"
-              " print('hi')\n+print('proposed')\n")
-
-
 class GhostBuildTest(BuildFixture):
-    """reach: ghost — plan, spec/doc markdown, and a full proposed diff. Zero code."""
+    """reach: ghost — purely spec, docs, and a code plan. Zero code applied."""
 
     def setUp(self) -> None:
         super().setUp()
         self._set_repo(reach="ghost")
 
-    def test_ghost_proposes_a_diff_and_applies_no_code(self) -> None:
+    def test_ghost_plans_and_writes_docs_only(self) -> None:
         prompts: list[str] = []
+        plan = ("Add a --name flag. Sketch:\n\n```python\n"
+                "parser.add_argument('--name', default='world')\n```\n")
         queue = [
-            {"action": "plan", "summary": "Add a second greeting."},
+            {"action": "plan", "summary": plan},
             {"action": "read", "path": "app.py"},
-            {"action": "diff", "content": GHOST_DIFF},
-            {"action": "finish", "summary": "Proposal ready for review."},
+            {"action": "write", "path": "docs/spec.md",
+             "content": "# Spec\n\nThe flag defaults to world.\n"},
+            {"action": "finish", "summary": "Plan and spec ready for approval."},
         ]
 
         def responder(prompt: str) -> str:
@@ -356,30 +355,28 @@ class GhostBuildTest(BuildFixture):
 
         result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
         self.assertEqual(result["reach"], "ghost")
-        self.assertTrue(result["diff_applies"])
-        self.assertEqual(result["diff"], GHOST_DIFF)
-        self.assertEqual(result["files"], [])
-        self.assertEqual(result["commit"], "")
-        self.assertEqual((self.code / "app.py").read_text(encoding="utf-8"), "print('hi')\n")
-        run_dir = self.root / result["run_dir"]
-        self.assertEqual((run_dir / "proposed.diff").read_text(encoding="utf-8"), GHOST_DIFF)
-        self.assertIn("Add a second greeting.", (run_dir / "plan.md").read_text(encoding="utf-8"))
-        self.assertIn("GHOST", prompts[0])
-        self.assertIn('"diff"', prompts[0])
-
-    def test_ghost_writes_spec_docs_but_never_code(self) -> None:
-        responder = self._responder([
-            {"action": "plan", "summary": "Spec first, code as a proposal."},
-            {"action": "write", "path": "docs/spec.md", "content": "# Spec\n\nUpdated.\n"},
-            {"action": "diff", "content": GHOST_DIFF},
-            {"action": "finish", "summary": "Docs committed, code proposed."},
-        ])
-        result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
         self.assertEqual(result["files"], ["docs/spec.md"])
         self.assertTrue(result["commit"])
         self.assertEqual((self.code / "app.py").read_text(encoding="utf-8"), "print('hi')\n")
         self.assertEqual((self.code / "docs/spec.md").read_text(encoding="utf-8"),
-                         "# Spec\n\nUpdated.\n")
+                         "# Spec\n\nThe flag defaults to world.\n")
+        run_dir = self.root / result["run_dir"]
+        self.assertIn("--name", (run_dir / "plan.md").read_text(encoding="utf-8"))
+        self.assertFalse((run_dir / "proposed.diff").exists())
+        self.assertIn("GHOST", prompts[0])
+
+    def test_ghost_can_finish_with_plan_only(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "No code changes needed; the spec is already met."},
+            {"action": "finish", "summary": "Nothing to propose."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["files"], [])
+        self.assertEqual(result["commit"], "")
+        run_dir = self.root / result["run_dir"]
+        self.assertIn("No code changes needed", (run_dir / "plan.md").read_text(encoding="utf-8"))
+        self.assertEqual((self.code / "app.py").read_text(encoding="utf-8"), "print('hi')\n")
 
     def test_ghost_refuses_code_writes(self) -> None:
         responder = self._responder([
@@ -401,43 +398,11 @@ class GhostBuildTest(BuildFixture):
         self.assertIn("Zero code", str(caught.exception))
         self.assertTrue((self.code / "app.py").exists())
 
-    def test_ghost_finish_needs_a_diff(self) -> None:
-        responder = self._responder([
-            {"action": "plan", "summary": "Docs only."},
-            {"action": "write", "path": "docs/spec.md", "content": "# Spec\n"},
-            {"action": "finish", "summary": "Done."},
-        ])
-        with self.assertRaises(agent.BuildError) as caught:
-            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
-        self.assertIn("without a proposed diff", str(caught.exception))
-
-    def test_ghost_diff_must_apply_cleanly(self) -> None:
-        bad = ("--- a/app.py\n+++ b/app.py\n@@ -1 +1 @@\n"
-               "-print('not the real line')\n+print('x')\n")
-        responder = self._responder([
-            {"action": "plan", "summary": "Propose."},
-            {"action": "diff", "content": bad},
-            {"action": "finish", "summary": "Done."},
-        ])
-        with self.assertRaises(agent.BuildError) as caught:
-            agent.build(self.root, "contribution-me-app-issue-42",
-                        responder=responder, repair_rounds=0)
-        self.assertIn("never applied cleanly", str(caught.exception))
-        self.assertEqual((self.code / "app.py").read_text(encoding="utf-8"), "print('hi')\n")
-
-    def test_ghost_diff_before_plan_is_refused(self) -> None:
-        responder = self._responder([
-            {"action": "diff", "content": GHOST_DIFF},
-        ])
-        with self.assertRaises(agent.BuildError) as caught:
-            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
-        self.assertIn("before a plan", str(caught.exception))
-
     def test_ghost_runs_no_checks(self) -> None:
         self._set_repo(checks='python -c "import sys; sys.exit(1)"')
         responder = self._responder([
-            {"action": "plan", "summary": "Propose."},
-            {"action": "diff", "content": GHOST_DIFF},
+            {"action": "plan", "summary": "Plan only."},
+            {"action": "write", "path": "docs/spec.md", "content": "# Spec\n"},
             {"action": "check"},
             {"action": "finish", "summary": "Done."},
         ])

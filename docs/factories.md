@@ -109,10 +109,10 @@ merge.
 | reach | `ghost`, `shadow`, `draft-pr`, `pr`, `merge` | shadow |
 
 A run may ask for less than the repo ceiling. It may not ask for more.
-`ghost` is the lowest rung: the build delivers the plan, spec/doc (markdown)
-changes, and a full proposed diff for human review — `proposed.diff` in the
-run directory, verified read-only with `git apply --check`. Zero code is
-applied to the checkout, no checks run, and publish refuses a ghost repo.
+`ghost` is the lowest rung: purely spec, docs, and a code plan for human
+approval. The build plans first and may write or delete markdown spec/doc
+files only; code snippets inside the plan are fine. Zero code is applied
+to the checkout, no checks run, and publish refuses a ghost repo.
 `context-maintenance` drafts a triage note from the inbox, broken relations,
 objects older than 30 days, and titles that appear twice. Assembly does not
 edit those files.

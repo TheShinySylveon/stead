@@ -3,12 +3,11 @@
 ## Unreleased
 
 - **`ghost` reach — a new lowest rung below shadow.** First option in every
-  ceiling dropdown (cockpit and CLI). A ghost build delivers the plan,
-  spec/doc (markdown) changes, and a FULL proposed diff for human review:
-  `proposed.diff` in the run directory, verified read-only with
-  `git apply --check`. Zero code is applied to the checkout, no checks run,
-  and publish/merge refuse a ghost repo. A human approves the diff before
-  any code lands or a PR is opened.
+  ceiling dropdown (cockpit and CLI). Ghost is purely spec, docs, and a code
+  plan for human approval: the build plans first and may write or delete
+  markdown spec/doc files only (code snippets inside the plan are fine).
+  Zero code is applied to the checkout, no checks run, and publish/merge
+  refuse a ghost repo. A human approves before any code is written.
 - **Containment for the build agent.** Tests and CI config are protected paths
   by default (`allow_test_edits`, `allow_ci_edits`, or `protected_paths:` to
   opt in). Checks run with a scrubbed environment, or in a networkless

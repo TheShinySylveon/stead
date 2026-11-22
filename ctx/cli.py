@@ -1021,9 +1021,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"files: {', '.join(result['files'])}")
         print(f"branch: {result['branch']}  commit: {result['commit'][:12]}")
         if result.get("reach") == "ghost":
-            print("checks: not run (ghost proposes; it does not execute)")
-            print(f"proposed diff: {result.get('run_dir', '')}/proposed.diff "
-                  f"(applies cleanly: {result.get('diff_applies')})")
+            print("checks: not run (ghost is purely spec, docs, and a code plan)")
+            print(f"plan and docs: {result.get('run_dir', '')} (for approval)")
         elif result["checks"]:
             print(f"checks: passed ({result['checks']})")
         else:
@@ -1036,7 +1035,7 @@ def main(argv: list[str] | None = None) -> int:
                 print("merge did not run. The checks may be pending or the repo moved.")
         elif result.get("reach") == "ghost":
             print("ghost run: no code was applied and nothing was pushed. "
-                  "Review the plan and diff, then apply it or raise the repo reach.")
+                  "Review the plan and docs, then raise the repo reach to build.")
         else:
             print("not pushed. Run with --publish, or:")
             print(f"  python -m stead factory publish --contribution {args.contribution}")

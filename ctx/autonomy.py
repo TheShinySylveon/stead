@@ -10,9 +10,9 @@ The ceiling is per repo. An install default can be ghost, shadow, draft-pr,
 or pr. Merge is never inherited. A repo has to say merge itself. A run may
 ask for less than the ceiling. It may not ask for more.
 
-Ghost is the lowest rung: the plan, spec/doc (markdown) changes, and a full
-proposed diff for human approval. Zero code applied, zero checks, zero
-remote writes.
+Ghost is the lowest rung: purely spec, docs, and a code plan for human
+approval — the plan plus markdown spec/doc changes only. Zero code applied,
+zero checks, zero remote writes.
 """
 
 from __future__ import annotations

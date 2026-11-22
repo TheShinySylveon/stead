@@ -1251,7 +1251,7 @@ document.body.addEventListener("click", async (event) => {
         contribution,
       })});
       toast(result.reach === "ghost"
-        ? "Ghost run: plan and proposed diff saved for review. No code was applied."
+        ? "Ghost run: plan and spec/docs saved for review. No code was applied."
         : "Built " + result.files.length + " file(s) on " + result.branch +
           ". Publish with the CLI when you are ready.");
       await load();
