@@ -326,7 +326,8 @@ remote writes.
   sandbox while Stead keeps assembly, the reach ladder, eval gates, the ledger,
   and write-back. The trade-off is giving up "no model-chosen shell commands"
   inside the sandbox, which matters less once checks are sandboxed.
-- Patch-level edits instead of whole-file writes; a per-file size cap exists.
+- Unified-diff edits. Exact-snippet `edit` and line-range reads landed (#18), so
+  long files are buildable; a per-file size cap exists.
 
 **Evals and proof**
 

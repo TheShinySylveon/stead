@@ -59,10 +59,10 @@ milestone's own measurement passed). Only the second is "done".
 | Milestone | Code | Acceptance |
 |---|---|---|
 | M0 foundations | landed | not run |
-| M1 harness | landed | Set A spec 2 built correctly on a 27B model (tuning, not scored); baseline + Set B first-attempt score **not run** |
-| M5 spec draft | landed | not run |
-| M3 intake | landed | not run |
-| M2 comment | landed | not run |
+| M1 harness | landed | Set A specs 1 and 2 built correctly on a 27B model and merged (#30, #20; tuning, not scored); baseline + Set B first-attempt score **not run** |
+| M5 spec draft | landed | exercised on #25 and #27 (tuning); not run |
+| M3 intake | landed | exercised: `sync github` picked up #25 and #27; not run |
+| M2 comment | landed | exercised: Stead commented #30 on #25; not run |
 | M4, M6, M7 | procedure written | not run |
 
 The code milestones above carry the review fixes for PRs #4–#8. Acceptance needs
@@ -75,6 +75,16 @@ them, Set A spec 2 (`metrics --since`) built correctly, was published at `pr`
 as #20, passed CI, and was merged by a human; `sync github` recorded it as
 merged with no human edits. Details: [Dogfood](dogfood.md#arete-27b-2026-11-22).
 
+Later the same day, Set A spec 1 went through every step on a real GitHub
+issue: #25 was synced, drafted by the model into a spec, approved, built on
+Arete 27B in 27 minutes with no repair rounds, published as #30 with
+`Closes #25`, commented on the issue by Stead, merged by a human, and
+reconciled by `sync github` (no human edits). Each fix that run surfaced landed
+first: the drafter sees the repo tree (#26), drafting uses the model's call
+timeout (#29), and builds report progress as they run (#24). "Exercised"
+above means a step has run for real on a tuning issue; acceptance still means
+the milestone's own measurement on the frozen sets.
+
 ## In scope (state)
 
 | Stage | State |
@@ -83,7 +93,7 @@ merged with no human edits. Details: [Dogfood](dogfood.md#arete-27b-2026-11-22).
 | Monitor: `sync github` + `trigger: watch` + scheduler | working (read-only) |
 | Spec/docs/plan: `spec draft` + `spec approve` | built; **validate the monitor→draft→approve flow end to end** |
 | Spec approval by content hash | working |
-| Build correctness on a local model | harness built (structured output, fail-before/pass-after, line-range reads, exact edits); two Set A specs built (one verified correct on Arete 27B); **first-attempt score not run** |
+| Build correctness on a local model | harness built (structured output, fail-before/pass-after, line-range reads, exact edits); two Set A specs built, hand-checked correct, and merged (#20, #30); **first-attempt score not run** |
 | `require_tests`, protected paths, scrubbed/container checks | working |
 | PR from isolated branch (`pr`) | working: #20 published by `factory publish`, CI green, human-merged |
 | **Comment on the issue linking the PR** | built (gated: `allow_comment`, `kind: own`) |
@@ -99,19 +109,21 @@ more code:
 
 1. **Build correctness on a real model.** Run the baseline and score Set B on a
    single first attempt — a build must meet the spec or fail honestly. See
-   [Dogfood](dogfood.md). Not started: two Set A (tuning) specs have built —
-   `metrics --since` correct on Arete 27B (#20) and `stead context search`
-   built and merged (#30); Set A spec 3 (`inbox list`), the baseline, and Set
-   B are not run. A build takes about 35 minutes on that model.
+   [Dogfood](dogfood.md). Not started: two Set A (tuning) specs built
+   correctly on Arete 27B and merged — `metrics --since` (#20) and `stead
+   context search` (#30). Set A spec 3 (`inbox list`, #27) is next; the
+   baseline and Set B are not run. A build takes about 30 minutes on that
+   model.
 2. **Reach a green PR at `pr`.** `build --publish --wait` with CI as a required
-   check, then a human review and merge. **Mostly met (#20):** green CI on the
-   required checks, a human merge, and the merge reconciled into the record.
-   Not yet exercised: publishing from `build --publish --wait` (#20 used
-   `factory publish` after the build) and the issue comment (the spec was a
-   local issue, not a GitHub one). Both are covered by the M7 run.
+   check, then a human review and merge. **Met in practice (#20, #30):**
+   green CI on the required checks, a human merge, and the merge reconciled
+   into the record with no human edits; #30 also commented on its issue. Not
+   yet exercised: publishing from `build --publish --wait` (both used `factory
+   publish` after the build). The M7 run covers it.
 3. **Run the sign-off (M7).** The monitor → draft → approve → build → PR →
-   comment → merge loop on the frozen Set C + hold-out. Not run: label intake,
-   `spec draft`, and the issue comment have not run against a real issue.
+   comment → merge loop on the frozen Set C + hold-out. Not run. Every step
+   has now run once on a real (tuning) issue, #25 → #30, so the sign-off
+   measures the loop rather than discovering it.
 
 ## Deferred until MVP (recorded, not lost)
 
