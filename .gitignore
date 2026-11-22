@@ -23,6 +23,9 @@ private/
 # Hallmark redesign records. Not the product.
 .hallmark/
 
+# Website working files. Not part of the Stead package.
+site/
+
 # OS noise
 .DS_Store
 Thumbs.db
