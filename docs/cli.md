@@ -80,6 +80,21 @@ its index row. Git history keeps the old text. A project with linked objects,
 or a repo with cached contributions, is refused unless `--force`. Cached
 contributions are not deletable; refresh the cache instead.
 
+## Search
+
+```bash
+python -m stead context search QUERY [--repo ID] [--json]
+```
+
+`context search` is read-only. It scans the `context/` markdown objects for a
+case-insensitive query in a title or body, and prints each match's path and a
+one-line snippet centered on the match. `--repo ID` limits the scan to one
+repo's objects (the repo file plus any object that references it through a
+`repo:` field or `repo:` tag); an unknown repo id is an error. `--json` emits
+one object per match with `id`, `type`, `path`, and `snippet`. It calls no
+model, touches no network, and writes nothing — it does not even create
+`state.db`.
+
 ## People, status, and GitHub
 
 ```bash

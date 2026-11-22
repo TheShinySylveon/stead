@@ -83,7 +83,7 @@ merged with no human edits. Details: [Dogfood](dogfood.md#arete-27b-2026-11-22).
 | Monitor: `sync github` + `trigger: watch` + scheduler | working (read-only) |
 | Spec/docs/plan: `spec draft` + `spec approve` | built; **validate the monitor→draft→approve flow end to end** |
 | Spec approval by content hash | working |
-| Build correctness on a local model | harness built (structured output, fail-before/pass-after, line-range reads, exact edits); one Set A spec correct on Arete 27B; **first-attempt score not run** |
+| Build correctness on a local model | harness built (structured output, fail-before/pass-after, line-range reads, exact edits); two Set A specs built (one verified correct on Arete 27B); **first-attempt score not run** |
 | `require_tests`, protected paths, scrubbed/container checks | working |
 | PR from isolated branch (`pr`) | working: #20 published by `factory publish`, CI green, human-merged |
 | **Comment on the issue linking the PR** | built (gated: `allow_comment`, `kind: own`) |
@@ -99,9 +99,10 @@ more code:
 
 1. **Build correctness on a real model.** Run the baseline and score Set B on a
    single first attempt — a build must meet the spec or fail honestly. See
-   [Dogfood](dogfood.md). Not started: one Set A (tuning) spec has built
-   correctly on Arete 27B; Set A specs 1 and 3, the baseline, and Set B are
-   not run. A build takes about 35 minutes on that model.
+   [Dogfood](dogfood.md). Not started: two Set A (tuning) specs have built —
+   `metrics --since` correct on Arete 27B (#20) and `stead context search`
+   built and merged (#30); Set A spec 3 (`inbox list`), the baseline, and Set
+   B are not run. A build takes about 35 minutes on that model.
 2. **Reach a green PR at `pr`.** `build --publish --wait` with CI as a required
    check, then a human review and merge. **Mostly met (#20):** green CI on the
    required checks, a human merge, and the merge reconciled into the record.
