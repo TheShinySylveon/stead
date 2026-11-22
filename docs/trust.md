@@ -52,7 +52,10 @@ code execution with the permissions of your user account.
 The container is not available for every repo (it needs Docker and an image
 with the toolchain). The honest statement is: **without
 `checks_isolation: docker`, checks run on your host with a scrubbed
-environment, not in a sandbox.**
+environment, not in a sandbox.** A scrubbed environment hides secrets from
+the process environment, but it does not restrict the filesystem: host checks
+can still read any file your user can read, such as `~/.ssh` or
+`~/.config/gh`. Only the container limits them to the checkout and the image.
 
 ## Protected paths
 
