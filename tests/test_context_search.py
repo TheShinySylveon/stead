@@ -9,7 +9,7 @@ import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
 
-from ctx import cli
+from ctx import cli, search
 
 REPO_ALPHA = """---
 id: repo-alpha
@@ -159,6 +159,32 @@ class ContextSearchTests(unittest.TestCase):
         self.assertEqual(before, after)
         self.assertFalse((self.root / "state.db").exists())
 
+
+class RepoFilterRelationsTest(unittest.TestCase):
+    """--repo counts the `repo` field and `repo:` tags, never prose."""
+
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        _write(self.root, "context/repos/repo-alpha.md", REPO_ALPHA)
+        _write(self.root, "context/repos/repo-beta.md", REPO_BETA)
+
+    def _doc(self, name: str, extra: str, body: str) -> None:
+        _write(self.root, f"context/documents/{name}.md",
+               f"---\nid: document-{name}\ntype: document\ntitle: {name}\n"
+               f"created: 2026-11-22\nupdated: 2026-11-22\nstatus: active\n{extra}"
+               f"---\n\n{body}\n")
+
+    def test_a_repo_tag_counts(self):
+        self._doc("tagged", "tags: [\"repo:repo-alpha\"]\n", "needle here")
+        ids = [r["id"] for r in search.search(self.root, "needle", repo="repo-alpha")]
+        self.assertIn("document-tagged", ids)
+
+    def test_a_body_line_naming_a_repo_does_not_count(self):
+        self._doc("prose", "repo: repo-beta\n", "needle here\n\nrepo: repo-alpha")
+        ids = [r["id"] for r in search.search(self.root, "needle", repo="repo-alpha")]
+        self.assertNotIn("document-prose", ids)
 
 if __name__ == "__main__":
     unittest.main()

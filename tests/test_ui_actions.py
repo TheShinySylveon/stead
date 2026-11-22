@@ -229,7 +229,7 @@ class CockpitActionsTest(unittest.TestCase):
                    "role": "assignee", "state": "open", "visibility": "public",
                    "tags": ["feature-spec"]}
         (self.root / "context/contributions/issue-5.md").write_text(
-            frontmatter.dumps(contrib, "Add a flag.\n\n## Acceptance criteria\n\n- [ ] works\n"),
+            frontmatter.dumps(contrib, "Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n- [ ] works\n"),
             encoding="utf-8")
 
     def _make_shared(self) -> None:

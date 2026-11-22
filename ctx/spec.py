@@ -30,14 +30,45 @@ def body_hash(body: str) -> str:
     return hashlib.sha256(body.strip().encode("utf-8")).hexdigest()
 
 
+def readiness_problems(body: str) -> list[str]:
+    """Why a build would refuse this spec body, in words a person can act on.
+    The same rules as the build's `factory.spec_flags`; empty when buildable."""
+    from ctx import factory
+    description, criteria = factory.split_spec(body)
+    flags = factory.spec_flags(description, criteria)
+    words = len(factory._HEADING_LINE.sub("", description).split())
+    problems: list[str] = []
+    if "missing-acceptance-criteria" in flags:
+        problems.append("it has no `## Acceptance criteria` checklist")
+    if "vague-spec" in flags:
+        problems.append(f"the description is {words} words; a build needs at least "
+                        f"{factory._MIN_DESCRIPTION_WORDS}")
+    if "large-spec" in flags:
+        if len(criteria) > factory._MAX_CRITERIA:
+            problems.append(f"it has {len(criteria)} acceptance criteria; a build accepts "
+                            f"at most {factory._MAX_CRITERIA}. Merge related criteria or "
+                            "split the spec")
+        if words > factory._MAX_DESCRIPTION_WORDS:
+            problems.append(f"the description is {words} words; a build accepts at most "
+                            f"{factory._MAX_DESCRIPTION_WORDS}")
+    return problems
+
+
 def approve(root: Path, ref: str) -> dict:
-    """Approve the current body of one contribution. Raises SpecError."""
+    """Approve the current body of one contribution. Raises SpecError.
+
+    Refuses a body the build would refuse anyway (too many criteria, too vague
+    or too long), so an approval always means "ready to build"."""
     found = objects.find(root, "contribution", ref)
     if found is None:
         raise SpecError(f"contribution not found: {ref}")
     path, meta, body = found
     if meta.get("kind") != "issue":
         raise SpecError("only an issue can be approved as a build spec")
+    problems = readiness_problems(body)
+    if problems:
+        raise SpecError("not approved: a build would refuse this spec: "
+                        + "; ".join(problems) + ". Edit it, then approve again.")
     digest = body_hash(body)
     today = date.today().isoformat()
     meta[APPROVAL_KEY] = digest
@@ -119,7 +150,8 @@ def draft_prompt(title: str, body: str, tree: str = "") -> str:
         "this order:\n"
         "1. A short description (2-6 sentences) of what to build and why.\n"
         "2. `## Acceptance criteria` — a checklist of concrete, testable "
-        "criteria, each on a `- [ ]` line.\n"
+        "criteria, each on a `- [ ]` line. At most 8 criteria: merge related "
+        "cases into one line rather than listing each separately.\n"
         "3. `## Plan` — a short code plan naming the real files to change.\n"
         "Do not write any code. Reply with only the spec Markdown.\n"
         + tree_part +
@@ -231,6 +263,7 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
     if not plan:
         raise SpecError("the draft has no `## Plan` section")
     warnings = plan_path_warnings(plan, code) if code is not None else []
+    warnings += [f"a build would refuse this draft: {p}" for p in readiness_problems(text)]
 
     today = date.today().isoformat()
     if existing is not None:  # --redraft replaces the body in place

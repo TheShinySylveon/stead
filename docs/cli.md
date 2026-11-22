@@ -237,7 +237,10 @@ checklist and a `## Plan` section. When the repo has a `code_path` checkout,
 the model sees its depth-2 tree (the same one a build sees), and `spec draft`
 warns about any path in the plan whose folder is not in the repo, or that does
 not exist while a file of the same name does elsewhere (`stead/cli.py` →
-"did you mean `ctx/cli.py`?"). Fix the plan before approving.
+"did you mean `ctx/cli.py`?"). It also warns when a build would refuse the
+draft: more than 8 acceptance criteria, or a description under 25 or over 400
+words. `spec approve` refuses such a spec outright, so an approval always means
+the spec is ready to build.
 
 `spec approve` records a SHA-256 of the contribution body and prints the body
 being approved. A build refuses an unapproved spec, and refuses a spec whose
