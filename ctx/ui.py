@@ -960,6 +960,14 @@ def watch_now(root: Path, build: bool = False, publish: bool = False,
     return {"ok": True, **report}
 
 
+def wiki_view(root: Path, repo: str, page: str = "") -> dict:
+    from ctx.wiki import WikiError, index, page as wiki_page
+    try:
+        return wiki_page(root, repo, page) if page else index(root, repo)
+    except WikiError as exc:
+        raise UiError(str(exc)) from exc
+
+
 def build_with_model(root: Path, contribution: str, publish: bool = False,
                      merge: bool = False) -> dict:
     from ctx.agent import BuildError, build
@@ -1215,8 +1223,10 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         if method == "GET" and path == "/api/snapshot":
             return 200, _json(snapshot(root, port=port, session_actor=session_actor)), \
                 "application/json; charset=utf-8"
-        if method == "GET" and path == "/api/run":
-            return 200, _json(run_detail(root, query.get("id", ""))), \
+        if method == "GET" and path == "/api/wiki":
+            return 200, _json(wiki_view(root, query.get("repo", ""), query.get("page", ""))), \
+                "application/json; charset=utf-8"
+        if method == "GET" and path == "/api/run":            return 200, _json(run_detail(root, query.get("id", ""))), \
                 "application/json; charset=utf-8"
         if method == "GET" and path == "/api/object":
             detail = object_detail(root, query.get("type", ""), query.get("id", ""))

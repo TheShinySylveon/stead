@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- A repo **Wiki** view: a home page with the essentials, then Overview,
+  Specs, Decisions, Glossary, Tasks, and History. Entries open the underlying
+  file. Generated from the files; no second store.
 - `docs/vision.md` records the long-range design: an autonomy slider with a
   `spec` rung, opt-in `.stead/` repo context, and two readers over one store —
   a person browses freely, an agent gets a scoped bundle with provenance,

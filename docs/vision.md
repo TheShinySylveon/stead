@@ -118,6 +118,25 @@ repo.md → glossary → decisions (newest first) → current spec →
 history (last two quarters) → first task
 ```
 
+### The wiki shape
+
+The human surface is a wiki, generated from the files. There is no second
+store to maintain.
+
+- **Repo home** — the name, a one-line summary, kind/status/autonomy chips,
+  counts, **Start here** (project, newest decision, current spec, glossary),
+  **Pages**, and **Recent**.
+- **Drill-down pages** — Overview, Specs, Decisions, Glossary, Tasks, History.
+  Each page lists entries; opening one shows the underlying file.
+- **Navigation** — breadcrumb plus a persistent page rail. A person can always
+  answer "where am I?" and "what is the next most useful page?".
+- **Progressive refinement** — the home answers "what is this and where do I
+  start?"; a page answers "what was decided and why?"; an entry answers "show
+  me the exact text".
+
+The wiki is read-only and private by default. Agents do not read the wiki; they
+receive bundles. Both are projections of the same files.
+
 ### The agent reader
 
 An agent worker never receives the store. It receives a **context bundle** for

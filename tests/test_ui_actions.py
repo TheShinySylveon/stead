@@ -169,6 +169,26 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(body["rollup"]["counts"]["to-do"], 0)
         self.assertEqual(body["rollup"]["runs"][0]["factory"], "weekly-project-status")
 
+    def test_wiki_endpoint_serves_home_and_page(self) -> None:
+        repo = {"id": "repo-me-app", "type": "repo", "title": "My App",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "active", "kind": "own", "project": "project-demo"}
+        (self.root / "context/repos").mkdir(parents=True, exist_ok=True)
+        (self.root / "context/repos/app.md").write_text(
+            frontmatter.dumps(repo, "# My App\n"), encoding="utf-8")
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/wiki?repo=repo-me-app")
+        req.add_header("X-Ctx-Token", self.token)
+        status, body = _read(req)
+        self.assertEqual(status, 200)
+        self.assertIn("overview", [p["slug"] for p in body["pages"]])
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/wiki?repo=repo-me-app&page=overview")
+        req.add_header("X-Ctx-Token", self.token)
+        status, body = _read(req)
+        self.assertEqual(status, 200)
+        self.assertIn("Autonomy ceiling", body["page"]["markdown"])
+
     def test_build_endpoint_wires_to_the_agent(self) -> None:
         import unittest.mock as mock
         from ctx import agent

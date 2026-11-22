@@ -188,6 +188,8 @@ checks and prompt promotion; filing an approved digest or status as a
 document; sign-ins, webhook token, index rebuild, and the weekly job. It calls
 a model only when Draft with model is checked. It never performs a remote
 write: publish and merge are CLI-only, and the page shows the exact commands.
+The Wiki view is the human record for a repo: a home page with the essentials,
+then Overview, Specs, Decisions, Glossary, Tasks, and History.
 A contribution body is a public spec, not a private note.
 Factory runs from the cockpit are shadow-only — no draft PR. The page has no
 external assets, so it works offline.
