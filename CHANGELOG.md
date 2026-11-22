@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`spec draft` sees the repository tree and checks the plan's paths.** The
+  drafting prompt now carries the repo's depth-2 tree (the same one the builder
+  sees) and tells the model to name real files or new files in real folders.
+  After drafting, a plan path whose folder doesn't exist, or a new file that
+  shadows an existing one of the same name, prints a warning to fix before
+  approval. The first real draft (issue #25) planned `stead/context/search.py`
+  and `stead/cli.py`; the code lives in `ctx/`.
 - **Builds report progress while they run (#19).** `stead build` prints one
   line per model step to stderr (step, action and path, prompt size, call
   time) plus phase changes (worktree, base suite, fail-before gate, checks,

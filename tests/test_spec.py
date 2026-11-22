@@ -145,3 +145,59 @@ class SpecApprovalTest(unittest.TestCase):
         with self.assertRaises(spec.SpecError) as caught:
             spec.draft_spec(self.root, first["id"], responder=lambda _p: self.DRAFT)
         self.assertIn("draft", str(caught.exception))
+
+
+    def _seed_repo_with_code(self) -> Path:
+        code = self.root / "code"
+        for rel in ("ctx/cli.py", "ctx/metrics.py", "stead/__init__.py",
+                    "tests/test_cli.py"):
+            (code / rel).parent.mkdir(parents=True, exist_ok=True)
+            (code / rel).write_text("# file\n", encoding="utf-8")
+        (self.root / "context/repos").mkdir(parents=True, exist_ok=True)
+        repo = {"id": "repo-me-app", "type": "repo", "title": "App",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "active", "kind": "own", "code_path": str(code)}
+        (self.root / "context/repos/app.md").write_text(
+            frontmatter.dumps(repo, "# App\n"), encoding="utf-8")
+        return code
+
+    def test_the_drafter_sees_the_repository_tree(self) -> None:
+        self._seed_repo_with_code()
+        prompts: list[str] = []
+
+        def respond(prompt: str) -> str:
+            prompts.append(prompt)
+            return self.DRAFT
+
+        spec.draft_spec(self.root, "contribution-me-app-issue-1", responder=respond)
+        self.assertIn("Repository tree (depth 2)", prompts[0])
+        self.assertIn("ctx/cli.py", prompts[0])
+        self.assertIn("Do not invent folders", prompts[0])
+
+    def test_without_a_checkout_the_prompt_has_no_tree(self) -> None:
+        self._seed_repo()
+        prompts: list[str] = []
+        result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                 responder=lambda p: prompts.append(p) or self.DRAFT)
+        self.assertNotIn("Repository tree", prompts[0])
+        self.assertEqual(result["warnings"], [])
+
+    def test_made_up_plan_paths_are_flagged(self) -> None:
+        self._seed_repo_with_code()
+        draft = ("Search.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
+                 "- Add `stead/context/search.py`.\n- Register it in `stead/cli.py`.\n"
+                 "- Test in `tests/test_search.py`; run `python -m unittest`.\n")
+        result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                 responder=lambda _p: draft)
+        self.assertEqual(len(result["warnings"]), 2)
+        self.assertIn("stead/context/ is not in the repo", result["warnings"][0])
+        self.assertIn("did you mean ctx/cli.py", result["warnings"][1])
+
+    def test_real_and_new_paths_in_real_folders_pass(self) -> None:
+        self._seed_repo_with_code()
+        draft = ("Search.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
+                 "- New `ctx/search.py`, edit `ctx/cli.py`, test in "
+                 "`tests/test_context_search.py`. See `https://example.com/a/b`.\n")
+        result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                 responder=lambda _p: draft)
+        self.assertEqual(result["warnings"], [])

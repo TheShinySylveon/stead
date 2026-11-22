@@ -1183,6 +1183,8 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(str(exc)) from exc
         print(f"drafted {drafted['id']} -> {drafted['path']}")
         print(f"from {drafted['drafted_from']} (the source issue body is untouched)")
+        for warning in drafted.get("warnings") or []:
+            print(f"warning: {warning}. Fix the plan before approving.")
         print(f"review and approve it with: python -m stead spec approve "
               f"--contribution {drafted['id']}")
         return 0
