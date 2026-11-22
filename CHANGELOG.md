@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The contribution list is a pipeline, not a CRUD grid.** Each build target is
+  one card with a stage (`ready to draft → drafted → approved → built → PR
+  opened → merged/closed`) and a single "next step" button, so you only see the
+  action that matters now. The source issue and its drafted spec collapse into
+  one card, the GitHub-synced dropdowns are gone (CI/review stay as read-only
+  chips), and the reader shows only the next step instead of every action at
+  once.
 - **`sync github` reconciles merged PRs, and the cockpit splits open from done.**
   Cached open PR contributions now get their live state checked during sync, so
   a merged or closed PR stops showing as open (before, sync only fetched open

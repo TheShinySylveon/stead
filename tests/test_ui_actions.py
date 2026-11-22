@@ -468,3 +468,50 @@ def _read(req) -> tuple[int, dict]:
             return resp.status, json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         return exc.status, json.loads(exc.read().decode("utf-8"))
+
+
+class PipelineStageTest(unittest.TestCase):
+    def setUp(self):
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        (self.root / "context/contributions").mkdir(parents=True)
+        (self.root / "context/documents").mkdir(parents=True)
+
+    def _contrib(self, meta, stem, body):
+        (self.root / "context/contributions" / f"{stem}.md").write_text(
+            frontmatter.dumps(meta, body), encoding="utf-8")
+
+    def test_pipeline_collapses_a_draft_and_names_the_next_step(self):
+        source = {"id": "contribution-me-app-issue-9", "type": "contribution",
+                  "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                  "repo": "repo-me-app", "kind": "issue", "number": 9,
+                  "role": "author", "state": "open", "visibility": "public",
+                  "tags": ["stead-build"]}
+        self._contrib(source, "issue-9", "# Flag\n")
+        draft = {"id": "contribution-me-app-issue-9-spec", "type": "contribution",
+                 "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                 "repo": "repo-me-app", "kind": "issue", "number": 9,
+                 "role": "author", "state": "open", "visibility": "public",
+                 "tags": ["feature-spec"], "drafted_from": "contribution-me-app-issue-9",
+                 "spec_sha": "abc123"}
+        self._contrib(draft, "issue-9-spec", "# Flag spec\n")
+
+        rows = ui._pipeline_contribs(self.root, ui._list(self.root, "contribution"))
+        self.assertEqual([r["id"] for r in rows], ["contribution-me-app-issue-9"])
+        row = rows[0]
+        self.assertEqual(row["stage"], "approved")
+        self.assertEqual(row["next"], "build")
+        self.assertEqual(row["act_id"], "contribution-me-app-issue-9-spec")
+
+    def test_ready_to_draft_when_no_spec_exists(self):
+        source = {"id": "contribution-me-app-issue-9", "type": "contribution",
+                  "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                  "repo": "repo-me-app", "kind": "issue", "number": 9,
+                  "role": "author", "state": "open", "visibility": "public",
+                  "tags": ["stead-build"]}
+        self._contrib(source, "issue-9", "# Flag\n")
+        rows = ui._pipeline_contribs(self.root, ui._list(self.root, "contribution"))
+        self.assertEqual(rows[0]["stage"], "draft")
+        self.assertEqual(rows[0]["next"], "draft")
+        self.assertEqual(rows[0]["act_id"], "contribution-me-app-issue-9")

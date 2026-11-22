@@ -124,7 +124,7 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
     }
     for key in ("status", "project", "repo", "kind", "url", "role", "state",
                 "ci", "review", "method", "number", "trigger", "reach",
-                "code_path", "default_branch"):
+                "code_path", "default_branch", "drafted_from", "spec_sha"):
         if meta.get(key) not in (None, ""):
             item[key] = meta[key]
     if otype == "repo":
@@ -142,6 +142,61 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
 def _list(root: Path, otype: str) -> list[dict]:
     return [_summary(root, otype, path, meta)
             for path, meta, _body in objects.iter_objects(root, otype)]
+
+
+def _pipeline_contribs(root: Path, contribs: list[dict]) -> list[dict]:
+    """Collapse each source issue with its drafted spec into one flow card and
+    add the stage, next action, and id to act on. Draft specs are shown through
+    their source issue, so the list reads as one pipeline per build target."""
+    records: dict[str, dict] = {}
+    for _path, meta, _body in objects.iter_objects(root, "document"):
+        if "build-record" not in {str(t).lower() for t in _tags(meta)}:
+            continue
+        cid = str(meta.get("contribution") or "")
+        if not cid:
+            continue
+        prev = records.get(cid)
+        if prev is None or str(meta.get("updated") or "") >= str(prev.get("updated") or ""):
+            records[cid] = meta
+    drafts = {c["drafted_from"]: c for c in contribs if c.get("drafted_from")}
+    out = []
+    for c in contribs:
+        if c.get("drafted_from"):
+            continue
+        out.append({**c, **_stage_for(c, drafts, records)})
+    return out
+
+
+def _contribution_flow(root: Path, cid: str) -> dict:
+    for c in _pipeline_contribs(root, _list(root, "contribution")):
+        if c["id"] == cid:
+            return {"stage": c["stage"], "next": c["next"],
+                    "stage_label": c["stage_label"], "act_id": c["act_id"]}
+    return {}
+
+
+def _stage_for(c: dict, drafts: dict, records: dict) -> dict:
+    state = str(c.get("state") or "").lower()
+    kind = str(c.get("kind") or "")
+    if state == "merged":
+        return {"stage": "merged", "next": None, "stage_label": "Merged", "act_id": c["id"]}
+    if state == "closed":
+        return {"stage": "closed", "next": None, "stage_label": "Closed", "act_id": c["id"]}
+    if kind == "pr":
+        return {"stage": "pr", "next": "merge", "stage_label": "PR open", "act_id": c["id"]}
+    draft = drafts.get(c["id"])
+    if draft is None:
+        return {"stage": "draft", "next": "draft", "stage_label": "Ready to draft", "act_id": c["id"]}
+    did = draft["id"]
+    if draft.get("spec_sha"):
+        rec = records.get(did)
+        if rec and rec.get("pr_url"):
+            return {"stage": "published", "next": "comment",
+                    "stage_label": "PR opened", "act_id": did}
+        if rec and rec.get("branch"):
+            return {"stage": "built", "next": "publish", "stage_label": "Built", "act_id": did}
+        return {"stage": "approved", "next": "build", "stage_label": "Approved", "act_id": did}
+    return {"stage": "drafted", "next": "approve", "stage_label": "Drafted", "act_id": did}
 
 
 def list_inbox(root: Path) -> list[dict]:
@@ -382,7 +437,7 @@ def _alloc_actor(root: Path, title: str) -> tuple[str, Path]:
 def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> dict:
     """Everything the page needs, except object bodies (loaded on open)."""
     tasks = _list(root, "task")
-    contribs = _list(root, "contribution")
+    contribs = _pipeline_contribs(root, _list(root, "contribution"))
     inbox = list_inbox(root)
     runs = _runs(root)
     projects = _list(root, "project")
@@ -473,6 +528,8 @@ def object_detail(root: Path, otype: str, ref: str) -> dict:
     }
     if otype == "project":
         detail["rollup"] = _project_rollup(root, meta.get("id", path.stem))
+    if otype == "contribution":
+        detail["flow"] = _contribution_flow(root, detail["id"])
     return detail
 
 

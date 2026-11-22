@@ -597,25 +597,33 @@ function renderRepos() {
   const repos = state.snap.repos.filter(match);
   const contribs = state.snap.contributions.filter(match);
   const choices = state.snap.choices;
-  const contribRow = (c) => `
+  const ACTIONS = {
+    draft: ["Draft spec", "primary"],
+    approve: ["Approve spec", "primary"],
+    build: ["Build", "primary"],
+    publish: ["Publish PR", "primary"],
+    comment: ["Comment on issue", "quiet"],
+    merge: ["Merge", "quiet"],
+  };
+  const contribRow = (c) => {
+    const action = ACTIONS[c.next];
+    const done = c.stage === "merged" || c.stage === "closed";
+    return `
     <div class="card" style="display:block">
       <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
-        <div>
+        <div style="min-width:0">
           <strong>${esc(c.title)}</strong>
-          <div class="meta">${esc(c.kind)} #${esc(c.number)} · ${esc(c.role)} · ${esc(c.repo)}</div>
+          <div class="meta">${esc(c.kind)} #${esc(c.number)} · ${esc(c.repo)}</div>
         </div>
-        <div class="chips">${chip(c.state, c.state === "open" ? "doing" : "done")}${c.ci && c.ci !== "none" ? chip("ci " + c.ci, c.ci) : ""}${c.review && c.review !== "none" ? chip(c.review, "review") : ""}</div>
+        <div class="chips">${chip(c.stage_label || c.state, done ? "done" : "doing")}${c.ci && c.ci !== "none" ? chip("ci " + c.ci, c.ci) : ""}${c.review && c.review !== "none" ? chip(c.review, "review") : ""}</div>
       </div>
-      <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap;align-items:center">
-        <select data-set-contrib data-id="${esc(c.id)}" data-field="role" aria-label="Role for ${esc(c.title)}">${options(choices.contrib_role, c.role || "author")}</select>
-        <select data-set-contrib data-id="${esc(c.id)}" data-field="state" aria-label="State for ${esc(c.title)}">${options(choices.contrib_state, c.state || "open")}</select>
-        <select data-set-contrib data-id="${esc(c.id)}" data-field="ci" aria-label="CI for ${esc(c.title)}">${options(choices.contrib_ci, c.ci || "none")}</select>
-        <select data-set-contrib data-id="${esc(c.id)}" data-field="review" aria-label="Review for ${esc(c.title)}">${options(choices.contrib_review, c.review || "none")}</select>
-        <select data-set-contrib data-id="${esc(c.id)}" data-field="method" aria-label="Method for ${esc(c.title)}">${options(choices.method, c.method || "spec-kit")}</select>
-        <button type="button" class="quiet" data-open data-type="contribution" data-id="${esc(c.id)}">Read</button>
+      <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        ${action ? `<button type="button" class="${action[1]}" data-action="${c.next}" data-id="${esc(c.act_id)}" data-title="${esc(c.title)}">${action[0]}</button>` : ""}
+        <button type="button" class="quiet" data-open data-type="contribution" data-id="${esc(c.id)}">Details</button>
         ${String(c.url || "").startsWith("https://") ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">GitHub</a>` : ""}
       </div>
     </div>`;
+  };
   const open = contribs.filter(c => c.state !== "merged" && c.state !== "closed");
   const done = contribs.filter(c => c.state === "merged" || c.state === "closed");
   const openRows = open.map(contribRow).join("");
@@ -1136,31 +1144,30 @@ async function openReader(type, id) {
         <textarea name="body" aria-label="Note body">${esc(data.body || "")}</textarea>
         <div><button class="primary" type="submit">Save note</button></div>
       </form>` : "";
+    const flow = data.flow || {};
+    const ACTIONS = {
+      draft: ["Draft spec", "primary"],
+      approve: ["Approve spec", "primary"],
+      build: ["Build", "primary"],
+      publish: ["Publish PR", "primary"],
+      comment: ["Comment on issue", "quiet"],
+      merge: ["Merge", "quiet"],
+    };
+    const nextAct = ACTIONS[flow.next];
+    const done = flow.stage === "merged" || flow.stage === "closed";
     const specEditor = type === "contribution" ? `
       <form id="save-spec" data-id="${esc(data.id || id)}" style="margin-top:16px">
         <div class="section-title">Public spec</div>
         <textarea name="body" aria-label="Public spec body">${esc(data.body || "")}</textarea>
         <div><button class="primary" type="submit">Save public spec</button></div>
       </form>
-      <div style="margin-top:8px"><button type="button" class="quiet" data-approve-spec="${esc(data.id || id)}">Approve this spec for building</button>
-      <span class="meta">Approval binds the current body. Any edit needs re-approval.</span></div>
       <div class="panel" style="padding:12px 14px;margin-top:12px">
-        <strong>Build and review</strong>
-        <div class="inline" style="margin-top:8px">
-          <button type="button" class="quiet" data-draft-spec="${esc(data.id || id)}">Draft spec from this issue</button>
-          <button type="button" class="quiet" data-review="${esc(data.id || id)}">Review</button>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${chip(flow.stage_label || "Ready to draft", done ? "done" : "doing")}
+          ${nextAct ? `<button type="button" class="${nextAct[1]}" data-action="${flow.next}" data-id="${esc(flow.act_id || data.id || id)}" data-title="${esc(title)}">${nextAct[0]}</button>` : ""}
+          ${["approved", "built", "published"].includes(flow.stage) ? `<button type="button" class="quiet" data-review="${esc(flow.act_id || data.id || id)}">Review</button>` : ""}
         </div>
-        <p class="meta">Draft turns a raw issue into a spec with the model — you then approve it. Review runs the independent reviewer against the approved spec.</p>
-      </div>
-      <div class="panel" style="padding:12px 14px;margin-top:12px">
-        <strong>Remote steps</strong>
-        <p class="meta">Each writes to GitHub and asks for confirmation.</p>
-        <div class="inline" style="margin-top:8px">
-          <button type="button" class="quiet" data-publish="${esc(data.id || id)}">Publish PR</button>
-          <button type="button" class="quiet" data-merge="${esc(data.id || id)}">Merge</button>
-          <button type="button" class="quiet" data-comment="${esc(data.id || id)}">Comment on issue</button>
-        </div>
-        <p class="meta">Publish opens a pull request only when the repo ceiling allows it. Merge needs <code>reach: merge</code> and green checks.</p>
+        <p class="meta" style="margin-top:8px">Only the next step is shown. Save edits first, then the stage below follows it.</p>
       </div>` : "";
     const path = data.path ? `<div class="meta">${esc(data.path)}</div>` : "";
     const roll = data.rollup ? `
@@ -1397,6 +1404,43 @@ document.body.addEventListener("click", async (event) => {
       toast("Spec approved (" + result.sha.slice(0, 12) + "…)");
       await load();
     } catch (err) { toast(err.message); }
+    return;
+  }
+  const actionBtn = event.target.closest("[data-action]");
+  if (actionBtn) {
+    const id = actionBtn.dataset.id;
+    const title = actionBtn.dataset.title || id;
+    const act = actionBtn.dataset.action;
+    try {
+      actionBtn.disabled = true;
+      if (act === "draft") {
+        await awaitTask("/api/spec/draft", {contribution: id}, "Draft spec");
+        toast("Drafted. Now approve it.");
+      } else if (act === "approve") {
+        if (!confirm("Approve this spec body for building? Any later edit needs re-approval.")) return;
+        await api("/api/spec/approve", {method: "POST", body: JSON.stringify({contribution: id})});
+        toast("Spec approved");
+      } else if (act === "build") {
+        if (!confirm("Build " + title + " with the model? It plans, runs checks, and commits locally.")) return;
+        const result = await awaitTask("/api/build", {contribution: id}, "Build");
+        toast(result && result.branch ? "Built on " + result.branch : "Build finished");
+      } else if (act === "publish") {
+        if (!confirm("Publish a pull request for this spec? This pushes a branch and opens a PR on GitHub.")) return;
+        await api("/api/factory/publish", {method: "POST", body: JSON.stringify({contribution: id, confirm: true})});
+        toast("Published");
+      } else if (act === "comment") {
+        const prUrl = prompt("PR URL to link on the issue:");
+        if (!prUrl) return;
+        await api("/api/factory/comment", {method: "POST", body: JSON.stringify({contribution: id, pr_url: prUrl, confirm: true})});
+        toast("Commented");
+      } else if (act === "merge") {
+        if (!confirm("Merge this pull request? It merges only when the repo says reach: merge and the checks are green.")) return;
+        await api("/api/factory/merge", {method: "POST", body: JSON.stringify({contribution: id, confirm: true})});
+        toast("Merged");
+      }
+      await load();
+    } catch (err) { toast(err.message); }
+    finally { actionBtn.disabled = false; }
     return;
   }
   const draftSpec = event.target.closest("[data-draft-spec]");
