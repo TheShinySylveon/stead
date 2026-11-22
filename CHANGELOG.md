@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **`stead context search` — read-only search over the context store (#25).**
+  `stead context search QUERY` lists matching objects with their path and a
+  one-line snippet centered on the match. `--repo ID` limits the scan to one
+  repo's objects (the repo file plus anything that references it through a
+  `repo:` field or `repo:` tag), and `--json` emits a machine-readable list of
+  `{id, type, path, snippet}`. The scan is case-insensitive, calls no model,
+  touches no network, and writes nothing — it does not even create `state.db`.
+  The first Set A dogfood spec: built by Stead and merged as #30.
 - **`spec draft`, `factory run --generate`, and `eval judge` use the model's
   `call_timeout`.** They had a fixed 120 s limit, so a 27B model drafting with
   the repo tree in the prompt timed out with a raw traceback. A timeout now

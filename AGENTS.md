@@ -140,6 +140,7 @@ python -m stead task add --title T --project P [--status to-do]
 python -m stead task list [--project P] [--status S]
 python -m stead task set ID --status S
 python -m stead status PROJECT                # task rollup + recent factory runs
+python -m stead context search QUERY [--repo ID] [--json]  # read-only search over context objects
 
 python -m stead repo add --title T [--url URL] [--kind own|oss] [--status active|paused|archived]
 python -m stead repo list [--kind own|oss]
