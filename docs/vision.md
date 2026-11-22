@@ -304,10 +304,13 @@ factories unless `--force`) and a cockpit delete with confirmation.
 
 **Safety / autonomy**
 
-- Independent reviewer pass before merge: a second model or prompt, recorded as
-  a required verdict. Not built.
-- Token and dollar budgets, plus a provider-usage-funded spend cap. Today only
-  wall-clock, step, edit, and daily-build-count bounds exist.
+- Independent reviewer pass before merge is **built**: a fresh model invocation
+  must approve the diff against the spec, unless `merge_without_review: true`.
+  Remaining: a stronger, model-agnostic reviewer and a recorded per-spec
+  acceptance check (see [Trust](trust.md)).
+- Token and USD budgets are **built** (`--max-tokens`, `--max-cost`, default 2M
+  tokens). Remaining: a provider-usage-funded spend cap and provider-side quota
+  enforcement.
 
 **The executor**
 
@@ -351,12 +354,13 @@ factories unless `--force`) and a cockpit delete with confirmation.
   ledger (`stead metrics`) is the published dogfood metric.
 - Missing capability for the full loop: **filing GitHub issues upstream**. Sync
   is read-only and publish only opens PRs; "create" today means local
-  spec/contribution objects.
-- **MVP blocker:** commenting on issues/PRs (link the PR, CI status). Humans
-  file the issues; Stead monitors and responds so a human can merge and close
-  together. A gated remote write, not built yet — see
-  [Trust](trust.md#github-writes-beyond-opening-a-pr) and [MVP](mvp.md).
+  spec/contribution objects (and `stead spec draft` from a synced issue).
+- **Issue commenting is built:** `stead factory comment` posts (or updates) a
+  marked comment on the source issue linking the PR, gated by `allow_comment:
+  true` and `kind: own`. See [Trust](trust.md#github-writes-beyond-opening-a-pr).
 - Filing issues upstream is deferred past MVP (humans file issues for now).
-- Missing guard against empty work: an **acceptance check** that exercises the
-  feature independent of the model's tests, run in CI. `require_tests` + required
-  CI cover most of it; a trivially-passing test still slips through.
+- The fail-before/pass-after gate (M1) closes most empty work: the base suite
+  must pass first, a new test must fail against the base without the code
+  change, and the branch must pass. Remaining: a per-spec `acceptance:` command
+  that exercises the feature in CI, independent of the model's tests — a
+  trivially-passing test still slips through.

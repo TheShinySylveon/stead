@@ -167,7 +167,9 @@ python -m stead inbox import PATH
 python -m stead hook set
 python -m stead hook show
 python -m stead schedule show [--project P] [--watch] [--merge]
+python -m stead schedule show --interval hourly|daily [--watch] [--merge]
 python -m stead schedule install [--project P] [--watch] [--merge]
+python -m stead schedule install --interval hourly|daily [--watch] [--merge]
 ```
 
 `inbox import` copies a local `.eml`, `.ics`, `.md`, or `.txt` file into
@@ -182,33 +184,56 @@ rejects a command over 261 characters. The job runs a read-only sync, a local
 digest if the cache changed, a maintenance draft, and the status of
 `--project` when you pass one. It does not push or merge.
 
+`schedule show --interval hourly|daily` prints the shorter monitor cadence — a
+read-only sync followed by `factory watch --build --publish` for enabled specs.
+`schedule install --interval` registers it as its own task
+(`private/run-monitor.cmd`), separate from the weekly digest job. Manual-only
+does not satisfy the monitor requirement; land the attempt-gate and kill fixes
+before turning on an hourly task.
+
 ## Publishing and merging
 
 ```bash
+python -m stead spec draft --contribution ID [--redraft]
 python -m stead spec approve --contribution ID
 python -m stead factory publish --contribution ID
 python -m stead factory merge --contribution ID
+python -m stead factory comment --contribution ID --pr-url URL
 python -m stead build --contribution ID [--publish] [--merge] [--resume] [--retry] \
     [--wait] [--steps N] [--repair-rounds N] [--max-minutes N] \
     [--max-tokens N] [--max-cost USD]
 ```
 
-`spec approve` records a SHA-256 of the contribution body. A build refuses an
-unapproved spec, and refuses a spec whose body changed since approval. The
-`author` role and `feature-spec` tag are labels; the hash is the gate.
+`spec draft` turns a raw issue into a buildable spec in one model call: a new
+`feature-spec`-tagged contribution linked to the source issue (which is left
+untouched). It refuses to draft from the unedited sync cache stub, from a draft,
+or when a draft already exists — pass `--redraft` to replace the existing draft
+and clear its approval. The draft must have a `## Acceptance criteria`
+checklist and a `## Plan` section.
 
-`factory publish` pushes the checkout's current branch and opens a pull
-request. The branch must not be the default, and it must be ahead of that
-default. Set `code_path` with `repo set --path` first. The ceiling must be
-`draft-pr`, `pr`, or `merge`. This command does not merge.
+`spec approve` records a SHA-256 of the contribution body and prints the body
+being approved. A build refuses an unapproved spec, and refuses a spec whose
+body changed since approval. The `author` role and the `feature-spec` /
+`stead-build` tags are labels; the hash is the gate.
+
+`factory publish` pushes the build branch and opens a pull request. The branch
+must not be the default, and it must be ahead of that default. Set `code_path`
+with `repo set --path` first. The ceiling must be `draft-pr`, `pr`, or `merge`.
+This command does not merge.
 
 `factory merge` is separate. The repo file must say `reach: merge`. The pull
 request must be open, and the checks must be green. The checks run must be
 isolated (`checks_isolation: docker`) or explicitly trusted
 (`trust_checks: host`), and the default branch must have required status
-checks unless the repo says `merge_without_required_checks: true`. It does not
-pass `--admin`, and it does not push the default branch. A factory run does not
-call it.
+checks unless the repo says `merge_without_required_checks: true`. An
+independent reviewer pass must approve the diff unless
+`merge_without_review: true`. It does not pass `--admin`, and it does not push
+the default branch. A factory run does not call it.
+
+`factory comment` posts — or updates — a marked comment on the source issue
+linking the PR. It is the only other remote write, and the most gated:
+`allow_comment: true` on the repo, `kind: own` only, and the PR URL must be in
+the same repo. It runs automatically after `build --publish` when enabled.
 
 `build` is the model-driven implementation step. It needs a configured model, a
 repo `code_path`, and a buildable, approved spec. Every build runs in its own

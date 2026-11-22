@@ -55,7 +55,8 @@ Four things worth saying on the front page:
 
 - **A spec is approved by content, not by a tag.** `stead spec approve` stores a
   hash of the body; any later edit needs re-approval before a build. The
-  `author` role and `feature-spec` tag are labels, not permissions.
+  `author` role and the `feature-spec`/`stead-build` tags are labels, not
+  permissions — the hash is the gate.
 - **Checks run code the model wrote.** With no container, they run on your host
   with a scrubbed environment — not in a sandbox. Set `checks_isolation: docker`
   and `checks_image` for real isolation; merge requires that, or an explicit
@@ -64,8 +65,9 @@ Four things worth saying on the front page:
   protected paths. A repo can opt in per group.
 - **Merge requires more than a green build.** The repo must say `reach: merge`,
   every check must be green, the default branch must have required status
-  checks, and Stead never passes `--admin`. There is no independent reviewer
-  pass yet; that is a known gap.
+  checks, and Stead never passes `--admin`. An **independent reviewer pass** (a
+  fresh model invocation that must approve the diff against the spec) runs
+  before the merge unless the repo sets `merge_without_review: true`.
 
 ## What you get
 
@@ -77,7 +79,8 @@ Four things worth saying on the front page:
 - Four factories that plan, assemble, and — with a model — execute a pipeline.
   `--generate` drafts text; `stead build` edits code, runs checks, and commits.
 - A model-driven build under explicit bounds: `--max-minutes`, a step cap, a
-  stop file (`stead factory stop`), and a daily watched-build budget.
+  token budget (`--max-tokens`), an optional USD budget (`--max-cost`), a stop
+  file (`stead factory stop`), and a daily watched-build budget.
 - A weekly local job that syncs read-only and drafts, plus `stead run file` to
   keep an approved draft as a private document.
 - A repo wiki as a Confluence-style space: home page, page tree, child pages,
@@ -154,7 +157,7 @@ merge a pull request under that repo's reach.
 |---|---|
 | `weekly-contribution-digest` | PRs in flight, reviews waiting, claimed issues, CI |
 | `weekly-project-status` | A status note from one project's tasks, docs, and meetings |
-| `feature-builder` | A plan and proposed diff from a feature spec you authored |
+| `feature-builder` | A plan and proposed diff from an enabled feature spec |
 | `context-maintenance` | Inbox, broken relations, stale objects, duplicate titles |
 
 `feature-builder` is planning-first on every run. `method: spec-kit` (the
@@ -166,14 +169,22 @@ Shadow is the only mode the cockpit offers, and the CLI default. Assembly
 does not push. `stead factory publish` opens a pull request from an isolated
 branch when that repo's ceiling allows it. `stead factory merge` is separate,
 and only when the repo file says `reach: merge`, the checks are green, the
-checks run is isolated (or explicitly trusted), and the default branch has
-required status checks.
+checks run is isolated (or explicitly trusted), the default branch has required
+status checks, and the independent reviewer has approved. `stead factory
+comment` posts (or updates) a marked comment on the source issue linking the PR
+— gated by `allow_comment: true` and `kind: own`.
+
+The build loop, end to end: `stead spec draft` turns a raw issue into an
+approvable spec in one model call, `stead spec approve` binds approval to the
+body hash, and `stead build` runs in its own worktree, enforces the
+fail-before/pass-after test gate, and can publish.
 
 ```bash
 python -m stead sync github --limit 30    # read-only, needs gh
 python -m stead sync github --digest      # assemble only if the cache changed
 python -m stead digest                    # shadow digest
 python -m stead schedule show             # the Friday local jobs
+python -m stead schedule show --interval hourly   # the shorter monitor cadence
 ```
 
 An approved digest or status becomes a private document:
@@ -229,12 +240,16 @@ Pull requests build the Docker image. `main` publishes
 - **Checks are not sandboxed unless you ask.** The default is the host with a
   scrubbed environment. `checks_isolation: docker` gives a container with no
   network. Merge requires one of those, or an explicit `trust_checks: host`.
-- **There is no independent reviewer pass before merge.** The controls are the
-  repo's checks, the required-check rule, protected test/CI paths, and the
-  explicit `reach: merge`.
-- **Budgets are time and count, not spend.** A build has a wall-clock cap, a
-  step cap, and an edit cap; watched runs have a daily build count. There is no
-  token or dollar cap yet.
+- **The independent reviewer is a model, not a guarantee.** A fresh invocation
+  must approve the diff against the spec before merge (unless
+  `merge_without_review: true`). It can be fooled by a plausible diff, and it
+  shares the builder's endpoint unless `stead model set --review` names another
+  model.
+- **Budgets are time, count, tokens, and optional spend.** A build has a
+  wall-clock cap (`--max-minutes`), a step cap, an edit cap, a daily
+  watched-build count, a token budget (default 2M, `--max-tokens`), and an
+  optional USD budget once model prices are set (`--max-cost`). A
+  provider-side quota is still worth setting for defense in depth.
 - The build executor is Stead's own whole-file edit loop. A pluggable executor
   (hand the edit loop to a headless agent in a sandbox, keep the gates) and a
   stronger eval gate are planned; see [Vision](docs/vision.md) and

@@ -71,7 +71,7 @@ Stead grants autonomy per repo with two knobs:
 | `shadow` | Plan and propose. No remote writes. The default. | A person reads the bundle |
 | `draft-pr` | Push an isolated branch and open a draft pull request | A person promotes and merges |
 | `pr` | Push an isolated branch and open a normal pull request | A person merges |
-| `merge` | The above, then merge when the merge gates pass | The gates; no independent reviewer yet |
+| `merge` | The above, then merge when the merge gates pass | The gates, including an independent reviewer pass |
 
 Merge is never inherited from the install default. The lifecycle
 capture → context → spec → build → deliver is the same pipeline described in

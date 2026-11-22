@@ -102,11 +102,12 @@ with `spec-kit`; sync never overrides a value you set.
 A contribution doubles as a **buildable feature spec** — the input to the
 `feature-builder` factory (issue → PR autonomous build) — when ALL of:
 
-- `kind: issue` and `role: author` (you authored the spec), linked to a `repo`
-- `tags:` includes `feature-spec` (marks it as a build target)
+- `kind: issue`, linked to a `repo`
+- `tags:` includes `feature-spec` or `stead-build` (marks it as an enabled
+  build target; the `author` role is a label, not a gate)
 - the body contains a feature description followed by a `## Acceptance
   criteria` section with a `- [ ]` checklist — one concrete, testable
-  criterion per item
+  criterion per item — and, after it, a `## Plan` section
 
 ```markdown
 ---
