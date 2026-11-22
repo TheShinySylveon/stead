@@ -43,6 +43,26 @@ MAX_MINUTES = 30
 STALE_LOCK_SECONDS = 6 * 3600
 LOCK_NAME = ".stead-build.lock"
 
+# Structured output for the model call: pin the reply to one action object.
+# JSON-schema form (not `json_object`): LM Studio enforces `json_schema`/`text`,
+# and json_object only guarantees valid JSON, not one action of the right shape.
+_ACTION_RESPONSE_FORMAT = {
+    "type": "json_schema",
+    "json_schema": {
+        "name": "build_action",
+        "strict": True,
+        "schema": {
+            "type": "object",
+            "properties": {
+                "action": {"type": "string", "enum": [
+                    "plan", "list", "read", "search", "write", "delete",
+                    "check", "propose", "finish"]},
+            },
+            "required": ["action"],
+        },
+    },
+}
+
 
 class BuildError(Exception):
     """A build failure, tagged with a reason code for the record.
@@ -169,6 +189,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     checks_mode = "none"
     chars_sent = 0
     chars_received = 0
+    latency_ms = 0
     commit_base = ""
     base_tracked_cf: set[str] = set()
     branch_tracked: set[str] = set()
@@ -213,6 +234,17 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                            if line}
         branch_tracked = _tracked_files(run, code)
         git_before = safety.git_state_snapshot(code)
+        require_tests = safety.truthy(repo_meta.get("require_tests", "true"))
+        if checks and not ghost and require_tests:
+            # (a) The base alone must pass before the model runs: a pre-existing
+            # red suite cannot satisfy "fails before", and it is a harness
+            # problem, not the model's.
+            ok, _output, _mode = _run_checks(code, checks, repo_meta, deadline)
+            if not ok:
+                raise BuildError(
+                    "the base suite is red before the model ran. Fix the repo's "
+                    "checks so the fail-before/pass-after gate can run.",
+                    reason="infrastructure")
         custom_responder = responder is not None
         usage = {"prompt_tokens": 0, "completion_tokens": 0,
                  "estimated": custom_responder}
@@ -226,8 +258,26 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         if responder is None:
             from ctx import models
             settings = models.resolve(root)
-            responder = lambda prompt: models.complete(prompt, settings, timeout=300,
-                                                       usage=usage)
+
+            def responder(prompt):
+                if responder._plain:
+                    return models.complete(prompt, settings, timeout=300,
+                                           usage=usage)
+                try:
+                    return models.complete(prompt, settings, timeout=300,
+                                           usage=usage,
+                                           response_format=_ACTION_RESPONSE_FORMAT)
+                except models.ModelError as exc:
+                    # A server that does not support structured output rejects
+                    # it with a 400 naming `response_format`. Retry once without
+                    # it and remember to skip it for the rest of the build.
+                    if "response_format" in str(exc):
+                        responder._plain = True
+                        return models.complete(prompt, settings, timeout=300,
+                                               usage=usage)
+                    raise
+
+            responder._plain = False
             prices = (settings.get("input_price_per_mtok") or 0.0,
                       settings.get("output_price_per_mtok") or 0.0)
         tree = _tree(code)
@@ -249,7 +299,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 progress_nudged = True
             full_prompt = prompt + "\n\n" + "\n\n".join(_fit_budget(prompt, transcript))
             chars_sent += len(full_prompt)
+            _step_start = time.monotonic()
             reply = responder(full_prompt)
+            latency_ms += round((time.monotonic() - _step_start) * 1000)
             chars_received += len(reply) if isinstance(reply, str) else len(str(reply))
             replies.append(reply if isinstance(reply, str) else str(reply))
             if custom_responder:
@@ -477,6 +529,31 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                             "check and finish again. Do not finish yet.")
                         continue
                 if checks and not ghost:
+                    # (b) Fail-before: the new test must fail against the base
+                    # (without the model's code change). A test that passes
+                    # anyway proves nothing, so feed it back like a missing test
+                    # and fail only when the repair rounds run out.
+                    if require_tests and criteria:
+                        new_tests = [p for p in list(files)
+                                     if safety.is_test_path(p)
+                                     and p.casefold() not in base_tracked_cf]
+                        if new_tests and not _require_fail_before(
+                                run, anchor, code, default, new_tests, files,
+                                checks, repo_meta, deadline):
+                            no_test += 1
+                            if no_test > repair_rounds:
+                                raise BuildError(
+                                    "the new test passes without the code change. "
+                                    "A test that does not fail before the change "
+                                    "proves nothing: write one that fails without "
+                                    "the change and passes with it.", reason="gate")
+                            transcript.append(
+                                "The new test passes without the code change. It "
+                                "does not actually exercise the change, so it "
+                                "proves nothing. Rewrite it so it fails without "
+                                "your change and passes with it, then run check "
+                                "and finish again. Do not finish yet.")
+                            continue
                     ok, output, checks_mode = _run_checks(code, checks, repo_meta, deadline)
                     if not ok:
                         failures += 1
@@ -566,6 +643,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     "elapsed_seconds": round(time.monotonic() - started, 1),
                     "chars_sent": chars_sent,
                     "chars_received": chars_received,
+                    "latency_ms": latency_ms,
                     "tokens_in": usage["prompt_tokens"],
                     "tokens_out": usage["completion_tokens"],
                     "cost_usd": round(usage["prompt_tokens"] / 1e6 * prices[0]
@@ -826,6 +904,42 @@ def _run_checks(code: Path, command: str, repo_meta: dict,
             "git's own execution surface: hooks and config would run on the host "
             "with Stead's environment. Refusing to continue.", reason="tamper")
     return ok, output, mode
+
+
+def _require_fail_before(run, anchor: Path, code: Path, default: str,
+                         new_tests: list[str], files: dict, checks: str,
+                         repo_meta: dict, deadline: float) -> bool:
+    """(M1.5b) The new test must FAIL against the base, without the code change.
+
+    The model's new test files are applied to a temporary worktree at the base
+    commit (no code change) and the checks run there. Returns True when the test
+    fails (it genuinely exercises the change) and False when it passes anyway
+    (trivial or wrong). The user's checkout and the build branch are never
+    touched."""
+    wt = Path(tempfile.mkdtemp(prefix="stead-fb-"))
+    try:
+        # Detached at the default branch tip: a branch worktree would collide
+        # with the anchor's own checkout of the default branch.
+        base_sha = _git(run, anchor, ["rev-parse", default]).strip()
+        _git(run, anchor, ["worktree", "add", "--detach", str(wt), base_sha])
+    except Exception as exc:
+        raise BuildError(f"could not create a fail-before worktree: {exc}",
+                         reason="infrastructure") from exc
+    try:
+        for rel in new_tests:
+            content = files.get(rel)
+            if content is None:
+                continue
+            target = wt / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(content, encoding="utf-8")
+        ok, _output, _mode = _run_checks(wt, checks, repo_meta, deadline)
+        return not ok
+    finally:
+        try:
+            _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
+        except Exception:
+            pass
 
 
 def _porcelain(run, code: Path) -> list[tuple[str, str]]:
