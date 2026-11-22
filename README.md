@@ -9,8 +9,8 @@
 Stead is one store of markdown files with two readers. Agents get scoped
 bundles; people get a wiki over the same files. Each repo has one dial for how
 far a factory may act on that context: draft, open a pull request, or merge.
-Every build writes its plan, summary, and outcome back to the store, so the
-next one starts with more context than the last.
+Every build records its plan, summary, files, and outcome in a run ledger
+linked to the spec, so the work leaves a trace instead of vanishing.
 
 It is built for the solo open-source contributor first: the person with a
 dozen repos, a weekly review queue, and no wish to hand a vendor their notes.
@@ -220,9 +220,10 @@ Pull requests build the Docker image. `main` publishes
   with model. The endpoint is yours: OpenAI, Anthropic, Grok, or another
   chat server. Prompt contents and the egress table:
   [docs/trust.md](docs/trust.md).
-- Write-back today is the run ledger: plan, summary, files, checks mode, and
-  outcome. It does not yet write decisions or glossary entries back
-  automatically, and it does not close tasks.
+- Write-back today is the local run ledger: plan, summary, files, checks mode,
+  and outcome. It is not versioned (`factories/*/runs/` is gitignored, and
+  `stead init` drops the runs table). It does not yet write decisions or
+  glossary entries back automatically, and it does not close tasks.
 - `specify` is optional. If it is missing, onboarding still writes the
   constitution in `context/documents/`.
 - Frontmatter is a flat YAML subset, not full YAML. `stead doctor` reports a
