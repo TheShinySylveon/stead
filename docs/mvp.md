@@ -59,7 +59,7 @@ milestone's own measurement passed). Only the second is "done".
 | Milestone | Code | Acceptance |
 |---|---|---|
 | M0 foundations | landed | not run |
-| M1 harness | landed | baseline + first-attempt score **not run** |
+| M1 harness | landed | Set A spec 2 built correctly on a 27B model (tuning, not scored); baseline + Set B first-attempt score **not run** |
 | M5 spec draft | landed | not run |
 | M3 intake | landed | not run |
 | M2 comment | landed | not run |
@@ -67,6 +67,13 @@ milestone's own measurement passed). Only the second is "done".
 
 The code milestones above carry the review fixes for PRs #4–#8. Acceptance needs
 real model runs and a green PR at the `pr` ceiling, per [Dogfood](dogfood.md).
+
+**2026-11-22:** the first real-model runs on Arete 27B found four harness gaps,
+fixed in #15, #17, #18, and #21 (stale-branch records, per-call timeout, long
+files unreadable and unwritable, update merges counted as human edits). After
+them, Set A spec 2 (`metrics --since`) built correctly, was published at `pr`
+as #20, passed CI, and was merged by a human; `sync github` recorded it as
+merged with no human edits. Details: [Dogfood](dogfood.md#arete-27b-2026-11-22).
 
 ## In scope (state)
 
@@ -76,11 +83,11 @@ real model runs and a green PR at the `pr` ceiling, per [Dogfood](dogfood.md).
 | Monitor: `sync github` + `trigger: watch` + scheduler | working (read-only) |
 | Spec/docs/plan: `spec draft` + `spec approve` | built; **validate the monitor→draft→approve flow end to end** |
 | Spec approval by content hash | working |
-| Build correctness on a local model | harness built (structured output, fail-before/pass-after); **first-attempt score not run** |
+| Build correctness on a local model | harness built (structured output, fail-before/pass-after, line-range reads, exact edits); one Set A spec correct on Arete 27B; **first-attempt score not run** |
 | `require_tests`, protected paths, scrubbed/container checks | working |
-| PR from isolated branch (`pr`) | working |
+| PR from isolated branch (`pr`) | working: #20 published by `factory publish`, CI green, human-merged |
 | **Comment on the issue linking the PR** | built (gated: `allow_comment`, `kind: own`) |
-| Write-back record + `stead metrics` | working |
+| Write-back record + `stead metrics` | working: a human merge reconciles via `sync github` (scoped with `--repo`, #22); update-from-base merges are not human edits (#21) |
 | Merge gates (green + required checks, no `--admin`) | working (human merges at MVP) |
 | `stead doctor`, cockpit local read/build | working |
 
@@ -92,11 +99,18 @@ more code:
 
 1. **Build correctness on a real model.** Run the baseline and score Set B on a
    single first attempt — a build must meet the spec or fail honestly. See
-   [Dogfood](dogfood.md).
+   [Dogfood](dogfood.md). Not started: one Set A (tuning) spec has built
+   correctly on Arete 27B; Set A specs 1 and 3, the baseline, and Set B are
+   not run. A build takes about 35 minutes on that model.
 2. **Reach a green PR at `pr`.** `build --publish --wait` with CI as a required
-   check, then a human review and merge.
+   check, then a human review and merge. **Mostly met (#20):** green CI on the
+   required checks, a human merge, and the merge reconciled into the record.
+   Not yet exercised: publishing from `build --publish --wait` (#20 used
+   `factory publish` after the build) and the issue comment (the spec was a
+   local issue, not a GitHub one). Both are covered by the M7 run.
 3. **Run the sign-off (M7).** The monitor → draft → approve → build → PR →
-   comment → merge loop on the frozen Set C + hold-out.
+   comment → merge loop on the frozen Set C + hold-out. Not run: label intake,
+   `spec draft`, and the issue comment have not run against a real issue.
 
 ## Deferred until MVP (recorded, not lost)
 

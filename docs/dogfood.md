@@ -274,7 +274,38 @@ the new test re-runs on the PR, and required CI blocks merge. An **acceptance
 check** that exercises the feature itself is still needed to catch a
 trivially-passing test.
 
-Aggregate, from `stead metrics --json`: _pending more runs_.
+### Arete 27B (2026-11-22)
+
+Set A spec 2 (`metrics --since`), the tuning set, so these runs are not scored.
+
+| Field | Value |
+|---|---|
+| model (name + quantization) | `nousresearch_arete-27b` via LM Studio (quantization not recorded) |
+| context length the model loaded with | 64,000 |
+| LM Studio version | not recorded |
+| harness commit | `06bfddb` (#18), with #15 and #17 |
+| call timeout | 1,200 s (`model set --call-timeout`) |
+
+| Attempt | Outcome (reason) | What happened | Fix |
+|---|---|---|---|
+| 1 | failed (timeout, 437 s) | Good plan; read `ctx/metrics.py` and `ctx/cli.py`; the fourth model call ran past the fixed 300 s limit and surfaced as a raw traceback. | #17: per-model `--call-timeout`, clean message |
+| 2 | failed (budget, 90 min) | Wrote a correct `ctx/metrics.py`, then spent 18 of 22 turns re-reading `ctx/cli.py`. Reads stopped silently at 40,000 characters, `cli.py` is 73,000, and `write` replaces whole files, so the command handler at line 942 was never visible or safely writable. | #18: line-range `read`, a cut-off notice, exact-snippet `edit` |
+| 3 | committed, **correct** | 34 minutes, about 20 turns, no repair rounds. Searched, read `cli.py` lines 620–632 and 938–958, changed both with `edit`, added `tests/test_metrics_since.py` (fails before, passes after), checks passed. | — |
+
+Attempt 3 was hand-checked against the rubric (`--since 2026-11-22` counts 4 of
+5 records; `--since banana` prints a clear error and exits 1; full suite green),
+published at `pr` with `factory publish` as #20, passed the required checks
+after "Update branch", and was merged by a human. `sync github` recorded it as
+merged with `human_edits: false`.
+
+Other gaps the same day, fixed: a killed rebuild could wedge the spec on a
+stale record (#15); `factory publish` did not save the PR url, so the merge
+would never reconcile (#21); and `sync github` pulled every open PR the user
+had into the dogfood store (#22, `--repo` with `--remember`).
+
+Aggregate, from `stead metrics` (2026-11-22, all on `metrics --since`): 5
+builds, 1 merged, 1 correct, 1 incorrect (the LFM3 run above), 3 failed (2
+build-class, 1 infrastructure), 0 merged after a human edit.
 
 Publish these here and link them from the README once they exist. Until then the
 honest claim is the pipeline and the gates, not a success rate.
