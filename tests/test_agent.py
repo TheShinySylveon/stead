@@ -1398,3 +1398,110 @@ class GhostBuildTest(BuildFixture):
                 agent.build(self.root, "contribution-me-app-issue-42",
                             responder=lambda _p: "{}", **flags)
             self.assertIn("ghost", str(caught.exception))
+
+
+class ReadAndEditTest(BuildFixture):
+    """A file longer than one read is shown in parts, and an existing file is
+    changed by exact replacement, so a long file (ctx/cli.py) can be built."""
+
+    def _commit_big_file(self) -> str:
+        lines = [f"def helper_{n}():\n    return {n}\n\n" for n in range(3000)]
+        lines.append("def target():\n    return 'old'\n")
+        text = "".join(lines)
+        (self.code / "big.py").write_text(text, encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "big file")
+        self.assertGreater(len(text), agent.MAX_READ_CHARS)
+        return text
+
+    def test_a_long_read_says_where_it_was_cut_and_a_range_reads_the_rest(self) -> None:
+        self._commit_big_file()
+        prompts: list[str] = []
+        queue = [
+            {"action": "plan", "summary": "Change target."},
+            {"action": "read", "path": "big.py"},
+            {"action": "read", "path": "big.py", "start": 9000},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ]
+
+        def responder(prompt: str) -> str:
+            prompts.append(prompt)
+            return json.dumps(queue.pop(0))
+
+        agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        after_first_read = prompts[2]
+        self.assertIn("read big.py lines 1-", after_first_read)
+        self.assertIn("cut off at line", after_first_read)
+        self.assertIn('"start":', after_first_read)
+        self.assertNotIn("def target():", after_first_read)
+        after_range = prompts[3]
+        self.assertIn("read big.py lines 9000-9002 of 9002:", after_range)
+        self.assertIn("def target():\n    return 'old'", after_range)
+
+    def test_edit_replaces_one_snippet_and_keeps_the_rest_of_a_long_file(self) -> None:
+        original = self._commit_big_file()
+        responder = self._responder([
+            {"action": "plan", "summary": "Change target."},
+            {"action": "search", "query": "def target"},
+            {"action": "read", "path": "big.py", "start": 9000, "end": 9002},
+            {"action": "edit", "path": "big.py",
+             "old": "def target():\n    return 'old'\n",
+             "new": "def target():\n    return 'new'\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["files"], ["big.py"])
+        committed = self._branch_file("stead/42-add-a-name-flag", "big.py")
+        self.assertEqual(committed.replace("\r\n", "\n"),
+                         original.replace("return 'old'", "return 'new'"))
+
+    def test_a_missing_or_ambiguous_edit_is_feedback_not_a_failure(self) -> None:
+        (self.code / "app.py").write_text("print('hi')\nprint('hi')\n", encoding="utf-8")
+        _git(self.code, "commit", "-am", "two prints")
+        prompts: list[str] = []
+        queue = [
+            {"action": "plan", "summary": "Change one print."},
+            {"action": "edit", "path": "app.py", "old": "print('hi')", "new": "x"},
+            {"action": "edit", "path": "app.py", "old": "print('bye')", "new": "x"},
+            {"action": "edit", "path": "app.py", "old": "print('hi')\nprint('hi')\n",
+             "new": "print('hi')\nprint('there')\n"},
+            {"action": "finish", "summary": "Done."},
+        ]
+
+        def responder(prompt: str) -> str:
+            prompts.append(prompt)
+            return json.dumps(queue.pop(0))
+
+        result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertTrue(result["ok"])
+        self.assertIn("old matches 2 places", prompts[2])
+        self.assertIn("old was not found", prompts[3])
+        self.assertIn("print('there')",
+                      self._branch_file("stead/42-add-a-name-flag", "app.py"))
+
+    def test_edit_before_a_plan_is_refused(self) -> None:
+        responder = self._responder([
+            {"action": "edit", "path": "app.py", "old": "hi", "new": "yo"},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertIn("edit before a plan", str(caught.exception))
+
+    def test_edit_of_an_existing_test_is_refused_like_write(self) -> None:
+        (self.code / "tests").mkdir()
+        (self.code / "tests/test_app.py").write_text("assert True\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "a test")
+        responder = self._responder([
+            {"action": "plan", "summary": "Weaken the test."},
+            {"action": "edit", "path": "tests/test_app.py",
+             "old": "assert True", "new": "pass"},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertIn("protected", str(caught.exception))
+        self.assertEqual((self.code / "tests/test_app.py").read_text(encoding="utf-8"),
+                         "assert True\n")
