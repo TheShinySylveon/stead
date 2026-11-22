@@ -24,7 +24,7 @@ class PublishTest(FeatureBuilderTestCase):
     def setUp(self) -> None:
         super().setUp()
         self.seed_spec()
-        self.code = Path(tempfile.mkdtemp())
+        self.code = Path(tempfile.mkdtemp()).resolve()
         self.addCleanup(lambda: __import__("shutil").rmtree(self.code, ignore_errors=True))
 
     def test_shadow_ceiling_never_calls_git(self) -> None:

@@ -1118,7 +1118,7 @@ def _resolved_rel(target: Path, code: Path) -> str:
     """The path after symlinks: protection matches the real target, not the
     name the model gave (a symlinked directory must not sidestep tests/**)."""
     try:
-        return target.resolve().relative_to(code).as_posix()
+        return target.resolve().relative_to(code.resolve()).as_posix()
     except ValueError:
         raise BuildError(f"path leaves the repository: {target}")
 
@@ -1434,7 +1434,7 @@ def _safe_rel(raw: str) -> str:
 
 def _ignored(path: Path, code: Path) -> bool:
     try:
-        relative = path.resolve().relative_to(code)
+        relative = path.resolve().relative_to(code.resolve())
     except ValueError:
         raise BuildError(f"path leaves the repository: {path}")
     return any(part.casefold() in IGNORE_DIRS or part.casefold() == LOCK_NAME

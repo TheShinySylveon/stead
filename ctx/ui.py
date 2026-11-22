@@ -102,7 +102,9 @@ class UiError(Exception):
 
 
 def _rel(root: Path, path: Path) -> str:
-    return path.relative_to(root).as_posix()
+    # Resolve both so Windows 8.3 short names (TEMP = C:\Users\RUNNER~1\...)
+    # don't make a resolved path fail `relative_to` against an unresolved root.
+    return path.resolve().relative_to(root.resolve()).as_posix()
 
 
 def _tags(meta: dict) -> list[str]:
