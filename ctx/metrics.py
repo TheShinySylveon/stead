@@ -13,6 +13,7 @@ loopback page.
 
 from __future__ import annotations
 
+from datetime import date, datetime
 from pathlib import Path
 
 from ctx import objects
@@ -34,7 +35,18 @@ def _list(value) -> list:
     return []
 
 
-def collect(root: Path, repo: str | None = None) -> dict:
+def _parse_date(value: str) -> date:
+    """Parse a YYYY-MM-DD string into a date. Raise a clear ValueError otherwise."""
+    try:
+        return datetime.strptime(value, "%Y-%m-%d").date()
+    except (TypeError, ValueError):
+        raise ValueError(f"invalid date {value!r}; expected YYYY-MM-DD")
+
+
+def collect(root: Path, repo: str | None = None, since: str | None = None) -> dict:
+    since_date = None
+    if since is not None:
+        since_date = _parse_date(since)
     records = []
     for _path, meta, _body in objects.iter_objects(root, "document"):
         tags = {str(t).lower() for t in (meta.get("tags") or [])}
@@ -42,6 +54,14 @@ def collect(root: Path, repo: str | None = None) -> dict:
             continue
         if repo and f"repo:{repo}".lower() not in tags:
             continue
+        if since_date is not None:
+            created = str(meta.get("created") or "")
+            try:
+                created_date = datetime.strptime(created, "%Y-%m-%d").date()
+            except (TypeError, ValueError):
+                continue
+            if created_date < since_date:
+                continue
         records.append(meta)
     records.sort(key=lambda m: str(m.get("created") or ""), reverse=True)
 
