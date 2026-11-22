@@ -122,9 +122,16 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         deleted: list[str] = []
         edits = 0
         failures = 0
+        progress_nudged = False
         checks_mode = "none" if ghost or not checks else "host"
         for _step in range(max_steps):
             _remain_running(root, deadline)
+            if plan and not files and not deleted and _step >= 5 and not progress_nudged:
+                transcript.append(
+                    "You have a plan but have not written any file yet. Stop reading "
+                    "and planning. Write the full new content of the file you are "
+                    "changing now, then run check, then finish.")
+                progress_nudged = True
             reply = responder(prompt + "\n\n" + "\n\n".join(transcript))
             replies.append(reply if isinstance(reply, str) else str(reply))
             action = _parse(reply)
@@ -132,6 +139,11 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 transcript.append("Your last reply was not one JSON object. Reply with JSON only.")
                 continue
             kind = action.get("action")
+            if kind is None and isinstance(action.get("actions"), list):
+                transcript.append(
+                    'Send exactly one action object per reply, not an {"actions": [...]} '
+                    "array. Pick the single next action and send it alone.")
+                continue
             if kind == "list":
                 rel = _safe_rel(action.get("path") or ".")
                 target = code / rel
@@ -166,14 +178,23 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 transcript.append(f"search {query!r}:\n" + ("\n".join(hits) or "no matches"))
                 continue
             if kind == "plan":
-                plan = str(action.get("summary") or "").strip()
-                if not plan:
+                summary = str(action.get("summary") or "").strip()
+                if not summary:
                     transcript.append("plan: summary is required")
                     continue
+                if plan:
+                    transcript.append(
+                        "A plan is already recorded. Do not send plan again. Now act: "
+                        "read the file you will change, write its full new content, run "
+                        "check, then finish. Send one action per reply.")
+                    continue
+                plan = summary
                 actions.append({"action": "plan"})
                 transcript.append(
                     "Plan recorded. You may now write spec/doc markdown for approval. No code."
-                    if ghost else "Plan recorded. You may now write files.")
+                    if ghost else
+                    "Plan recorded. Do not plan again. Next: read the target file, write "
+                    "its full new content, run check, then finish. One action per reply.")
                 continue
             if kind == "write":
                 if not plan:
@@ -599,9 +620,14 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         '{"action":"delete","path":"old.py"}, {"action":"check"}, '
         '{"action":"propose","kind":"decision|glossary","title":"...","text":"..."}, '
         '{"action":"finish","summary":"..."}.\n'
-        "First action must be a plan. Do not write before the plan. "
+        'Send exactly ONE action object per reply — never an {"actions":[...]} '
+        "array, never prose, never code fences. Your first action must be a single "
+        "plan. Plan ONCE; after the plan is recorded, do not send plan again. Then "
+        "read the real file, write its full new content, run check, and finish. "
+        "Do not write before the plan. "
         + check_line +
-        "write replaces the whole file. Read a file before changing it. "
+        "write replaces the whole file. Read a file before changing it, and use the "
+        "exact paths from the repository tree below — do not invent filenames. "
         "Stay inside the repository. Do not touch .git. "
         "Do not edit tests, CI config, or the checks definition: those paths "
         "are protected, and an attempt fails the build. "

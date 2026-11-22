@@ -340,6 +340,19 @@ class BuildTest(BuildFixture):
         notes = list((self.root / "inbox").glob("propose-decision-*.md"))
         self.assertEqual(len(notes), 1)
 
+    def test_repeated_plan_and_batch_are_nudged_not_fatal(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "First plan."},
+            {"action": "plan", "summary": "Second plan should be ignored."},
+            {"actions": [{"action": "write", "path": "app.py", "content": "x"}]},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertEqual(result["files"], ["app.py"])
+        self.assertEqual(result["plan"], "First plan.")
+
     def test_runner_config_warning(self) -> None:
         from ctx import safety
         (self.code / "Makefile").write_text("test:\n\tpython -m unittest\n", encoding="utf-8")
