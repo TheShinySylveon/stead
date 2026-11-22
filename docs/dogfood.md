@@ -333,9 +333,24 @@ first run of every loop step on a real issue:
   on the issue, CI passed on Linux and Windows, and a human merged it. `sync
   github` recorded it as merged with `human_edits: false`.
 
-Aggregate, from `stead metrics` (2026-11-22): 6 builds, 2 merged, 2 correct, 1
+Aggregate, from `stead metrics` (2026-11-22): 7 builds, 3 merged, 3 correct, 1
 incorrect (the LFM3 run above), 3 failed (2 build-class, 1 infrastructure), 0
 merged after a human edit.
 
-Two tuning runs are not a success rate. The first published score is Set B, on a
-single first attempt each.
+### Set A spec 3 on Arete 27B (2026-11-22)
+
+`stead inbox list`, from GitHub issue #27. Tuning set, so not scored. The same
+real loop as #25, on the first attempt:
+
+- The first `spec draft` produced a 10-criteria spec that approval accepted and
+  the build then refused as `large-spec`; #35 now makes `spec approve` refuse the
+  same body and tells the drafter the at-most-8-criteria limit.
+- The build took 51 minutes and 23 model steps with no repair rounds, and added
+  `tests/test_inbox_list.py` (fails before the change, passes after it).
+- Hand-checked correct. `factory publish` opened #34 with `Closes #27`,
+  `factory comment` linked it on the issue, CI passed, and a human merged it.
+  `sync github` recorded it as merged with `human_edits: false` and closed the
+  store's copy of issue #27 (#31).
+
+Three tuning builds are not a success rate. The first published score is Set B,
+on a single first attempt each.

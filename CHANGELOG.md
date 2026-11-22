@@ -17,6 +17,11 @@
 - **`context search --repo` counts only relations.** The `repo` field and
   `repo:` tags put an object in a repo; a body line reading `repo: X` no
   longer does (the deviation recorded when #30 was hand-checked).
+- **`stead inbox list` — read-only listing of what is waiting in the inbox
+  (#27).** Lists each inbox note with its file name, kind, and title;
+  `--kind decision|glossary|note` limits the output to one kind. A missing or
+  empty inbox prints a clear message. Nothing is moved, edited, or deleted.
+  The third Set A dogfood spec: built by Stead and merged as #34.
 - **A merged spec closes the issue it was drafted from.** On an own repo the PR
   says `Closes #N`, so GitHub closes the issue, but `sync github` fetches open
   issues only and never saw it. Recording the merge now marks the source issue

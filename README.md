@@ -28,9 +28,9 @@ behind one container.
 
 > **Status: working toward the [MVP](docs/mvp.md).** One reliable issue → spec
 > → tested change → PR loop, reviewed by a human. The loop runs end to end on a
-> local 27B model: Stead built [#20](https://github.com/TheShinySylveon/stead/pull/20)
-> and [#30](https://github.com/TheShinySylveon/stead/pull/30), both passed CI and
-> were merged by a person with no edits. It is not measured yet; the scored run
+> local 27B model: Stead built [#20](https://github.com/TheShinySylveon/stead/pull/20),
+> [#30](https://github.com/TheShinySylveon/stead/pull/30), and [#34](https://github.com/TheShinySylveon/stead/pull/34), all passed
+> CI and were merged by a person with no edits. It is not measured yet; the scored run
 > ([Dogfood](docs/dogfood.md)) comes next, and everything else waits until it passes.
 
 ## Quick start

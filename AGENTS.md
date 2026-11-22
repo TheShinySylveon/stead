@@ -128,6 +128,7 @@ python -m stead factory defaults --max-builds-per-day N --build-minutes N [--max
 python -m stead factory watch                # watched feature specs; no push
 python -m stead factory new --name NAME --title T
 python -m stead inbox import PATH             # local .eml .ics .md .txt into inbox/
+python -m stead inbox list [--kind KIND]      # read-only: what is waiting in inbox/
 python -m stead hook set                      # webhook token, printed once
 python -m stead factory publish --contribution ID  # isolated branch + pull request. Never merges.
 python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] [--max-tokens N] [--max-cost USD]  # model plans, edits, checks, commits
