@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **A merged spec closes the issue it was drafted from.** On an own repo the PR
+  says `Closes #N`, so GitHub closes the issue, but `sync github` fetches open
+  issues only and never saw it. Recording the merge now marks the source issue
+  `closed` and closes tasks linked to it as well as to the draft. On other
+  repos the PR only tracks the issue, so it stays open.
 - **`stead context search` — read-only search over the context store (#25).**
   `stead context search QUERY` lists matching objects with their path and a
   one-line snippet centered on the match. `--repo ID` limits the scan to one

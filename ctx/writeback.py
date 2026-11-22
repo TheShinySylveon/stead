@@ -324,11 +324,25 @@ def _apply_merged(root: Path, contribution_ref: str) -> list[str]:
     if contrib.get("state") != "merged":
         _patch(root, "contribution", contribution_ref, {"state": "merged"})
         updated.append(contribution_ref)
+    # A drafted spec merges; the raw issue it came from closes. On an own repo
+    # the PR said "Closes #N", so GitHub closed it too, and sync (which fetches
+    # open issues only) would never see that. Elsewhere the PR only tracks the
+    # issue, so it stays open.
+    linked = {contribution_ref, str(contrib.get("id") or "")}
+    source_ref = str(contrib.get("drafted_from") or "")
+    if source_ref:
+        linked.add(source_ref)
+        source = objects.find(root, "contribution", source_ref)
+        repo = objects.find(root, "repo", str(contrib.get("repo") or ""))
+        own = repo is not None and repo[1].get("kind") == "own"
+        if source is not None and own and source[1].get("state") == "open":
+            _patch(root, "contribution", source_ref, {"state": "closed"})
+            updated.append(source_ref)
     for path, meta, _body in objects.iter_objects(root, "task"):
         related = meta.get("related") or []
         if isinstance(related, str):
             related = [related]
-        if contribution_ref in related or contrib.get("id") in related:
+        if linked & {str(r) for r in related}:
             if meta.get("status") != "done":
                 _patch(root, "task", meta.get("id") or path.stem, {"status": "done"})
                 updated.append(str(meta.get("id") or path.stem))
