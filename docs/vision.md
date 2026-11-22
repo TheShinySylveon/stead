@@ -133,6 +133,11 @@ is no second store to maintain.
   page with the full markdown, not a side panel.
 - **On this page** — an auto-generated table of contents for pages with two or
   more headings.
+- **Curation, not editing** — source pages are generated, so people do not edit
+  them. **Arrange** reorders the tree and pushes pages into *Start here*;
+  **Request a change** files a `wiki-request` document instead of touching a
+  generated page. Requests are pages under **Change requests** and can be
+  marked done.
 - **Progressive refinement** — the home answers "what is this and where do I
   start?"; a group answers "what is here?"; a child answers "show me the exact
   text".

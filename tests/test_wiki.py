@@ -100,3 +100,36 @@ class WikiTest(unittest.TestCase):
             wiki.page(self.root, "repo-me-app", "specs/contribution-missing")
         with self.assertRaises(wiki.WikiError):
             wiki.index(self.root, "repo-missing")
+
+    def test_curation_changes_order_and_pins(self) -> None:
+        from ctx import wiki_store
+        home = wiki.index(self.root, "repo-me-app")
+        slugs = [node["slug"] for node in home["tree"]]
+        wiki_store.move(self.root, "repo-me-app", slugs, "specs", "up")
+        moved = [node["slug"] for node in wiki.index(self.root, "repo-me-app")["tree"]]
+        self.assertLess(moved.index("specs"), moved.index("overview"))
+
+        wiki_store.set_pinned(self.root, "repo-me-app",
+                              "specs/contribution-me-app-issue-3", True)
+        pinned = wiki.index(self.root, "repo-me-app")
+        self.assertEqual(pinned["start"][0]["slug"],
+                         "specs/contribution-me-app-issue-3")
+        self.assertIn("specs/contribution-me-app-issue-3", pinned["pinned"])
+
+    def test_change_request_lifecycle(self) -> None:
+        from ctx import wiki_store
+        created = wiki_store.create_request(
+            self.root, "repo-me-app", "project-app", "decisions/document-adr-one",
+            "The ADR should mention the cache invalidation rule.")
+        self.assertIn("document-wiki-change", created["id"])
+        requests = wiki.page(self.root, "repo-me-app", "requests")
+        self.assertEqual(requests["page"]["children"][0]["slug"],
+                         f"requests/{created['id']}")
+        request = wiki.page(self.root, "repo-me-app", f"requests/{created['id']}")
+        self.assertIn("invalidation", request["page"]["markdown"])
+        self.assertIn("open", request["page"]["labels"])
+        self.assertEqual(wiki.index(self.root, "repo-me-app")["counts"]["requests_open"], 1)
+        wiki_store.close_request(self.root, created["id"])
+        self.assertEqual(wiki.index(self.root, "repo-me-app")["counts"]["requests_open"], 0)
+        closed = wiki.page(self.root, "repo-me-app", f"requests/{created['id']}")
+        self.assertIn("done", closed["page"]["labels"])

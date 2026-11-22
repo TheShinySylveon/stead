@@ -189,6 +189,31 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn("Autonomy ceiling", body["page"]["markdown"])
 
+    def test_wiki_actions_pin_and_request(self) -> None:
+        repo = {"id": "repo-me-app", "type": "repo", "title": "My App",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "active", "kind": "own", "project": "project-demo"}
+        (self.root / "context/repos").mkdir(parents=True, exist_ok=True)
+        (self.root / "context/repos/app.md").write_text(
+            frontmatter.dumps(repo, "# My App\n"), encoding="utf-8")
+        status, body = self._post("/api/wiki/action", {
+            "action": "pin", "repo": "repo-me-app", "path": "overview", "pinned": True})
+        self.assertEqual(status, 200, body)
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{self.port}/api/wiki?repo=repo-me-app")
+        req.add_header("X-Ctx-Token", self.token)
+        _status, home = _read(req)
+        self.assertIn("overview", home["pinned"])
+        status, body = self._post("/api/wiki/action", {
+            "action": "request", "repo": "repo-me-app", "page": "overview",
+            "title": "Clarify the intro", "text": "Add one sentence about scope."})
+        self.assertEqual(status, 200, body)
+        request_id = body["id"]
+        status, body = self._post("/api/wiki/action", {
+            "action": "close_request", "id": request_id})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["status"], "done")
+
     def test_build_endpoint_wires_to_the_agent(self) -> None:
         import unittest.mock as mock
         from ctx import agent

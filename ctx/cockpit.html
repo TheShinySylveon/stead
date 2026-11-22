@@ -211,6 +211,10 @@
   .wiki-nav button:hover { background: var(--color-paper-2); color: var(--color-ink); }
   .wiki-nav button[aria-current="page"] { color: var(--color-accent); box-shadow: inset 2px 0 0 var(--color-accent); }
   .wiki-node { display: block; }
+  .wiki-node-row { display: flex; align-items: center; gap: 2px; }
+  .wiki-node-row > button:first-child { flex: 1; min-width: 0; }
+  .wiki-ctl { display: inline-flex; gap: 1px; }
+  .wiki-mini { min-height: 24px; padding: 0 5px; font-size: var(--text-xs); line-height: 1; }
   .wiki-children { border-left: 1px solid var(--color-rule); margin-left: 10px; }
   .wiki-children button { font-size: var(--text-xs); min-height: 30px; }
   .wiki-toc { margin: 8px 0 14px; padding-left: 10px; border-left: 2px solid var(--color-rule); }
@@ -350,7 +354,8 @@ const TITLES = {
 const state = { snap: null, view: "home", q: "", onboardResult: null,
   scheduleText: "", scheduleProject: "", hookToken: "",
   showAllRuns: false, evals: {}, opener: null, dirty: false,
-  wikiRepo: "", wiki: null, wikiPath: "", wikiPageData: null };
+  wikiRepo: "", wiki: null, wikiPath: "", wikiPageData: null,
+  wikiArrange: false, wikiRequestForm: false };
 
 function when(value) {
   if (!value) return "";
@@ -637,13 +642,17 @@ function renderRepos() {
     <div class="section-title">Contributions</div>
     ${rows || `<div class="empty">No cached issues or pull requests.</div>`}`;
 }
-function wikiTree(nodes, current, depth) {
+function wikiTree(nodes, current, depth, pinned, arrange) {
   return (nodes || []).map(node => {
     const active = current === node.slug;
     const open = active || (current && current.startsWith(node.slug + "/"));
     const kids = (open && node.children && node.children.length)
-      ? `<div class="wiki-children">${wikiTree(node.children, current, depth + 1)}</div>` : "";
-    return `<div class="wiki-node"><button type="button" data-wiki-page="${esc(node.slug)}" ${active ? 'aria-current="page"' : ""} style="padding-left:${8 + depth * 14}px">${esc(node.title)}</button>${kids}</div>`;
+      ? `<div class="wiki-children">${wikiTree(node.children, current, depth + 1, pinned, arrange)}</div>` : "";
+    const isPinned = (pinned || []).includes(node.slug);
+    const controls = arrange
+      ? `<span class="wiki-ctl"><button type="button" class="wiki-mini" data-wiki-move="${esc(node.slug)}" data-dir="up" aria-label="Move up">↑</button><button type="button" class="wiki-mini" data-wiki-move="${esc(node.slug)}" data-dir="down" aria-label="Move down">↓</button><button type="button" class="wiki-mini" data-wiki-pin="${esc(node.slug)}" data-pinned="${isPinned ? "1" : "0"}" aria-label="Pin">${isPinned ? "★" : "☆"}</button></span>`
+      : "";
+    return `<div class="wiki-node"><div class="wiki-node-row"><button type="button" data-wiki-page="${esc(node.slug)}" ${active ? 'aria-current="page"' : ""} style="padding-left:${8 + depth * 14}px">${esc(node.title)}</button>${controls}</div>${kids}</div>`;
   }).join("");
 }
 function wikiToc(markdown) {
@@ -671,9 +680,22 @@ function renderWiki() {
   const header = `
     <div class="inline" style="justify-content:space-between;margin-bottom:0">
       <div class="meta">${esc(data.repo.kind)} · ${esc(data.repo.status)}${data.repo.url ? " · " + esc(data.repo.url) : ""}</div>
-      <button type="button" class="quiet" data-wiki-picker>Change repo</button>
+      <div style="display:flex;gap:6px;flex-wrap:wrap">
+        <button type="button" class="quiet" data-wiki-arrange>${state.wikiArrange ? "Done arranging" : "Arrange"}</button>
+        <button type="button" class="quiet" data-wiki-request-open>Request a change</button>
+        <button type="button" class="quiet" data-wiki-picker>Change repo</button>
+      </div>
     </div>`;
-  const nav = `<nav class="wiki-nav" aria-label="Wiki pages">${wikiTree(data.tree, page ? page.path : "", 0)}</nav>`;
+  const requestForm = state.wikiRequestForm ? `
+    <form class="stack" id="wiki-request" data-repo="${esc(data.repo.id)}" data-page="${esc(page ? page.path : "")}" style="margin-top:10px">
+      <input type="text" name="title" maxlength="200" placeholder="Title (optional)" aria-label="Request title">
+      <textarea name="text" required maxlength="4000" placeholder="What should change, and why?" aria-label="Request description"></textarea>
+      <div class="inline" style="margin:0">
+        <button class="primary" type="submit">Send request</button>
+        <button class="quiet" type="button" data-wiki-request-cancel>Cancel</button>
+      </div>
+    </form>` : "";
+  const nav = `<nav class="wiki-nav" aria-label="Wiki pages">${wikiTree(data.tree, page ? page.path : "", 0, data.pinned, state.wikiArrange)}</nav>`;
   if (!page) {
     const start = (data.start || []).map(item => {
       const inner = `<strong>${esc(item.title)}</strong><div class="meta">${esc(item.why)}</div>`;
@@ -692,7 +714,10 @@ function renderWiki() {
         ? `<button type="button" class="row" data-wiki-page="${esc(item.slug)}">${inner}</button>`
         : `<div class="row">${inner}</div>`;
     }).join("");
-    return `${header}
+    return `${header}${requestForm}
+      <div class="wiki">
+        ${nav}
+        <div class="wiki-body">
       <h2 style="font-size:var(--text-2xl);margin-top:6px">${esc(data.repo.title)}</h2>
       <p class="meta" style="max-width:70ch">${inline(data.summary || "No summary yet. Add a sentence to the repo project.")}</p>
       <div class="chips" style="margin:10px 0">
@@ -701,12 +726,13 @@ function renderWiki() {
         ${chip((counts.tasks_open || 0) + " open tasks")}
         ${chip((counts.merged || 0) + " merged")}
       </div>
-      <div class="section-title">Start here</div>
-      <div class="grid">${start || `<div class="empty">Nothing to start with yet.</div>`}</div>
+      <div class="section-title">Start here</div>      <div class="grid">${start || `<div class="empty">Nothing to start with yet.</div>`}</div>
       <div class="section-title">Space pages</div>
       <div class="grid">${groups || `<div class="empty">No pages yet.</div>`}</div>
       <div class="section-title">Recent</div>
-      <div class="list">${recent || `<div class="empty">No recent activity.</div>`}</div>`;
+      <div class="list">${recent || `<div class="empty">No recent activity.</div>`}</div>
+        </div>
+      </div>`;
   }
   const crumbs = (page.breadcrumb || []).map((crumb, index) =>
     index === 0
@@ -722,7 +748,7 @@ function renderWiki() {
       ${item.blurb ? `<div class="meta" style="margin-top:4px">${inline(item.blurb)}</div>` : ""}
       <div class="chips" style="margin-top:6px">${(item.labels || []).map(label => chip(label)).join("")}</div>
     </button>`).join("");
-  return `${header}
+  return `${header}${requestForm}
     <div class="wiki-crumb">${crumbs}</div>
     <div class="wiki">
       ${nav}
@@ -730,6 +756,9 @@ function renderWiki() {
         <h2 style="font-size:var(--text-xl)">${esc(page.title)}</h2>
         <div class="meta">${esc(meta)}</div>
         ${labels ? `<div class="chips" style="margin:8px 0">${labels}</div>` : ""}
+        ${page.path.startsWith("requests/") && (page.labels || []).includes("open")
+          ? `<button type="button" class="quiet" data-wiki-close-request="${esc(page.path.split("/")[1])}" style="margin-bottom:8px">Mark request done</button>`
+          : ""}
         ${wikiToc(page.markdown)}
         ${page.markdown ? `<div class="reader-body">${renderMarkdown(page.markdown)}</div>` : ""}
         ${children ? `<div class="section-title">Child pages</div><div class="grid">${children}</div>` : ""}
@@ -1406,6 +1435,55 @@ document.body.addEventListener("click", async (event) => {
     render();
     return;
   }
+  if (event.target.closest("[data-wiki-arrange]")) {
+    state.wikiArrange = !state.wikiArrange;
+    render();
+    return;
+  }
+  if (event.target.closest("[data-wiki-request-open]")) {
+    state.wikiRequestForm = true;
+    render();
+    return;
+  }
+  if (event.target.closest("[data-wiki-request-cancel]")) {
+    state.wikiRequestForm = false;
+    render();
+    return;
+  }
+  const wikiMove = event.target.closest("[data-wiki-move]");
+  if (wikiMove) {
+    try {
+      await api("/api/wiki/action", {method: "POST", body: JSON.stringify({
+        action: "move", repo: state.wikiRepo, path: wikiMove.dataset.wikiMove,
+        direction: wikiMove.dataset.dir,
+      })});
+      await openWiki(state.wikiRepo);
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const wikiPin = event.target.closest("[data-wiki-pin]");
+  if (wikiPin) {
+    try {
+      await api("/api/wiki/action", {method: "POST", body: JSON.stringify({
+        action: "pin", repo: state.wikiRepo, path: wikiPin.dataset.wikiPin,
+        pinned: wikiPin.dataset.pinned !== "1",
+      })});
+      await openWiki(state.wikiRepo);
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const wikiClose = event.target.closest("[data-wiki-close-request]");
+  if (wikiClose) {
+    if (!confirm("Mark this request done?")) return;
+    try {
+      await api("/api/wiki/action", {method: "POST", body: JSON.stringify({
+        action: "close_request", id: wikiClose.dataset.wikiCloseRequest,
+      })});
+      toast("Request closed");
+      await openWikiPage(state.wikiPath);
+    } catch (err) { toast(err.message); }
+    return;
+  }
   if (event.target.id === "welcome-continue") { await load(); return; }
   if (event.target.id === "close-reader") { closeReader(); return; }
   const open = event.target.closest("[data-open]");
@@ -1461,6 +1539,7 @@ document.body.addEventListener("submit", async (event) => {
     || form.id === "add-spec" || form.id === "onboard" || form.id === "welcome"
     || form.id === "add-actor" || form.id === "use-actor" || form.id === "add-account" || form.id === "set-model" || form.id === "set-factory"
     || form.id === "new-factory" || form.id === "import-inbox" || form.dataset.promote
+    || form.id === "wiki-request"
     || form.dataset.factory || form.dataset.triage;
   if (!handled) return;
   event.preventDefault();
@@ -1534,6 +1613,16 @@ document.body.addEventListener("submit", async (event) => {
       })});
       toast(result.version + " is production");
       await load();
+    } else if (form.id === "wiki-request") {
+      const result = await api("/api/wiki/action", {method: "POST", body: JSON.stringify({
+        action: "request", repo: form.dataset.repo, page: form.dataset.page,
+        title: data.title, text: data.text,
+      })});
+      state.wikiRequestForm = false;
+      toast("Request filed: " + result.title);
+      state.wikiPageData = await api("/api/wiki?repo=" + encodeURIComponent(state.wikiRepo) +
+        (state.wikiPath ? "&page=" + encodeURIComponent(state.wikiPath) : ""));
+      state.wiki = await api("/api/wiki?repo=" + encodeURIComponent(state.wikiRepo));
     } else if (form.id === "onboard") {
       state.onboardResult = await api("/api/onboard", {method: "POST", body: JSON.stringify({
         title: data.title, kind: data.kind, url: data.url, path: data.path,

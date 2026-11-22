@@ -190,7 +190,9 @@ a model only when Draft with model is checked. It never performs a remote
 write: publish and merge are CLI-only, and the page shows the exact commands.
 The Wiki view is the human record for a repo as a Confluence-style space: a
 home page, a page tree, and child pages for specs, decisions, glossary, and
-tasks, with labels, metadata, and an on-page table of contents.
+tasks, with labels, metadata, and an on-page table of contents. Arrange
+reorders and pins; Request a change files a document instead of editing a
+generated page.
 A contribution body is a public spec, not a private note.
 Factory runs from the cockpit are shadow-only — no draft PR. The page has no
 external assets, so it works offline.

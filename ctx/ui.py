@@ -968,6 +968,46 @@ def wiki_view(root: Path, repo: str, page: str = "") -> dict:
         raise UiError(str(exc)) from exc
 
 
+def wiki_action(root: Path, action: str, payload: dict) -> dict:
+    from ctx import wiki, wiki_store
+    try:
+        if action == "move":
+            repo = payload.get("repo") or ""
+            path = payload.get("path") or ""
+            siblings = wiki.siblings(root, repo, path)
+            wiki_store.move(root, _repo_id(root, repo), siblings, path,
+                            payload.get("direction") or "up")
+            return {"ok": True}
+        if action == "pin":
+            repo = payload.get("repo") or ""
+            wiki_store.set_pinned(root, _repo_id(root, repo), payload.get("path") or "",
+                                  bool(payload.get("pinned")))
+            return {"ok": True}
+        if action == "request":
+            repo = payload.get("repo") or ""
+            found = objects.find(root, "repo", repo)
+            if found is None:
+                raise UiError(f"repo not found: {repo}")
+            meta = found[1]
+            created = wiki_store.create_request(
+                root, meta.get("id"), meta.get("project") or "",
+                payload.get("page") or "", payload.get("text") or "",
+                payload.get("title"))
+            return {"ok": True, **created}
+        if action == "close_request":
+            return {"ok": True, **wiki_store.close_request(root, payload.get("id") or "")}
+    except (wiki.WikiError, wiki_store.WikiStoreError) as exc:
+        raise UiError(str(exc)) from exc
+    raise UiError("unknown wiki action", 404)
+
+
+def _repo_id(root: Path, repo_ref: str) -> str:
+    found = objects.find(root, "repo", repo_ref)
+    if found is None:
+        raise UiError(f"repo not found: {repo_ref}")
+    return found[1].get("id", found[0].stem)
+
+
 def build_with_model(root: Path, contribution: str, publish: bool = False,
                      merge: bool = False) -> dict:
     from ctx.agent import BuildError, build
@@ -1381,8 +1421,9 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             from ctx.models import eval_status
             result = eval_status(root, payload.get("factory") or "",
                                  payload.get("version") or "")
-        elif path == "/api/build":
-            result = build_with_model(root, payload.get("contribution") or "",
+        elif path == "/api/wiki/action":
+            result = wiki_action(root, payload.get("action") or "", payload)
+        elif path == "/api/build":            result = build_with_model(root, payload.get("contribution") or "",
                                       bool(payload.get("publish")),
                                       bool(payload.get("merge")))
         elif path == "/api/eval/judge":

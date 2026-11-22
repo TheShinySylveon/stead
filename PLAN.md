@@ -196,7 +196,8 @@ Built:
 - `stead run file --run ID` files an approved digest or status into
   `context/documents/`. Approval is the gate. Nothing is posted.
 - A repo wiki space: home with the essentials, a page tree, and child pages
-  for specs, decisions, glossary, and tasks. Generated from files, read-only.
+  for specs, decisions, glossary, and tasks. Arrange reorders and pins; change
+  requests are documents. Generated pages stay read-only.
 - `stead sync github --digest` is the event-driven path. It assembles only
   after a change, and it does not post.
 

@@ -9,7 +9,7 @@ from __future__ import annotations
 import re
 from pathlib import Path
 
-from ctx import db, objects
+from ctx import db, objects, wiki_store
 
 DECISION_TAGS = {"decision", "decisions", "adr", "architecture"}
 GLOSSARY_TAGS = {"glossary", "terms", "vocabulary"}
@@ -100,9 +100,39 @@ def _labels(meta: dict, *extra: str) -> list[str]:
         if value and str(value) not in labels:
             labels.append(str(value))
     for tag in _tags(meta):
+        if tag.lower() == wiki_store.REQUEST_TAG or tag.lower().startswith("wiki:"):
+            continue
         if tag not in labels:
             labels.append(tag)
     return labels
+
+
+def _requests(root: Path, project_id: str, repo_id: str) -> list[tuple[Path, dict, str]]:
+    found = []
+    for path, meta, body in objects.iter_objects(root, "document"):
+        tags = {tag.lower() for tag in _tags(meta)}
+        if wiki_store.REQUEST_TAG not in tags:
+            continue
+        if meta.get("project") == project_id or f"wiki:{repo_id}" in tags:
+            found.append((path, meta, body))
+    return found
+
+
+def _sort_tree(tree: list[dict], saved: dict) -> list[dict]:
+    order = saved.get("order") or []
+    if order:
+        rank = {value: index for index, value in enumerate(order)}
+        tree.sort(key=lambda node: rank.get(node["slug"], len(order)))
+    for node in tree:
+        children = node.get("children") or []
+        saved_ids = saved.get("children", {}).get(node["slug"], [])
+        if not children or not saved_ids:
+            continue
+        id_rank = {value: index for index, value in enumerate(saved_ids)}
+        node["children"] = sorted(children,
+                                  key=lambda child: id_rank.get(
+                                      child["slug"].split("/", 1)[1], len(saved_ids)))
+    return tree
 
 
 def _tree(root: Path, repo_id: str, project_id: str) -> list[dict]:
@@ -111,6 +141,7 @@ def _tree(root: Path, repo_id: str, project_id: str) -> list[dict]:
     decisions = [item for item in docs if _has_tag(item[1], DECISION_TAGS)]
     glossary = [item for item in docs if _has_tag(item[1], GLOSSARY_TAGS)]
     tasks = _project_objects(root, project_id, "task")
+    requests = _requests(root, project_id, repo_id)
     tree = [{"slug": "overview", "title": "Overview", "children": []}]
     tree.append({"slug": "specs", "title": "Specs", "children": [
         {"slug": f"specs/{meta.get('id')}", "title": meta.get("title") or path.stem,
@@ -134,7 +165,25 @@ def _tree(root: Path, repo_id: str, project_id: str) -> list[dict]:
         for path, meta, _body in tasks[:MAX_CHILDREN]
     ]})
     tree.append({"slug": "history", "title": "History", "children": []})
-    return tree
+    tree.append({"slug": "requests", "title": "Change requests", "children": [
+        {"slug": f"requests/{meta.get('id')}", "title": meta.get("title") or path.stem,
+         "children": []}
+        for path, meta, _body in requests[:MAX_CHILDREN]
+    ]})
+    return _sort_tree(tree, wiki_store.load(root, repo_id))
+
+
+def siblings(root: Path, repo_ref: str, path: str) -> list[str]:
+    repo_path, repo, _body = _repo(root, repo_ref)
+    repo_id = repo.get("id", repo_path.stem)
+    tree = _tree(root, repo_id, repo.get("project") or "")
+    if "/" in path:
+        group = path.split("/", 1)[0]
+        for node in tree:
+            if node["slug"] == group:
+                return [child["slug"] for child in node.get("children") or []]
+        return []
+    return [node["slug"] for node in tree]
 
 
 def index(root: Path, repo_ref: str) -> dict:
@@ -154,6 +203,8 @@ def index(root: Path, repo_ref: str) -> dict:
     open_tasks = [item for item in tasks if item[1].get("status") != "done"]
     merged = [item for item in contributions if item[1].get("state") == "merged"]
     runs = _runs(root, {m.get("id") for _p, m, _b in contributions})
+    requests = _requests(root, project_id, repo_id)
+    open_requests = [item for item in requests if item[1].get("status") != "done"]
 
     start = []
     if project:
@@ -169,6 +220,16 @@ def index(root: Path, repo_ref: str) -> dict:
     if glossary:
         start.append({"title": glossary[0][1].get("title") or glossary[0][0].stem,
                       "why": "shared vocabulary", "slug": f"glossary/{glossary[0][1].get('id')}"})
+
+    tree = _tree(root, repo_id, project_id)
+    pinned_paths = wiki_store.load(root, repo_id).get("pinned") or []
+    titles = {node["slug"]: node["title"] for node in tree}
+    for node in tree:
+        for child in node.get("children") or []:
+            titles[child["slug"]] = child["title"]
+    for path in reversed(pinned_paths):
+        if path in titles:
+            start.insert(0, {"title": titles[path], "why": "pinned", "slug": path})
 
     recent = []
     for _path, meta, _body in merged[-3:]:
@@ -193,15 +254,17 @@ def index(root: Path, repo_ref: str) -> dict:
             "default_branch": repo.get("default_branch") or "",
         },
         "summary": summary,
-        "tree": _tree(root, repo_id, project_id),
+        "tree": tree,
         "counts": {
             "specs_open": len(open_specs),
             "decisions": len(decisions),
             "tasks_open": len(open_tasks),
             "merged": len(merged),
+            "requests_open": len(open_requests),
         },
         "start": start,
         "recent": recent,
+        "pinned": wiki_store.load(root, repo_id).get("pinned") or [],
     }
 
 
@@ -342,12 +405,36 @@ def page(root: Path, repo_ref: str, path: str) -> dict:
             rows.extend(f"- run {r['id']} · {r['factory']} · {r['mode']} · {r['verdict']} · "
                         f"{r['created']}" for r in runs)
         markdown = "Closed work and the run ledger.\n\n" + ("\n".join(rows) or "No history yet.")
+    elif group == "requests" and not object_id:
+        title = "Change requests"
+        markdown = ("Ask for a change to the wiki, a spec, a decision, or the code. "
+                    "A request is a document; it does not edit generated pages.")
+        requests = _requests(root, project_id, repo_id)
+        children = [{"slug": f"requests/{m.get('id')}", "title": m.get("title") or p.stem,
+                     "meta": f"{m.get('status', 'open')} · updated {m.get('updated', '')}",
+                     "blurb": _blurb(b), "labels": _labels(m)}
+                    for p, m, b in requests]
+    elif group == "requests" and object_id:
+        found = None
+        for p, m, b in _requests(root, project_id, repo_id):
+            if m.get("id") == object_id:
+                found = (p, m, b)
+                break
+        if found is None:
+            raise WikiError(f"page not found: {path}")
+        p, m, b = found
+        title = m.get("title") or p.stem
+        markdown = _without_title(b, title)
+        labels = _labels(m)
+        updated = m.get("updated", "")
+        author = m.get("actor", "")
     else:
         raise WikiError(f"page not found: {path}")
 
     return {
         "repo": {"id": repo_id, "title": repo.get("title", repo_id)},
         "tree": tree,
+        "pinned": wiki_store.load(root, repo_id).get("pinned") or [],
         "page": {
             "path": path,
             "title": title,

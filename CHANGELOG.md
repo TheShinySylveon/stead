@@ -5,6 +5,8 @@
 - A repo **Wiki** space: home page, page tree, child pages for specs,
   decisions, glossary, and tasks, labels, metadata, and an on-page table of
   contents. Entries are real pages, not side panels.
+- Wiki **Arrange** reorders the tree and pins pages to Start here. **Request a
+  change** files a request document; generated pages are never edited inline.
 - `docs/vision.md` records the long-range design: an autonomy slider with a
   `spec` rung, opt-in `.stead/` repo context, and two readers over one store —
   a person browses freely, an agent gets a scoped bundle with provenance,
