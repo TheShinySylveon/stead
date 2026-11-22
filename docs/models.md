@@ -60,7 +60,7 @@ python -m stead model set --provider ollama --name llama3.2
 python -m stead model test
 ```
 
-A build gives each model call 300 seconds. A large local model can need more,
+A build, a review, `spec draft`, and `eval judge` give each model call 300 seconds. A large local model can need more,
 because every call resends the files it has read so far; a 27B model
 reading a 1,400-line file can run past five minutes in one call. Raise the
 limit per model (30 to 7200 seconds); `model show` prints it:

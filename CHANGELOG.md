@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **`spec draft`, `factory run --generate`, and `eval judge` use the model's
+  `call_timeout`.** They had a fixed 120 s limit, so a 27B model drafting with
+  the repo tree in the prompt timed out with a raw traceback. A timeout now
+  stops with a clean message naming the limit and `--call-timeout`.
 - **`spec draft` sees the repository tree and checks the plan's paths.** The
   drafting prompt now carries the repo's depth-2 tree (the same one the builder
   sees) and tells the model to name real files or new files in real folders.

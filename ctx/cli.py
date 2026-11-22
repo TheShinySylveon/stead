@@ -34,6 +34,16 @@ def _rel(root: Path, path: Path) -> str:
     return path.relative_to(root).as_posix()
 
 
+def _model_timeout(root: Path, what: str) -> SystemExit:
+    """A clean exit for a model call that ran past its call_timeout."""
+    from ctx import models
+    seconds = models.public_model(root)["call_timeout"]
+    return SystemExit(
+        f"the model did not reply within {seconds}s, so {what} stopped. Raise the "
+        "limit with `stead model set ... --call-timeout SECONDS` or use a faster "
+        "model, then run it again.")
+
+
 def _info(msg: str) -> None:
     """Status feedback to stderr, keeping stdout for the command's actual
     output (tables, JSON, report text)."""
@@ -602,6 +612,8 @@ def _maybe_draft(root: Path, info: dict, generate: bool) -> dict:
         text = models.draft(root, info["assembled_prompt"])
     except models.ModelError as exc:
         raise SystemExit(str(exc)) from exc
+    except TimeoutError as exc:
+        raise _model_timeout(root, "the draft") from exc
     return factory.write_output(root, info, text, source="model")
 
 
@@ -1115,6 +1127,8 @@ def main(argv: list[str] | None = None) -> int:
         try:
             judged = models.judge(root, args.factory, args.case, args.output,
                                   prompt_version=args.prompt_version)
+        except TimeoutError as exc:
+            raise _model_timeout(root, "the judge") from exc
         except (models.ModelError, OSError) as exc:
             raise SystemExit(str(exc)) from exc
         print(f"{judged['verdict']}: {judged['reason']}")
@@ -1181,6 +1195,8 @@ def main(argv: list[str] | None = None) -> int:
             drafted = draft_spec(root, args.contribution, redraft=args.redraft)
         except (SpecError, ModelError) as exc:
             raise SystemExit(str(exc)) from exc
+        except TimeoutError as exc:
+            raise _model_timeout(root, "spec draft") from exc
         print(f"drafted {drafted['id']} -> {drafted['path']}")
         print(f"from {drafted['drafted_from']} (the source issue body is untouched)")
         for warning in drafted.get("warnings") or []:
