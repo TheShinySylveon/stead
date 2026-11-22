@@ -41,6 +41,20 @@ class MetricsTest(unittest.TestCase):
         base.update(over)
         return base
 
+    def test_recent_orders_same_day_records_by_their_stamp(self) -> None:
+        base = {"type": "document", "created": "2026-11-22", "updated": "2026-11-22",
+                "status": "active", "tags": ["build-record", "repo:repo-me-app"]}
+        rows = [("20261122T020000Z", "Later", "committed"),
+                ("20261122T010000Z", "Earlier", "failed"),
+                ("20261122T030000Z", "Latest", "merged")]
+        for stamp, title, outcome in rows:  # written out of order on purpose
+            meta = dict(base, id=f"document-build-x-{stamp}", title=title, outcome=outcome)
+            (self.root / "context/documents" / f"build-x-{stamp}.md").write_text(
+                frontmatter.dumps(meta, "# Build\n"), encoding="utf-8")
+        report = metrics.collect(self.root)
+        self.assertEqual([item["title"] for item in report["recent"]],
+                         ["Latest", "Later", "Earlier"])
+
     def test_empty_store(self) -> None:
         report = metrics.collect(self.root)
         self.assertEqual(report["builds"], 0)

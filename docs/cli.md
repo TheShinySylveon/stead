@@ -257,7 +257,10 @@ file, or a line range of a long one), search, edit (replace one exact snippet),
 write, delete, and run the configured checks inside the worktree. It cannot
 touch `.git`, leave the repo, choose a shell command, or write a protected test
 or CI path unless the repo opts in (adding a brand-new test file is allowed).
-Checks run with a scrubbed environment, or in a container. Because the build
+While it runs, the build prints one progress line per step to stderr and
+appends it to a `.progress.log` under `factories/feature-builder/runs/`, so
+a second terminal can follow it; the log moves into the run folder at the
+end. Checks run with a scrubbed environment, or in a container. Because the build
 runs in a fresh worktree, `checks:` must work from a clean clone — untracked
 local state (a `.venv`, `node_modules`, `.env`) is absent. Failed checks are
 fed back so it can repair them (`--repair-rounds`, default 2). A lock prevents

@@ -1211,7 +1211,8 @@ def main(argv: list[str] | None = None) -> int:
                                repair_rounds=max(0, args.repair_rounds),
                                max_steps=max(1, min(args.steps, 60)),
                                max_minutes=max(1, args.max_minutes),
-                               max_tokens=args.max_tokens, max_cost=args.max_cost)
+                               max_tokens=args.max_tokens, max_cost=args.max_cost,
+                               progress=lambda line: print(line, file=sys.stderr, flush=True))
         except (BuildError, ModelError) as exc:
             raise SystemExit(str(exc)) from exc
         except TimeoutError as exc:
