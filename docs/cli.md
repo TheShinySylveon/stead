@@ -243,7 +243,9 @@ the default branch" or "must be clean" precondition, and Stead never runs
 write, delete, and run the configured checks inside the worktree. It cannot
 touch `.git`, leave the repo, choose a shell command, or write a protected test
 or CI path unless the repo opts in (adding a brand-new test file is allowed).
-Checks run with a scrubbed environment, or in a container. Failed checks are
+Checks run with a scrubbed environment, or in a container. Because the build
+runs in a fresh worktree, `checks:` must work from a clean clone — untracked
+local state (a `.venv`, `node_modules`, `.env`) is absent. Failed checks are
 fed back so it can repair them (`--repair-rounds`, default 2). A lock prevents
 two builds on one checkout and is reclaimed when its process is gone.
 `--max-minutes` bounds the build; `--max-tokens` and `--max-cost` bound spend.

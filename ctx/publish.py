@@ -1,10 +1,11 @@
 """Open a pull request from an isolated branch. Never merge. Never push default.
 
 feature-builder assembly stays local. Publish is a separate, explicit step.
-It pushes the checkout's current branch only when that branch is not the
-default branch and already has commits ahead of it. A draft is the default.
-A normal pull request is allowed when the repo ceiling is `pr` or `merge`.
-Merging is `stead factory merge`, and only when the repo file says so.
+It pushes the spec's deterministic build branch (`stead/<number>-<slug>`, never
+the checkout's current branch), only when that branch has commits ahead of the
+default. A draft is the default. A normal pull request is allowed when the repo
+ceiling is `pr` or `merge`. Merging is `stead factory merge`, and only when the
+repo file says so.
 """
 
 from __future__ import annotations
@@ -56,15 +57,13 @@ def publish(root: Path, contribution_ref: str, *, runner=None,
         raise PublishError("code_path must be the project checkout, not this Stead repo")
     run = safety.safe_runner(runner or _run)
     default = (repo_meta.get("default_branch") or "main").strip()
-    branch = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
-    if branch in {default, "HEAD", ""}:
-        # A worktree build leaves the checkout on the default branch; the build
-        # branch is named deterministically from the spec, so publish by that ref.
-        branch = factory.branch_for(spec)
-    if not branch or branch == default:
+    # Always the spec's deterministic build branch, never the checkout's
+    # current branch: worktree builds made "the checkout is on another branch"
+    # a supported state, and publishing HEAD could push an unrelated branch.
+    branch = factory.branch_for(spec)
+    if not _git(run, code, ["branch", "--list", branch]).strip():
         raise PublishError(
-            f"refusing to publish from {branch or 'an unknown branch'}. "
-            f"Stay off {default}.")
+            f"build branch {branch} does not exist. Run `stead build` first.")
     ahead = _git(run, code, ["rev-list", "--count", f"{default}..{branch}"]).strip()
     if not ahead.isdigit() or int(ahead) < 1:
         raise PublishError(

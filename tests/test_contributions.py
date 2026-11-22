@@ -278,6 +278,8 @@ class TestSyncGithubMocked(GithubTestCase):
         self.assertEqual(meta["kind"], "issue")
         self.assertEqual(body.strip(), "The real issue body.")
         self.assertIn("body_sha", meta)
+        self.assertIn("upstream_body_sha", meta)
+        self.assertEqual(meta["body_sha"], meta["upstream_body_sha"])
 
     def test_sync_gh_missing_message(self) -> None:
         with mock.patch.object(sync.shutil, "which", return_value=None):

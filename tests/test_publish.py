@@ -11,6 +11,14 @@ from ctx.publish import PublishError, publish
 from tests import strip_git_hygiene
 from tests.test_feature_builder import SPEC_ID, FeatureBuilderTestCase
 
+# The deterministic build branch for the seeded spec (issue #201, "Add --json
+# output"). Publish/merge resolve this, never the checkout's current branch.
+BRANCH = "stead/201-add-json-output"
+
+
+def _branch_list(argv) -> bool:
+    return argv[:2] == ["git", "branch"] and "--list" in argv
+
 
 class PublishTest(FeatureBuilderTestCase):
     def setUp(self) -> None:
@@ -43,8 +51,8 @@ class PublishTest(FeatureBuilderTestCase):
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
             calls.append(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
+            if _branch_list(argv):
+                return BRANCH + "\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
                 return "1\n"
             if argv[:3] == ["git", "diff", "--name-status"]:
@@ -67,8 +75,8 @@ class PublishTest(FeatureBuilderTestCase):
 
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
+            if _branch_list(argv):
+                return BRANCH + "\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
                 return "1\n"
             if argv[:3] == ["git", "diff", "--name-status"]:
@@ -91,8 +99,8 @@ class PublishTest(FeatureBuilderTestCase):
 
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
+            if _branch_list(argv):
+                return BRANCH + "\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
                 return "1\n"
             if argv[:3] == ["git", "diff", "--name-status"]:
@@ -114,23 +122,22 @@ class PublishTest(FeatureBuilderTestCase):
 
         def runner(argv, _cwd):
             argv = strip_git_hygiene(argv)
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "main\n"
+            if _branch_list(argv):
+                return BRANCH + "\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
-                self.assertEqual(argv[3], "main..stead/201-add-json-output")
+                self.assertEqual(argv[3], f"main..{BRANCH}")
                 return "1\n"
             if argv[:3] == ["git", "diff", "--name-status"]:
                 return "M\tapp.py\n"
             if argv[:3] == ["git", "push", "-u"]:
-                self.assertEqual(argv[4],
-                                 "stead/201-add-json-output:stead/201-add-json-output")
+                self.assertEqual(argv[4], f"{BRANCH}:{BRANCH}")
                 return ""
             if argv[:3] == ["gh", "pr", "create"]:
                 return "https://github.com/testuser/my-app/pull/9\n"
             raise AssertionError(argv)
 
         opened = publish(self.root, SPEC_ID, runner=runner)
-        self.assertEqual(opened["branch"], "stead/201-add-json-output")
+        self.assertEqual(opened["branch"], BRANCH)
 
     def test_draft_pr_pushes_the_isolated_branch_and_does_not_merge(self) -> None:
         autonomy.set_repo(self.root, "repo-testuser-my-app", reach="draft-pr",
@@ -140,15 +147,15 @@ class PublishTest(FeatureBuilderTestCase):
         def runner(argv, cwd):
             argv = strip_git_hygiene(argv)
             calls.append((argv, Path(cwd)))
-            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
-                return "feature/json\n"
+            if _branch_list(argv):
+                return BRANCH + "\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
-                self.assertEqual(argv[3], "main..feature/json")
+                self.assertEqual(argv[3], f"main..{BRANCH}")
                 return "2\n"
             if argv[:3] == ["git", "diff", "--name-status"]:
                 return "M\tapp.py\n"
             if argv[:3] == ["git", "push", "-u"]:
-                self.assertEqual(argv[4], "feature/json:feature/json")
+                self.assertEqual(argv[4], f"{BRANCH}:{BRANCH}")
                 return ""
             if argv[:3] == ["gh", "pr", "create"]:
                 self.assertIn("--draft", argv)
@@ -159,5 +166,5 @@ class PublishTest(FeatureBuilderTestCase):
         opened = publish(self.root, SPEC_ID, runner=runner)
         self.assertEqual(opened["url"], "https://github.com/testuser/my-app/pull/9")
         self.assertFalse(opened["merged"])
-        self.assertEqual(opened["branch"], "feature/json")
+        self.assertEqual(opened["branch"], BRANCH)
         self.assertTrue(all(cwd == self.code for _argv, cwd in calls))

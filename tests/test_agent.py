@@ -584,6 +584,63 @@ class AttemptGateTest(BuildFixture):
         self.assertTrue(result["ok"])
         self.assertNotIn(str(wt), _git(self.code, "worktree", "list"))
 
+    def test_a_timeout_is_its_own_failure_class(self) -> None:
+        import socket
+        self.assertEqual(agent._failure_reason(socket.timeout("t")), "timeout")
+        self.assertEqual(agent._failure_reason(agent.BuildError("x")), "build")
+        self.assertEqual(agent._failure_reason(RuntimeError("x")), "infrastructure")
+
+
+class SourceGateTest(BuildFixture):
+    """A draft stops being buildable when its source issue is closed/unlabelled."""
+
+    def _make_draft_of(self, source_id: str) -> None:
+        path = self.root / "context/contributions/issue-42.md"
+        meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
+        meta["drafted_from"] = source_id
+        path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+        from ctx import spec as spec_approval
+        spec_approval.approve(self.root, "contribution-me-app-issue-42")
+
+    def _seed_source(self, **fields) -> str:
+        source = {"id": "contribution-me-app-issue-99", "type": "contribution",
+                  "title": "Source", "created": "2026-11-21",
+                  "updated": "2026-11-21", "repo": "repo-me-app", "kind": "issue",
+                  "number": 99, "role": "author", "state": "open",
+                  "visibility": "public", "tags": ["stead-build"]}
+        source.update(fields)
+        (self.root / "context/contributions/issue-99.md").write_text(
+            frontmatter.dumps(source, "# Source\n"), encoding="utf-8")
+        return "contribution-me-app-issue-99"
+
+    def test_a_draft_whose_source_is_closed_is_not_built(self) -> None:
+        src = self._seed_source(state="closed")
+        self._make_draft_of(src)
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=lambda _p: "{}")
+        self.assertIn("closed", str(caught.exception))
+
+    def test_a_draft_whose_source_lost_its_label_is_not_built(self) -> None:
+        src = self._seed_source(tags=["feature-spec"])  # no stead-build
+        self._make_draft_of(src)
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=lambda _p: "{}")
+        self.assertIn("stead-build", str(caught.exception))
+
+    def test_a_draft_with_an_open_labelled_source_builds(self) -> None:
+        src = self._seed_source()
+        self._make_draft_of(src)
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "import argparse\nprint('hi')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+
 
 class FailBeforeTest(BuildFixture):
     """M1.5: fail-before/pass-after — a new test must fail without the change."""

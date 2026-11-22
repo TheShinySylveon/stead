@@ -86,6 +86,25 @@ def slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", (value or "").lower()).strip("-") or "spec"
 
 
+def source_changed_note(root: Path, meta: dict) -> str:
+    """A warning when a draft's source issue changed after it was drafted.
+
+    Sync stores `body_sha` (the stored text) and `upstream_body_sha` (the latest
+    fetched text). When they differ, the issue moved under the draft."""
+    source_ref = meta.get("drafted_from")
+    if not source_ref:
+        return ""
+    source = objects.find(root, "contribution", str(source_ref))
+    if source is None:
+        return ""
+    body_sha = str(source[1].get("body_sha") or "")
+    upstream = str(source[1].get("upstream_body_sha") or "")
+    if body_sha and upstream and body_sha != upstream:
+        return (f"warning: the source issue ({source_ref}) changed after the "
+                "draft was written; re-draft it to pick up the new text")
+    return ""
+
+
 def draft_prompt(title: str, body: str) -> str:
     """The single drafting prompt: a raw issue becomes one spec."""
     return (

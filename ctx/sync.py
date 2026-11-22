@@ -206,7 +206,7 @@ def fetch_labeled(root: Path, login: str | None, limit: int = 30) -> list[dict]:
                 "title": r.get("title") or f"issue #{number}",
                 "url": url, "state": state if state in _STATES else "open",
                 "role": "author", "ci": "none", "review": "none",
-                "tags": [BUILD_LABEL], "body": body,
+                "tags": [BUILD_LABEL], "body": body, "body_fetched": True,
             }
             if body:
                 item["body_sha"] = hashlib.sha256(body.encode("utf-8")).hexdigest()
@@ -247,22 +247,28 @@ def write_contribution(root: Path, item: dict, login: str | None, today: str) ->
     is_new = not path.exists()
     if is_new:
         meta = {"id": contrib_id, "type": "contribution", "created": today}
-        body = item.get("body") or (
-            f"# {item['title']}\n\n"
-            f"{item['kind'].upper()} #{item['number']} in {item['repo_full']} — {item['url']}\n\n"
-            f"Cached read-only from GitHub by `stead sync github` on {today}.\n"
-            f"GitHub is authoritative for live state; this file is the local,\n"
-            f"offline-capable cache. Add private strategy notes in context/documents/,\n"
-            f"not here (contribution files are public GitHub-derived data).\n")
+        if item.get("body_fetched"):
+            # The body was fetched (possibly empty); record it distinctly from
+            # the "not fetched yet" stub so spec draft can tell them apart.
+            body = item.get("body") or "(the issue body is empty)\n"
+        else:
+            body = item.get("body") or (
+                f"# {item['title']}\n\n"
+                f"{item['kind'].upper()} #{item['number']} in {item['repo_full']} — {item['url']}\n\n"
+                f"Cached read-only from GitHub by `stead sync github` on {today}.\n"
+                f"GitHub is authoritative for live state; this file is the local,\n"
+                f"offline-capable cache. Add private strategy notes in context/documents/,\n"
+                f"not here (contribution files are public GitHub-derived data).\n")
     else:
         meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
         meta.setdefault("id", contrib_id)
         meta.setdefault("type", "contribution")
         meta.setdefault("created", today)
         # A labelled issue previously cached without a body still has the
-        # boilerplate stub; replace it with the freshly fetched text.
-        if item.get("body") and _CACHE_NOTE in body:
-            body = item["body"]
+        # boilerplate stub; replace it with the freshly fetched text (or the
+        # empty-body marker).
+        if item.get("body_fetched") and (_CACHE_NOTE in body or not body.strip()):
+            body = item.get("body") or "(the issue body is empty)\n"
     # GitHub-derived fields (sync-owned):
     meta.update({"title": item["title"], "updated": today, "repo": repo_id,
                  "kind": item["kind"], "number": item["number"], "url": item["url"],
@@ -271,7 +277,11 @@ def write_contribution(root: Path, item: dict, login: str | None, today: str) ->
     meta.setdefault("role", item["role"])  # respect a manually set role
     meta.setdefault("method", "spec-kit")  # user-owned choice; sync never overrides it
     if item.get("body_sha"):
-        meta["body_sha"] = item["body_sha"]
+        # body_sha is the hash of the stored text; upstream_body_sha is the hash
+        # of the freshly fetched text. They differ when the issue changed after
+        # we stored it (which doctor and spec approve surface).
+        meta["upstream_body_sha"] = item["body_sha"]
+        meta["body_sha"] = hashlib.sha256(body.encode("utf-8")).hexdigest()
     for tag in (item.get("tags") or []):
         tags = meta.setdefault("tags", [])
         if isinstance(tags, str):
