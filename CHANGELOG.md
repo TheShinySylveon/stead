@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **`spec draft` sees the repository tree and checks the plan's paths.** The
+  drafting prompt now carries the repo's depth-2 tree (the same one the builder
+  sees) and tells the model to name real files or new files in real folders.
+  After drafting, a plan path whose folder doesn't exist, or a new file that
+  shadows an existing one of the same name, prints a warning to fix before
+  approval. The first real draft (issue #25) planned `stead/context/search.py`
+  and `stead/cli.py`; the code lives in `ctx/`.
 - **`sync github --repo OWNER/NAME` scopes the sync.** Each `gh search` gets
   `--repo`, out-of-scope results are dropped, and label intake skips owned
   repos outside the scope. `--remember` saves the scope in `stead.json` for

@@ -218,7 +218,11 @@ python -m stead build --contribution ID [--publish] [--merge] [--resume] [--retr
 untouched). It refuses to draft from the unedited sync cache stub, from a draft,
 or when a draft already exists — pass `--redraft` to replace the existing draft
 and clear its approval. The draft must have a `## Acceptance criteria`
-checklist and a `## Plan` section.
+checklist and a `## Plan` section. When the repo has a `code_path` checkout,
+the model sees its depth-2 tree (the same one a build sees), and `spec draft`
+warns about any path in the plan whose folder is not in the repo, or that does
+not exist while a file of the same name does elsewhere (`stead/cli.py` →
+"did you mean `ctx/cli.py`?"). Fix the plan before approving.
 
 `spec approve` records a SHA-256 of the contribution body and prints the body
 being approved. A build refuses an unapproved spec, and refuses a spec whose
