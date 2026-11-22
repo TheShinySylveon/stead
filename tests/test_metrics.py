@@ -144,3 +144,24 @@ class MetricsTest(unittest.TestCase):
         text = metrics.render(report)
         self.assertIn("independent reviews: approve 1", text)
         self.assertIn("cost: $0.25", text)
+
+    def test_build_failure_attempts_counts_only_build_class(self) -> None:
+        from ctx import spec as spec_approval
+        cid = self._contrib(1)
+        sha = spec_approval.body_hash("# Feature 1\n")
+        writeback.record_failure(self.root, cid, ValueError("checks failed"),
+                                 branch="stead/x", reason="checks")
+        writeback.record_failure(self.root, cid, ValueError("model down"),
+                                 branch="stead/x", reason="infrastructure")
+        self.assertEqual(
+            writeback.build_failure_attempts(self.root, "repo-me-app", sha), 1)
+
+    def test_record_failure_carries_spec_sha(self) -> None:
+        from ctx import spec as spec_approval
+        cid = self._contrib(1)
+        rec = writeback.record_failure(self.root, cid, ValueError("boom"),
+                                       branch="stead/x", reason="gate")
+        meta, _body = frontmatter.parse(
+            (self.root / rec["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(meta["outcome"], "failed")
+        self.assertEqual(meta["spec_sha"], spec_approval.body_hash("# Feature 1\n"))

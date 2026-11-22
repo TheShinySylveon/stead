@@ -188,8 +188,9 @@ digest if the cache changed, a maintenance draft, and the status of
 python -m stead spec approve --contribution ID
 python -m stead factory publish --contribution ID
 python -m stead factory merge --contribution ID
-python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] \
-    [--steps N] [--repair-rounds N] [--max-minutes N]
+python -m stead build --contribution ID [--publish] [--merge] [--resume] [--retry] \
+    [--wait] [--steps N] [--repair-rounds N] [--max-minutes N] \
+    [--max-tokens N] [--max-cost USD]
 ```
 
 `spec approve` records a SHA-256 of the contribution body. A build refuses an
@@ -209,22 +210,35 @@ checks unless the repo says `merge_without_required_checks: true`. It does not
 pass `--admin`, and it does not push the default branch. A factory run does not
 call it.
 
-`build` is the model-driven implementation step. It needs a configured model,
-a repo `code_path`, a clean checkout on the default branch, and a buildable
-spec. The model must first write a plan, then it may list, read, search, write,
-delete, and run the configured checks inside that checkout. It cannot touch
-`.git`, leave the repo, choose a shell command, or write a protected test or CI
-path unless the repo opts in. Checks run with a scrubbed environment, or in a
-container. Failed checks are fed back so it can repair them
-(`--repair-rounds`, default 2). A lock prevents two builds on one checkout and
-is reclaimed when its process is gone. `--max-minutes` bounds the build.
+`build` is the model-driven implementation step. It needs a configured model, a
+repo `code_path`, and a buildable, approved spec. Every build runs in its own
+`git worktree`, so the user's checkout is never touched: there is no "must be on
+the default branch" or "must be clean" precondition, and Stead never runs
+`git clean`. The model must first write a plan, then it may list, read, search,
+write, delete, and run the configured checks inside the worktree. It cannot
+touch `.git`, leave the repo, choose a shell command, or write a protected test
+or CI path unless the repo opts in (adding a brand-new test file is allowed).
+Checks run with a scrubbed environment, or in a container. Failed checks are
+fed back so it can repair them (`--repair-rounds`, default 2). A lock prevents
+two builds on one checkout and is reclaimed when its process is gone.
+`--max-minutes` bounds the build; `--max-tokens` and `--max-cost` bound spend.
 Stead commits on a new `stead/<issue>-<slug>` branch and records the plan,
-summary, checks mode, tests touched, and actions under
+summary, checks mode, tests touched, characters/tokens sent, and actions under
 `factories/feature-builder/runs/`. `--publish` pushes and opens a pull request
 when the ceiling allows it. `--wait` polls PR checks before `--merge`, and
 `--merge` runs only when the repo says `reach: merge`. `--resume` continues a
-failed build on its existing branch, keeping its uncommitted edits. The spec
+failed build from its existing branch (the WIP commit a failure left behind).
+
+A spec gets one automatic build attempt per approved content hash. A build that
+fails the work (a build-class failure) blocks a re-run until the body is
+re-approved (a new hash) or you pass `--retry`; an infrastructure failure (the
+model was down, a timeout, a setup error) does not consume the attempt. The spec
 must be approved (`spec approve`) and its body unchanged since approval.
+
+A failed build that reached the model also writes a `build-record` with outcome
+`failed` and a `reason` code (protocol, gate, checks, budget, tamper, build, or
+infrastructure), so the ledger has a denominator and a killed build is never
+silent.
 
 On a successful build Stead writes a versioned `build-record` document under
 `context/documents/`, marks the contribution merged and closes linked tasks

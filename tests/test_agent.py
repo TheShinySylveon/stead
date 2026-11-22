@@ -72,6 +72,11 @@ class BuildFixture(unittest.TestCase):
         meta.update(fields)
         path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
 
+    def _branch_file(self, branch: str, path: str) -> str:
+        """The committed content of one path on a branch (builds run in a
+        worktree, so the user's checkout is not where the change lands)."""
+        return _git(self.code, "show", f"{branch}:{path}")
+
 
 class BuildTest(BuildFixture):
     def test_plan_then_edit_then_commit(self) -> None:
@@ -86,10 +91,12 @@ class BuildTest(BuildFixture):
                              responder=responder)
         self.assertEqual(result["files"], ["app.py"])
         self.assertEqual(result["branch"], "stead/42-add-a-name-flag")
+        # The build ran in a worktree; the user's checkout stays on default.
         self.assertEqual(_git(self.code, "rev-parse", "--abbrev-ref", "HEAD").strip(),
-                         "stead/42-add-a-name-flag")
-        self.assertIn("argparse", (self.code / "app.py").read_text(encoding="utf-8"))
-        self.assertEqual(result["commit"], _git(self.code, "rev-parse", "HEAD").strip())
+                         "main")
+        self.assertIn("argparse", self._branch_file("stead/42-add-a-name-flag", "app.py"))
+        self.assertEqual(result["commit"],
+                         _git(self.code, "rev-parse", "stead/42-add-a-name-flag").strip())
         self.assertFalse(result["published"])
 
     def test_write_before_plan_is_refused(self) -> None:
@@ -107,12 +114,19 @@ class BuildTest(BuildFixture):
         with self.assertRaises(agent.BuildError):
             agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
 
-    def test_dirty_checkout_is_refused(self) -> None:
+    def test_a_dirty_user_checkout_does_not_block_the_build(self) -> None:
+        # A worktree build never touches the user's checkout, so its dirtiness
+        # is irrelevant.
         (self.code / "scratch.txt").write_text("mine", encoding="utf-8")
-        with self.assertRaises(agent.BuildError) as caught:
-            agent.build(self.root, "contribution-me-app-issue-42",
-                        responder=lambda _p: "{}")
-        self.assertIn("uncommitted", str(caught.exception))
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "import argparse\nprint('hi')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+        self.assertTrue((self.code / "scratch.txt").exists())
 
     def test_merge_needs_publish(self) -> None:
         responder = self._responder([
@@ -161,7 +175,7 @@ class BuildTest(BuildFixture):
         ])
         result = agent.build(self.root, "contribution-me-app-issue-42",
                              responder=responder, repair_rounds=1)
-        self.assertIn("ok", (self.code / "app.py").read_text(encoding="utf-8"))
+        self.assertIn("ok", self._branch_file("stead/42-add-a-name-flag", "app.py"))
         self.assertEqual(result["files"], ["app.py"])
 
     def test_search_and_delete_actions(self) -> None:
@@ -176,7 +190,8 @@ class BuildTest(BuildFixture):
             {"action": "finish", "summary": "Removed."},
         ])
         result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
-        self.assertFalse((self.code / "old.py").exists())
+        self.assertEqual(_git(self.code, "ls-tree", "stead/42-add-a-name-flag",
+                              "old.py").strip(), "")
         self.assertEqual(result["deleted"], ["old.py"])
 
     def test_lock_blocks_a_second_build(self) -> None:
@@ -191,8 +206,13 @@ class BuildTest(BuildFixture):
             _unlock(held)
 
     def test_resume_continues_the_branch(self) -> None:
+        # A prior failed build left a WIP commit on the branch; --resume
+        # continues from it in a fresh worktree.
         _git(self.code, "checkout", "-b", "stead/42-add-a-name-flag")
         (self.code / "app.py").write_text("print('partial')\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "WIP")
+        _git(self.code, "checkout", "main")
         responder = self._responder([
             {"action": "plan", "summary": "Finish the work."},
             {"action": "write", "path": "app.py", "content": "print('done')\n"},
@@ -201,7 +221,7 @@ class BuildTest(BuildFixture):
         result = agent.build(self.root, "contribution-me-app-issue-42",
                              responder=responder, resume=True)
         self.assertEqual(result["branch"], "stead/42-add-a-name-flag")
-        self.assertIn("done", (self.code / "app.py").read_text(encoding="utf-8"))
+        self.assertIn("done", self._branch_file("stead/42-add-a-name-flag", "app.py"))
 
     def test_failing_checks_stop_the_commit(self) -> None:
         repo_path = self.root / "context/repos/app.md"
@@ -243,7 +263,7 @@ class BuildTest(BuildFixture):
             ])
             with self.assertRaises(agent.BuildError) as caught:
                 agent.build(self.root, "contribution-me-app-issue-42",
-                            responder=responder)
+                            responder=responder, retry=True)
             self.assertIn("protected path", str(caught.exception))
             _git(self.code, "checkout", "main")
             _git(self.code, "branch", "-D", "stead/42-add-a-name-flag")
@@ -289,7 +309,7 @@ class BuildTest(BuildFixture):
             ])
             with self.assertRaises(agent.BuildError) as caught:
                 agent.build(self.root, "contribution-me-app-issue-42",
-                            responder=responder)
+                            responder=responder, retry=True)
             self.assertTrue("protected path" in str(caught.exception)
                             or "secret" in str(caught.exception), str(caught.exception))
             _git(self.code, "checkout", "main")
@@ -470,6 +490,51 @@ class BuildTest(BuildFixture):
         self.assertIn("checks_image", str(caught.exception))
 
 
+class AttemptGateTest(BuildFixture):
+    """One automatic build attempt per approved hash; --retry re-runs it."""
+
+    def test_a_build_class_failure_blocks_a_second_attempt(self) -> None:
+        from ctx import writeback
+        writeback.record_failure(self.root, "contribution-me-app-issue-42",
+                                 agent.BuildError("checks failed"),
+                                 branch="stead/42-add-a-name-flag",
+                                 reason="checks")
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=lambda _p: "{}")
+        self.assertIn("failed build attempt", str(caught.exception))
+
+    def test_retry_bypasses_the_attempt_gate(self) -> None:
+        from ctx import writeback
+        writeback.record_failure(self.root, "contribution-me-app-issue-42",
+                                 agent.BuildError("checks failed"),
+                                 branch="stead/42-add-a-name-flag",
+                                 reason="checks")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "import argparse\nprint('hi')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder, retry=True)
+        self.assertTrue(result["ok"])
+
+    def test_infrastructure_failure_does_not_block_an_attempt(self) -> None:
+        from ctx import writeback
+        writeback.record_failure(self.root, "contribution-me-app-issue-42",
+                                 agent.BuildError("model down"),
+                                 branch="stead/42-add-a-name-flag",
+                                 reason="infrastructure")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "import argparse\nprint('hi')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+
+
 class CommitStepTest(BuildFixture):
     """Checks execute model-written code. Its side effects must not become
     commits, and must not rewrite git's own execution surface (.git)."""
@@ -510,11 +575,12 @@ class CommitStepTest(BuildFixture):
 
     def test_checks_cannot_plant_a_git_hook_that_runs_on_the_host(self) -> None:
         leak = self.root / "leak.txt"
+        gitdir = str(self.code / ".git").replace("\\", "/")
+        leakpath = str(leak).replace("\\", "/")
         self._with_checks(
             "import pathlib\n"
-            "p = pathlib.Path(__file__).parent\n"
-            "hook = p / '.git/hooks/post-commit'\n"
-            "hook.write_text('#!/bin/sh\\nprintf leaked > \"" + str(leak).replace("\\", "/") + "\"\\n')\n"
+            f"hook = pathlib.Path(r'{gitdir}') / 'hooks/post-commit'\n"
+            "hook.write_text('#!/bin/sh\\nprintf leaked > \"" + leakpath + "\"\\n')\n"
             "hook.chmod(0o755)\n"
             "print('hi')\n")
         with self.assertRaises(agent.BuildError) as caught:
@@ -524,10 +590,10 @@ class CommitStepTest(BuildFixture):
         self.assertEqual(_git(self.code, "rev-parse", "HEAD").strip(), self.head)
 
     def test_checks_cannot_rewrite_git_config(self) -> None:
+        gitdir = str(self.code / ".git").replace("\\", "/")
         self._with_checks(
             "import pathlib\n"
-            "p = pathlib.Path(__file__).parent\n"
-            "cfg = p / '.git/config'\n"
+            f"cfg = pathlib.Path(r'{gitdir}') / 'config'\n"
             "cfg.write_text(cfg.read_text() + '\\n[core]\\n\\tfsmonitor = evil\\n')\n"
             "print('hi')\n")
         with self.assertRaises(agent.BuildError) as caught:
@@ -543,10 +609,12 @@ class CommitStepTest(BuildFixture):
         result = self._build()
         self.assertTrue(result["ok"])
         self.assertIn("seen_by_checks.txt", result["leftovers"])
-        # Not staged, not committed, and removed from the working tree.
-        committed = _git(self.code, "show", "--name-only", "--format=", "HEAD").split()
+        # Not staged, not committed, and removed from the worktree.
+        committed = _git(self.code, "show", "--name-only", "--format=",
+                         "stead/42-add-a-name-flag").split()
         self.assertEqual(sorted(committed), ["app.py"])
-        self.assertFalse((self.code / "seen_by_checks.txt").exists())
+        self.assertEqual(_git(self.code, "ls-tree", "stead/42-add-a-name-flag",
+                              "seen_by_checks.txt").strip(), "")
 
     def test_ignored_build_artifacts_are_tolerated(self) -> None:
         self._with_checks(
@@ -588,7 +656,8 @@ class CommitStepTest(BuildFixture):
         ])
         result = agent.build(self.root, "contribution-me-app-issue-42",
                              responder=responder)
-        committed = _git(self.code, "show", "--name-only", "--format=", "HEAD").split()
+        committed = _git(self.code, "show", "--name-only", "--format=",
+                         "stead/42-add-a-name-flag").split()
         self.assertEqual(sorted(committed), ["app.py", "tests/test_app.py"])
         self.assertEqual(result["tests_touched"], ["tests/test_app.py"])
         self.assertEqual(result["files"], ["app.py", "tests/test_app.py"])
@@ -779,7 +848,8 @@ class ContextWiringTest(BuildFixture):
             prompts.append(prompt)
             return json.dumps(queue.pop(0))
 
-        agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        agent.build(self.root, "contribution-me-app-issue-42", responder=responder,
+                    retry=True)
         self.assertIn("DELIVERED-MARKER", prompts[0])
         self.assertNotIn("checks failed", prompts[0])
 
@@ -898,13 +968,17 @@ class ReviewRound3Test(BuildFixture):
     def test_a_precondition_failure_is_not_a_failed_build(self) -> None:
         from ctx import factory
         before = factory._builds_today(self.root)
-        (self.code / "notes.txt").write_text("mine\n", encoding="utf-8")
+        # An unapproved spec is a precondition failure, not a build attempt.
+        path = self.root / "context/contributions/issue-42.md"
+        meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
+        meta.pop("spec_sha", None)
+        meta.pop("spec_approved", None)
+        path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
         with self.assertRaises(agent.BuildError):
             agent.build(self.root, "contribution-me-app-issue-42",
                         responder=lambda _p: "{}")
         self.assertEqual(factory._builds_today(self.root), before)
         self.assertEqual(list((self.root / "context/documents").glob("build-*.md")), [])
-        self.assertTrue((self.code / "notes.txt").exists())  # the user's file is untouched
 
     def test_a_failure_after_the_model_runs_is_recorded_with_a_reason(self) -> None:
         self._set_repo(checks='python -c "import sys; sys.exit(1)"')
@@ -1006,8 +1080,9 @@ class GhostBuildTest(BuildFixture):
         self.assertEqual(result["reach"], "ghost")
         self.assertEqual(result["files"], ["docs/spec.md"])
         self.assertTrue(result["commit"])
-        self.assertEqual((self.code / "app.py").read_text(encoding="utf-8"), "print('hi')\n")
-        self.assertEqual((self.code / "docs/spec.md").read_text(encoding="utf-8"),
+        self.assertEqual(self._branch_file("stead/42-add-a-name-flag", "app.py"),
+                         "print('hi')\n")
+        self.assertEqual(self._branch_file("stead/42-add-a-name-flag", "docs/spec.md"),
                          "# Spec\n\nThe flag defaults to world.\n")
         run_dir = self.root / result["run_dir"]
         self.assertIn("--name", (run_dir / "plan.md").read_text(encoding="utf-8"))

@@ -707,7 +707,10 @@ def build_parser() -> argparse.ArgumentParser:
                      help="after opening, merge when the repo says reach: merge and checks are green")
     bld.add_argument("--steps", type=int, default=24)
     bld.add_argument("--resume", action="store_true",
-                     help="continue a failed build on its branch, keeping uncommitted edits")
+                     help="continue a failed build on its branch, keeping its WIP commit")
+    bld.add_argument("--retry", action="store_true",
+                     help="re-run a spec that already had a failed build attempt, "
+                          "without re-approving its body")
     bld.add_argument("--wait", action="store_true",
                      help="with --publish, wait for PR checks before merging")
     bld.add_argument("--wait-minutes", type=int, default=30)
@@ -1101,7 +1104,8 @@ def main(argv: list[str] | None = None) -> int:
         from ctx.models import ModelError
         try:
             result = run_build(root, args.contribution, publish=args.publish,
-                               merge=args.merge, resume=args.resume, wait=args.wait,
+                               merge=args.merge, resume=args.resume, retry=args.retry,
+                               wait=args.wait,
                                wait_minutes=max(1, args.wait_minutes),
                                repair_rounds=max(0, args.repair_rounds),
                                max_steps=max(1, min(args.steps, 60)),

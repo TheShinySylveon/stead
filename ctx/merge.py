@@ -30,8 +30,11 @@ class MergeError(PublishError):
 
 
 def merge(root: Path, contribution_ref: str, *, runner=None,
-          reviewer=None) -> dict:
-    """Merge the checkout's open pull request. Raises MergeError."""
+          reviewer=None, code: Path | None = None) -> dict:
+    """Merge the checkout's open pull request. Raises MergeError.
+
+    ``code`` names the checkout whose branch is merged; a worktree build passes
+    its worktree here."""
     found = objects.find(root, "contribution", contribution_ref)
     if found is None:
         raise MergeError(f"contribution not found: {contribution_ref}")
@@ -53,9 +56,11 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
             "code those checks execute, so they can read your environment. Set "
             "`checks_isolation: docker` and `checks_image` on the repo, or set "
             "`trust_checks: host` to accept that risk explicitly.")
-    code = Path(repo_meta.get("code_path") or "")
-    if not repo_meta.get("code_path") or not code.is_dir():
-        raise MergeError("set the repo code_path to a local checkout before merging")
+    if code is None:
+        code = Path(repo_meta.get("code_path") or "")
+        if not repo_meta.get("code_path") or not code.is_dir():
+            raise MergeError("set the repo code_path to a local checkout before merging")
+        code = code.resolve()
     if code.resolve() == root.resolve():
         raise MergeError("code_path must be the project checkout, not this Stead repo")
     run = safety.safe_runner(runner or _run)

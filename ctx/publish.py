@@ -21,8 +21,12 @@ class PublishError(Exception):
         super().__init__(message)
 
 
-def publish(root: Path, contribution_ref: str, *, runner=None) -> dict:
-    """Push an isolated branch and open a pull request. Raises PublishError."""
+def publish(root: Path, contribution_ref: str, *, runner=None,
+            code: Path | None = None) -> dict:
+    """Push an isolated branch and open a pull request. Raises PublishError.
+
+    ``code`` names the checkout whose branch is published; a worktree build
+    passes its worktree here."""
     found = objects.find(root, "contribution", contribution_ref)
     if found is None:
         raise PublishError(f"contribution not found: {contribution_ref}")
@@ -41,10 +45,12 @@ def publish(root: Path, contribution_ref: str, *, runner=None) -> dict:
     if reach in ("ghost", "shadow"):
         raise PublishError(
             f"this repo's ceiling is {reach}. Raise it before opening a pull request.")
-    code = Path(repo_meta.get("code_path") or "")
-    if not repo_meta.get("code_path") or not code.is_dir():
-        raise PublishError(
-            "set the repo code_path to a local checkout before publishing")
+    if code is None:
+        code = Path(repo_meta.get("code_path") or "")
+        if not repo_meta.get("code_path") or not code.is_dir():
+            raise PublishError(
+                "set the repo code_path to a local checkout before publishing")
+        code = code.resolve()
     if code.resolve() == root.resolve():
         raise PublishError("code_path must be the project checkout, not this Stead repo")
     run = safety.safe_runner(runner or _run)

@@ -51,6 +51,14 @@ loop and:
 
 Results live in [Dogfood](dogfood.md); safety gates in [Trust](trust.md).
 
+## Milestone progress
+
+- **M0 (foundations) — done.** Builds run in their own `git worktree` (the
+  user's checkout is never touched); the builder reads the whole approved spec
+  body; failures carry a `reason` code; a spec gets one automatic build attempt
+  per approved hash (`--retry` to re-run); and a killed build's started marker
+  is reclaimed as an infrastructure failure record.
+
 ## In scope (state)
 
 | Stage | State |
