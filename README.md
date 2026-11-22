@@ -218,6 +218,13 @@ Pull requests build the Docker image. `main` publishes
 - **There is no independent reviewer pass before merge.** The controls are the
   repo's checks, the required-check rule, protected test/CI paths, and the
   explicit `reach: merge`.
+- **Budgets are time and count, not spend.** A build has a wall-clock cap, a
+  step cap, and an edit cap; watched runs have a daily build count. There is no
+  token or dollar cap yet.
+- The build executor is Stead's own whole-file edit loop. A pluggable executor
+  (hand the edit loop to a headless agent in a sandbox, keep the gates) and a
+  stronger eval gate are planned; see [Vision](docs/vision.md) and
+  [PLAN.md §7](PLAN.md).
 - A normal `stead ui` stays on loopback. `--deploy` and Docker are the only
   public binds. They start with an account, or with the token until the first
   account exists.

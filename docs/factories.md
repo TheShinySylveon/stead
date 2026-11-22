@@ -13,6 +13,13 @@ and the per-repo reach decides how far. Each one lives in `factories/<name>/`:
   every case has a recorded pass for that version.
 - `runs/` — one directory per assembly. Gitignored. Safe to delete.
 
+The eval gate is a guardrail, not a proof. `eval judge` is a single-run pass/fail
+from the configured model, which is noisy; a pinned separate judge, repeated
+runs, and comparison against the previous prompt version are planned.
+`feature-builder` does not yet have code-pipeline evals (replay past specs,
+score on checks passed, diff size, human acceptance). See
+[Vision](vision.md#open-items-from-review).
+
 ## What a run actually does
 
 `python -m stead factory run` reads local files and writes three things:

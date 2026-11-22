@@ -268,3 +268,52 @@ portable. The files are the source; the index is a cache.
   recommendation: ids, titles, dates, outcomes, links — never note bodies.
 - **Summary authorship.** Model-drafted, human-approved, or both. Recommendation:
   model drafts, a person approves, the approved text is the history.
+
+## Open items from review
+
+Tracked here so they are not lost. Safety gaps live in [Trust](trust.md);
+user-facing limits live in the README; the engineering roadmap (PR feedback
+repair, queue and workers, check auto-detection, patch-level edits, post-merge
+cleanup) is `PLAN.md` §7, which is human-owned.
+
+**Safety / autonomy**
+
+- Independent reviewer pass before merge: a second model or prompt, recorded as
+  a required verdict. Not built.
+- Token and dollar budgets, plus a provider-usage-funded spend cap. Today only
+  wall-clock, step, edit, and daily-build-count bounds exist.
+
+**The executor**
+
+- Pluggable executor: hand the edit loop to a headless agent CLI inside a
+  sandbox while Stead keeps assembly, the reach ladder, eval gates, the ledger,
+  and write-back. The trade-off is giving up "no model-chosen shell commands"
+  inside the sandbox, which matters less once checks are sandboxed.
+- Patch-level edits instead of whole-file writes; a per-file size cap exists.
+
+**Evals and proof**
+
+- The promotion gate is a single-run LLM pass/fail and is noisy. Pin a judge
+  model different from the generator, run each case several times, record the
+  judge prompt version, and compare against the previous prompt version rather
+  than requiring an absolute pass.
+- `feature-builder` needs code-pipeline evals: replay past specs and score on
+  checks passed, diff size, and human acceptance — not digest-style cases.
+- Dogfood Stead on Stead and publish ledger numbers: specs built, share merged
+  without human edits, repair rounds used, cost and time per build. Replace
+  Lighthouse-on-loopback as the quality signal.
+
+**Positioning and scope**
+
+- Decide the first user and the entry point: context-first with the factory as
+  the upgrade, or factory-first with context as what makes it good. The README
+  currently names the solo open-source contributor.
+- Decide whether local-first or the shared server is the headline. The cited
+  Notion thesis treats a centrally run factory as the product and a laptop agent
+  as the halfway step; the shared server is the least developed part.
+- Freeze the kanban (commodity) and decide which three of the nine cockpit views
+  matter for the chosen user; treat the rest as secondary. Adapters to an
+  existing issue tracker/wiki may serve a team better than a second task store.
+- Add one end-to-end story (issue → spec → PR → merge) with real time and cost,
+  and a "why not X" comparison against coding agents and context tools. The
+  adjacent-tools table above is a start, not the comparison.

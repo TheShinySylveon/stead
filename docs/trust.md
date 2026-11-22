@@ -171,10 +171,15 @@ agent cannot quietly rewrite the context that later builds depend on.
 
 ## Known gaps
 
-- No independent reviewer pass before merge.
+- No independent reviewer pass before merge. The gates are the repo's checks,
+  the required-check rule, protected test/CI paths, and explicit `reach: merge`.
+- No token or dollar budget. Bounds are wall-clock (`--max-minutes`), a step
+  cap, a total-edit cap, and a daily watched-build count. A provider that
+  reports usage could fund a spend cap; that is not wired up.
 - No per-object permissions or roles on the shared server.
 - No login rate limiting, TLS, or CSRF token beyond the custom `X-Ctx-Token`
   header and `SameSite=Lax` session cookie. Use a proxy.
-- Container isolation is per repo and opt-in, not enforced globally.
+- Container isolation is per repo and opt-in, not enforced globally. Host
+  checks can still read any file your user can read.
 - A model can still write a test-shaped file outside the protected globs if the
   repo's layout is unusual. Add it to `protected_paths:`.
