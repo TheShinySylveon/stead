@@ -25,6 +25,7 @@ private/
 
 # Website working files. Not part of the Stead package.
 site/
+site.zip
 
 # OS noise
 .DS_Store

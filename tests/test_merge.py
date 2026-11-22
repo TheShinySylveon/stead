@@ -151,8 +151,8 @@ class MergeTest(FeatureBuilderTestCase):
                 return "feature/json\n"
             if argv[:3] == ["git", "rev-list", "--count"]:
                 return "1\n"
-            if argv[:3] == ["git", "diff", "--name-only"]:
-                return "app.py\n"
+            if argv[:3] == ["git", "diff", "--name-status"]:
+                return "M\tapp.py\n"
             if argv[:3] == ["git", "push", "-u"]:
                 return ""
             if argv[:3] == ["gh", "pr", "create"]:

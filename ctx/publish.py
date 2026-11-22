@@ -70,14 +70,28 @@ def publish(root: Path, contribution_ref: str, *, runner=None) -> dict:
         "This command does not merge. `stead factory merge` is separate, and "
         "only when this repo says reach: merge."
     )
-    changed = [line.strip() for line in
-               _git(run, code, ["diff", "--name-only", f"{default}..HEAD"]).splitlines()
-               if line.strip()]
+    changed = []
+    deleted = []
+    for line in _git(run, code, ["diff", "--name-status", f"{default}..HEAD"]).splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        status, path = parts[0].strip(), parts[-1].strip()
+        if not path:
+            continue
+        if status.startswith("D"):
+            deleted.append(path)
+        else:
+            changed.append(path)
     tests = [path for path in changed if safety.is_test_path(path)]
-    ci = [path for path in changed if safety.is_ci_path(path)]
+    tests_deleted = [path for path in deleted if safety.is_test_path(path)]
+    ci = [path for path in changed + deleted if safety.is_ci_path(path)]
     if tests:
         body += ("\n\nThis branch touches tests (the repo allows it):\n"
                  + "\n".join(f"- {path}" for path in tests[:20]))
+    if tests_deleted:
+        body += ("\n\nThis branch deletes tests (the repo allows it):\n"
+                 + "\n".join(f"- {path}" for path in tests_deleted[:20]))
     if ci:
         body += ("\n\nThis branch touches CI config (the repo allows it):\n"
                  + "\n".join(f"- {path}" for path in ci[:20]))

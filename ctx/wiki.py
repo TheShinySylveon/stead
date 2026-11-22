@@ -118,6 +118,11 @@ def _requests(root: Path, project_id: str, repo_id: str) -> list[tuple[Path, dic
     return found
 
 
+def _records(root: Path, repo_id: str) -> list[tuple[Path, dict, str]]:
+    from ctx import writeback
+    return writeback.prior_records(root, repo_id, limit=50)
+
+
 def _sort_tree(tree: list[dict], saved: dict) -> list[dict]:
     order = saved.get("order") or []
     if order:
@@ -164,7 +169,10 @@ def _tree(root: Path, repo_id: str, project_id: str) -> list[dict]:
          "children": []}
         for path, meta, _body in tasks[:MAX_CHILDREN]
     ]})
-    tree.append({"slug": "history", "title": "History", "children": []})
+    tree.append({"slug": "history", "title": "History", "children": [
+        {"slug": f"history/{m.get('id')}", "title": m.get("title") or p.stem, "children": []}
+        for p, m, _b in _records(root, repo_id)[:MAX_CHILDREN]
+    ]})
     tree.append({"slug": "requests", "title": "Change requests", "children": [
         {"slug": f"requests/{meta.get('id')}", "title": meta.get("title") or path.stem,
          "children": []}
@@ -398,13 +406,34 @@ def page(root: Path, repo_ref: str, path: str) -> dict:
         rows = [f"- **{m.get('title', p.stem)}** — {m.get('kind')} #{m.get('number', '?')} · "
                 f"{m.get('state')} · {m.get('updated', '')}"
                 for p, m, _b in merged]
+        records = _records(root, repo_id)
+        if records:
+            rows.append("")
+            rows.append("### Build records")
+            rows.extend(f"- [{m.get('title', p.stem)}](history/{m.get('id')}) · "
+                        f"{m.get('created', '')}" for p, m, _b in records)
         runs = _runs(root, ids)[:20]
         if runs:
             rows.append("")
             rows.append("### Factory runs")
             rows.extend(f"- run {r['id']} · {r['factory']} · {r['mode']} · {r['verdict']} · "
                         f"{r['created']}" for r in runs)
-        markdown = "Closed work and the run ledger.\n\n" + ("\n".join(rows) or "No history yet.")
+        markdown = ("Closed work, durable build records, and the run ledger.\n\n"
+                    + ("\n".join(rows) or "No history yet."))
+    elif group == "history" and object_id:
+        found = None
+        for p, m, b in _records(root, repo_id):
+            if m.get("id") == object_id:
+                found = (p, m, b)
+                break
+        if found is None:
+            raise WikiError(f"page not found: {path}")
+        p, m, b = found
+        title = m.get("title") or p.stem
+        markdown = _without_title(b, title)
+        labels = _labels(m)
+        updated = m.get("updated", "")
+        author = m.get("actor", "")
     elif group == "requests" and not object_id:
         title = "Change requests"
         markdown = ("Ask for a change to the wiki, a spec, a decision, or the code. "

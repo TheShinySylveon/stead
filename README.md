@@ -9,8 +9,8 @@
 Stead is one store of markdown files with two readers. Agents get scoped
 bundles; people get a wiki over the same files. Each repo has one dial for how
 far a factory may act on that context: draft, open a pull request, or merge.
-Every build records its plan, summary, files, and outcome in a run ledger
-linked to the spec, so the work leaves a trace instead of vanishing.
+Every delivered build writes a versioned record back into the store, and the
+next bundle for that repo reads it.
 
 It is built for the solo open-source contributor first: the person with a
 dozen repos, a weekly review queue, and no wish to hand a vendor their notes.
@@ -30,9 +30,11 @@ See [LICENSE](LICENSE). The command is `stead`.
 3. **One dial per repo.** A factory can stop at a shadow plan, open a draft pull
    request, open a normal one, or merge. Merge is never inherited from the
    install default, and never bypasses branch protection.
-4. **Write-back.** A delivered build records its plan, summary, files, checks
-   mode, and outcome in the run ledger; the wiki shows that history next to the
-   spec. The build is not a dead end.
+4. **Write-back.** A delivered build writes a versioned `build-record` document
+   (outcome, branch, commit, files, checks mode), closes the contribution and
+   linked tasks when it merges, and the next bundle for that repo reads the
+   prior records. Decisions and glossary terms are only *proposed* to the inbox
+   for a person to triage — an agent never quietly rewrites the context.
 
 The shape is inspired by Notion's guidebook
 [*A New Shape for Work*](https://www.notion.com/nsfw). The deliberate twist is
@@ -44,8 +46,11 @@ repo's ceiling.
 
 Stead can run code and merge it. The full threat model, the merge gates, and
 exactly what leaves the machine are in **[docs/trust.md](docs/trust.md)**.
-Three things worth saying on the front page:
+Four things worth saying on the front page:
 
+- **A spec is approved by content, not by a tag.** `stead spec approve` stores a
+  hash of the body; any later edit needs re-approval before a build. The
+  `author` role and `feature-spec` tag are labels, not permissions.
 - **Checks run code the model wrote.** With no container, they run on your host
   with a scrubbed environment — not in a sandbox. Set `checks_isolation: docker`
   and `checks_image` for real isolation; merge requires that, or an explicit
@@ -202,15 +207,24 @@ Pull requests build the Docker image. `main` publishes
 
 - **Every account on a shared server is an admin.** Accounts are names with
   scrypt password hashes; there are no roles and no per-object permissions.
-  The cockpit refuses to start a build there, but any signed-in person can edit
-  any context object. Put it behind an SSO/TLS proxy if you expose it. There is
-  no login rate limit. [docs/trust.md](docs/trust.md).
+  The cockpit refuses to start a build there, and execution fields (`checks:`,
+  `protected_paths:`, reach, trigger, `code_path`, the author role, and spec
+  approval) are read-only in the cockpit. Any signed-in person can still edit
+  other context objects. Put it behind an SSO/TLS proxy if you expose it. There
+  is no login rate limit. [docs/trust.md](docs/trust.md).
 - **Checks are not sandboxed unless you ask.** The default is the host with a
   scrubbed environment. `checks_isolation: docker` gives a container with no
   network. Merge requires one of those, or an explicit `trust_checks: host`.
 - **There is no independent reviewer pass before merge.** The controls are the
   repo's checks, the required-check rule, protected test/CI paths, and the
   explicit `reach: merge`.
+- **Budgets are time and count, not spend.** A build has a wall-clock cap, a
+  step cap, and an edit cap; watched runs have a daily build count. There is no
+  token or dollar cap yet.
+- The build executor is Stead's own whole-file edit loop. A pluggable executor
+  (hand the edit loop to a headless agent in a sandbox, keep the gates) and a
+  stronger eval gate are planned; see [Vision](docs/vision.md) and
+  [PLAN.md §7](PLAN.md).
 - A normal `stead ui` stays on loopback. `--deploy` and Docker are the only
   public binds. They start with an account, or with the token until the first
   account exists.
@@ -220,10 +234,11 @@ Pull requests build the Docker image. `main` publishes
   with model. The endpoint is yours: OpenAI, Anthropic, Grok, or another
   chat server. Prompt contents and the egress table:
   [docs/trust.md](docs/trust.md).
-- Write-back today is the local run ledger: plan, summary, files, checks mode,
-  and outcome. It is not versioned (`factories/*/runs/` is gitignored, and
-  `stead init` drops the runs table). It does not yet write decisions or
-  glossary entries back automatically, and it does not close tasks.
+- Write-back is factual: a versioned `build-record` document, contribution and
+  task status on merge, and prior records in the next bundle. Decisions and
+  glossary entries are proposed to the inbox for a person to triage; they are
+  not written into context automatically. The SQLite `runs` table is still a
+  rebuildable index, not the durable record.
 - `specify` is optional. If it is missing, onboarding still writes the
   constitution in `context/documents/`.
 - Frontmatter is a flat YAML subset, not full YAML. `stead doctor` reports a

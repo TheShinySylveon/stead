@@ -63,6 +63,11 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     flags = factory.spec_flags(description, criteria)
     if flags:
         raise BuildError("spec is not buildable yet: " + ", ".join(flags))
+    from ctx import spec as spec_approval
+    try:
+        spec_approval.require_approval(spec, body)
+    except spec_approval.SpecError as exc:
+        raise BuildError(str(exc)) from exc
     if safety.stopped(root):
         raise BuildError("Stead is stopped. Remove .stead-stop or run "
                          "`python -m stead factory start`.")
@@ -242,6 +247,21 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 transcript.append(("checks passed" if ok else "checks failed") + ":\n" +
                                   (output[-4000:] or "(no output)"))
                 continue
+            if kind == "propose":
+                if not plan:
+                    raise BuildError("the model proposed a note before a plan.")
+                from ctx import writeback
+                try:
+                    note = writeback.propose_note(
+                        root, str(action.get("kind") or "decision"),
+                        str(action.get("title") or ""), str(action.get("text") or ""),
+                        source=str(spec.get("id") or ""))
+                except writeback.WritebackError as exc:
+                    transcript.append(f"propose: {exc}")
+                    continue
+                actions.append({"action": "propose", "kind": note["kind"]})
+                transcript.append(f"proposed {note['kind']} to inbox: {note['title']}")
+                continue
             if kind == "finish":
                 summary = str(action.get("summary") or "").strip()
                 if not plan:
@@ -281,7 +301,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     "summary": summary,
                     "checks": checks,
                     "checks_mode": checks_mode,
-                    "tests_touched": [path for path in touched if safety.is_test_path(path)],
+                    "tests_touched": [path for path in sorted(files) if safety.is_test_path(path)],
+                    "tests_deleted": [path for path in sorted(deleted) if safety.is_test_path(path)],
                     "ci_touched": [path for path in touched if safety.is_ci_path(path)],
                     "commit": commit,
                     "steps": len(actions),
@@ -310,10 +331,17 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         result["merged_url"] = merged.get("url") or opened["url"]
                 elif merge:
                     raise BuildError("--merge needs --publish; nothing was pushed")
-                _record_run(root, spec, result, mode="live" if publish else "shadow")
+                run_id = _record_run(root, spec, result, mode="live" if publish else "shadow")
+                from ctx import writeback
+                try:
+                    record = writeback.record_delivery(root, contribution_ref, result, run_id)
+                    result["record"] = record["id"]
+                except writeback.WritebackError:
+                    pass
                 return result
             transcript.append(
-                'action must be plan, list, read, search, write, delete, check, or finish.')
+                'action must be plan, list, read, search, write, delete, check, '
+                'propose, or finish.')
         raise BuildError(f"the model did not finish within {max_steps} steps")
     finally:
         _unlock(lock)
@@ -467,7 +495,7 @@ def _wait_for_checks(code: Path, number, minutes: int) -> None:
         time.sleep(15)
 
 
-def _record_run(root: Path, spec: dict, result: dict, *, mode: str) -> None:
+def _record_run(root: Path, spec: dict, result: dict, *, mode: str):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     slug = re.sub(r"[^a-z0-9]+", "-", (spec.get("title") or "build").lower()).strip("-") or "build"
     folder = root / "factories/feature-builder/runs" / f"{stamp}-build-{slug[:40]}"
@@ -478,16 +506,17 @@ def _record_run(root: Path, spec: dict, result: dict, *, mode: str) -> None:
     (folder / "build.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     from ctx import db
     if not db.db_path(root).exists():
-        return
+        return None
     conn = db.connect(root)
     try:
-        conn.execute(
+        cur = conn.execute(
             "INSERT INTO runs (factory, task_ref, project, prompt_version, mode, "
             "bundle_path, output, verdict, created) VALUES "
             "('feature-builder', ?, NULL, 'build', ?, ?, ?, 'pending', ?)",
             (spec.get("id"), mode, folder.relative_to(root).as_posix(),
              result.get("summary") or "", db.utcnow()))
         conn.commit()
+        return cur.lastrowid
     finally:
         conn.close()
 
@@ -521,6 +550,7 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         '{"action":"search","query":"name"}, '
         '{"action":"write","path":"a.py","content":"full file text"}, '
         '{"action":"delete","path":"old.py"}, {"action":"check"}, '
+        '{"action":"propose","kind":"decision|glossary","title":"...","text":"..."}, '
         '{"action":"finish","summary":"..."}.\n'
         "First action must be a plan. Do not write before the plan. "
         + check_line +
@@ -528,6 +558,8 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         "Stay inside the repository. Do not touch .git. "
         "Do not edit tests, CI config, or the checks definition: those paths "
         "are protected, and an attempt fails the build. "
+        "If the work implies a decision or a glossary term, propose it with "
+        "propose; it goes to the inbox for a person, never straight into context. "
         "Match the repo's existing style and tests. Finish when the spec is met.\n\n"
         f"Feature: {spec.get('title')}\n"
         "Acceptance criteria:\n"

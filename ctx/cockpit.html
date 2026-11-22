@@ -1077,6 +1077,8 @@ async function openReader(type, id) {
         <textarea name="body" aria-label="Public spec body">${esc(data.body || "")}</textarea>
         <div><button class="primary" type="submit">Save public spec</button></div>
       </form>
+      <div style="margin-top:8px"><button type="button" class="quiet" data-approve-spec="${esc(data.id || id)}">Approve this spec for building</button>
+      <span class="meta">Approval binds the current body. Any edit needs re-approval.</span></div>
       <div class="panel" style="padding:12px 14px;margin-top:12px">
         <strong>Remote step</strong>
         <p class="meta">The cockpit does not write to GitHub. Run one of these in this checkout:</p>
@@ -1299,6 +1301,18 @@ document.body.addEventListener("click", async (event) => {
     try {
       const result = await api("/api/run/file", {method: "POST", body: JSON.stringify({id: Number(fileRun.dataset.fileRun)})});
       toast("Filed " + result.id);
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const approveSpec = event.target.closest("[data-approve-spec]");
+  if (approveSpec) {
+    if (!confirm("Approve this spec body for building? Any later edit will need re-approval.")) return;
+    try {
+      const result = await api("/api/spec/approve", {method: "POST", body: JSON.stringify({
+        contribution: approveSpec.dataset.approveSpec,
+      })});
+      toast("Spec approved (" + result.sha.slice(0, 12) + "…)");
       await load();
     } catch (err) { toast(err.message); }
     return;

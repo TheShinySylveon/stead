@@ -28,12 +28,20 @@ all of these:
 - the contribution is `kind: issue` and `role: author`;
 - its body has a description and a `## Acceptance criteria` checklist;
 - it carries the `feature-spec` tag;
-- its repo has `code_path` and a ceiling above `shadow`.
+- its repo has `code_path` and a ceiling above `shadow`;
+- **a person approved this exact body** with `stead spec approve`.
 
-`sync github` fills the GitHub-derived fields. The tag, the `author` role, and
-the criteria are a human edit. For a public repo, that is the real control
-against prompt injection through an issue body: a person decides the text is a
-spec before any model reads it as one.
+Approval stores a SHA-256 of the body (`spec_sha`). Any later edit or sync that
+changes the body invalidates the approval, so the model never builds text
+nobody approved. The `author` role and the `feature-spec` tag are **labels, not
+permissions**: anyone with file access can set them. The hash is the gate.
+
+For a public repo, that is the real control against prompt injection through an
+issue body: a person decides the text is a spec before any model reads it as
+one. Everything in the bundle that is not the approved spec — repo notes,
+related documents, prior builds, sibling issues — is marked **untrusted
+context**, and the prompt tells the model to treat instructions inside it as
+data.
 
 ## Checks run untrusted code
 
@@ -73,6 +81,11 @@ When tests are allowed, the build records `tests_touched` in its run log.
 The checks command itself lives in the repo's frontmatter, outside the
 checkout, so the model cannot rewrite it. If `checks:` calls a file the model
 can edit (`make test`, `npm test`), add that file to `protected_paths:`.
+`stead repo set` warns when the command names a runner whose config is present
+but unprotected (`make` → Makefile, `npm`/`yarn`/`pnpm` → package.json,
+`pytest`/`unittest`/`tox`/`nox` → conftest.py, pyproject.toml, tox.ini,
+noxfile.py, setup.cfg, pytest.ini). Protection is opt-in, so the warning is
+there to catch the files you would otherwise miss.
 
 ## Merge gates
 
@@ -104,6 +117,13 @@ per-object permissions, no roles, and no approval queue for context edits.
 - **The cockpit refuses to start a build on a shared server.** A build runs
   model-written code on the host. `STEAD_ALLOW_SERVER_BUILD=1` overrides this
   for a server you fully trust; do not set it for a team you do not control.
+- **Execution fields are read-only in the cockpit on a shared server:**
+  `checks:`, `checks_isolation`, `checks_image`, `protected_paths:`,
+  `trust_checks`, the `allow_*` flags, reach, trigger, `code_path`,
+  `default_branch`, the contribution `author` role, authoring a spec with
+  acceptance criteria, and spec approval. This closes the indirect route where
+  an account edits the config and a scheduled build on that host executes it
+  later. Edit those on the machine that runs builds.
 - Put the server behind a reverse proxy that terminates TLS and does SSO if
   you expose it. The built-in server speaks HTTP, has no login rate limit, and
   is not hardened for the public internet.
@@ -139,12 +159,27 @@ spec title; it never includes private notes.
 - The wiki is a projection over the same files. It has no separate store, and
   its change requests are ordinary private documents.
 
+## Write-back has a human gate on interpretation
+
+A delivered build writes **facts** back automatically: a versioned
+`build-record` document, the contribution state on merge, and linked task
+status. It also feeds prior records into the next bundle for that repo.
+
+Anything **interpretive** — a decision, a glossary term — the build may only
+*propose* as an inbox note. A person triages it into `context/documents/`. The
+agent cannot quietly rewrite the context that later builds depend on.
+
 ## Known gaps
 
-- No independent reviewer pass before merge.
+- No independent reviewer pass before merge. The gates are the repo's checks,
+  the required-check rule, protected test/CI paths, and explicit `reach: merge`.
+- No token or dollar budget. Bounds are wall-clock (`--max-minutes`), a step
+  cap, a total-edit cap, and a daily watched-build count. A provider that
+  reports usage could fund a spend cap; that is not wired up.
 - No per-object permissions or roles on the shared server.
 - No login rate limiting, TLS, or CSRF token beyond the custom `X-Ctx-Token`
   header and `SameSite=Lax` session cookie. Use a proxy.
-- Container isolation is per repo and opt-in, not enforced globally.
+- Container isolation is per repo and opt-in, not enforced globally. Host
+  checks can still read any file your user can read.
 - A model can still write a test-shaped file outside the protected globs if the
   repo's layout is unusual. Add it to `protected_paths:`.

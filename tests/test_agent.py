@@ -53,6 +53,8 @@ class BuildFixture(unittest.TestCase):
         (self.root / "context/contributions/issue-42.md").write_text(
             frontmatter.dumps(spec, body), encoding="utf-8")
         db.init_db(self.root)
+        from ctx import spec as spec_approval
+        spec_approval.approve(self.root, "contribution-me-app-issue-42")
 
     def _responder(self, replies: list[dict]):
         queue = list(replies)
@@ -321,6 +323,31 @@ class BuildTest(BuildFixture):
         for prompt in prompts:
             self.assertNotIn("API_TOKEN=SECRET-VALUE", prompt)
             self.assertNotIn("\nSECRET-VALUE\n", prompt)
+
+    def test_build_writes_a_record_and_can_propose_a_note(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "propose", "kind": "decision", "title": "Use argparse",
+             "text": "argparse keeps the dependency list empty."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Flag added."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertIn("record", result)
+        records = list((self.root / "context/documents").glob("build-*.md"))
+        self.assertEqual(len(records), 1)
+        notes = list((self.root / "inbox").glob("propose-decision-*.md"))
+        self.assertEqual(len(notes), 1)
+
+    def test_runner_config_warning(self) -> None:
+        from ctx import safety
+        (self.code / "Makefile").write_text("test:\n\tpython -m unittest\n", encoding="utf-8")
+        meta = {"checks": "make test"}
+        warnings = safety.runner_warnings(self.code, meta)
+        self.assertTrue(any("Makefile" in w for w in warnings))
+        meta["protected_paths"] = "Makefile"
+        self.assertEqual(safety.runner_warnings(self.code, meta), [])
 
     def test_docker_isolation_needs_an_image(self) -> None:
         from ctx import safety

@@ -8,6 +8,23 @@
   markdown spec/doc files only (code snippets inside the plan are fine).
   Zero code is applied to the checkout, no checks run, and publish/merge
   refuse a ghost repo. A human approves before any code is written.
+- **Spec approval is bound to the body.** `stead spec approve` (and a cockpit
+  button) stores a SHA-256 of the spec body. A build refuses an unapproved spec
+  or one whose body changed since approval. The `author` role and `feature-spec`
+  tag are labels, not permissions. Non-spec bundle text is marked untrusted.
+- **Write-back closes the loop.** A successful build writes a versioned
+  `build-record` document, marks the contribution merged and closes linked
+  tasks on merge, and prior records feed the next feature-builder bundle.
+  Decisions and glossary terms are only *proposed* to the inbox for triage.
+  The wiki History page lists the durable records.
+- **Shared-server indirect path closed.** On a shared server the cockpit makes
+  `checks:`, `protected_paths:`, reach, trigger, `code_path`, the author role,
+  spec authoring, and spec approval read-only, so an account cannot reach a
+  shell through a later scheduled build.
+- **Runner-config warning.** `repo set` warns when `checks:` names a runner
+  whose config (Makefile, package.json, conftest.py, pyproject.toml, …) is
+  present but unprotected. PR bodies now separate tests touched from tests
+  deleted.
 - **Containment for the build agent.** Tests and CI config are protected paths
   by default (`allow_test_edits`, `allow_ci_edits`, or `protected_paths:` to
   opt in). Checks run with a scrubbed environment, or in a networkless

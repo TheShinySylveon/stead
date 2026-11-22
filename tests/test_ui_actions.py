@@ -214,6 +214,57 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(status, 200, body)
         self.assertEqual(body["status"], "done")
 
+    def _seed_build_objects(self) -> None:
+        (self.root / "context/repos").mkdir(parents=True, exist_ok=True)
+        (self.root / "context/contributions").mkdir(parents=True, exist_ok=True)
+        repo = {"id": "repo-me-app", "type": "repo", "title": "App",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "active", "kind": "own", "default_branch": "main",
+                "reach": "shadow"}
+        (self.root / "context/repos/app.md").write_text(
+            frontmatter.dumps(repo, "# App\n"), encoding="utf-8")
+        contrib = {"id": "contribution-me-app-issue-5", "type": "contribution",
+                   "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                   "repo": "repo-me-app", "kind": "issue", "number": 5,
+                   "role": "assignee", "state": "open", "visibility": "public",
+                   "tags": ["feature-spec"]}
+        (self.root / "context/contributions/issue-5.md").write_text(
+            frontmatter.dumps(contrib, "Add a flag.\n\n## Acceptance criteria\n\n- [ ] works\n"),
+            encoding="utf-8")
+
+    def _make_shared(self) -> None:
+        (self.root / "stead.json").write_text(json.dumps({
+            "deployment": "multi", "bind": "0.0.0.0", "port": 8765,
+            "access_token": "test-token",
+        }), encoding="utf-8")
+
+    def test_spec_approval_endpoint_binds_the_body(self) -> None:
+        self._seed_build_objects()
+        status, body = self._post("/api/spec/approve",
+                                  {"contribution": "contribution-me-app-issue-5"})
+        self.assertEqual(status, 200, body)
+        self.assertTrue(body["sha"])
+
+    def test_shared_server_locks_execution_fields(self) -> None:
+        self._seed_build_objects()
+        self._make_shared()
+        status, body = self._post("/api/repo", {"id": "repo-me-app", "reach": "merge"})
+        self.assertEqual(status, 400)
+        self.assertIn("read-only", body.get("error", ""))
+        status, body = self._post("/api/contribution",
+                                  {"id": "contribution-me-app-issue-5", "role": "author"})
+        self.assertEqual(status, 400)
+        self.assertIn("read-only", body.get("error", ""))
+        status, body = self._post("/api/contribution/add", {
+            "title": "New spec", "repo": "repo-me-app", "kind": "issue", "number": 6,
+            "criteria": "- [ ] something"})
+        self.assertEqual(status, 400)
+        self.assertIn("read-only", body.get("error", ""))
+        status, body = self._post("/api/spec/approve",
+                                  {"contribution": "contribution-me-app-issue-5"})
+        self.assertEqual(status, 400)
+        self.assertIn("read-only", body.get("error", ""))
+
     def test_build_is_refused_on_a_shared_server(self) -> None:
         (self.root / "stead.json").write_text(json.dumps({
             "deployment": "multi", "bind": "0.0.0.0", "port": 8765,
