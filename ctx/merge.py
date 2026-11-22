@@ -65,7 +65,7 @@ def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
             f"refusing to merge from {branch or 'an unknown branch'}. Stay off {default}.")
     raw = run([
         "gh", "pr", "view", "--json",
-        "number,url,state,isDraft,baseRefName,headRefName,statusCheckRollup",
+        "number,url,state,isDraft,baseRefName,headRefName,headRefOid,statusCheckRollup",
     ], code)
     try:
         view = json.loads(raw)
@@ -89,6 +89,13 @@ def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
     if not isinstance(number, int):
         raise MergeError("the pull request has no number")
     run(["gh", "pr", "merge", str(number), "--merge"], code)
+    from ctx import writeback
+    try:
+        writeback.mark_merged(root, contribution_ref,
+                              url=(view.get("url") or "").strip(),
+                              head_sha=(view.get("headRefOid") or "").strip())
+    except Exception:
+        pass
     return {
         "merged": True,
         "number": number,

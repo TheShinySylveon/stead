@@ -39,8 +39,12 @@ gets done on this repo. The full scope and definition of done are in
   upstream is deferred.
 - **Human gate on interpretation.** Decisions and glossary terms the model
   proposes go to the inbox for triage, never straight into context.
-- **The metric is the ledger.** `stead metrics` reports specs built, share
-  merged after review, repair rounds, checks mode, time, and tests touched.
+- **The metric is the ledger.** `stead metrics` reports specs built, the failure
+  rate, share merged after review, how many merged after a human edit, repair
+  rounds, checks mode, time, tests touched, and characters sent to the model.
+  Every build writes a record, success or failure. Merged/closed outcomes and
+  human edits are reconciled from live PR state by `stead sync github`
+  (read-only), so a human merge under the `pr` ceiling reaches the numbers.
   Publish those numbers here as they accumulate.
 
 Honest gaps in the contract today (MVP blockers):
@@ -91,13 +95,19 @@ python -m stead --root ../stead-dogfood spec approve --contribution CONTRIBUTION
 # Build at draft-pr. A human reviews and merges; Stead does not auto-merge here.
 python -m stead --root ../stead-dogfood build --contribution CONTRIBUTION_ID --publish
 
-# Read the numbers. Each successful build wrote a build-record document.
+# Read the numbers. Every build, success or failure, wrote a build-record.
 python -m stead --root ../stead-dogfood metrics
+
+# Reconcile merged/closed outcomes and human edits from live PR state (read-only).
+python -m stead --root ../stead-dogfood sync github
 ```
 
-On merge, Stead marks the contribution merged, closes linked tasks, and the next
-bundle reads the prior record. Interpretive notes the model proposes land in
-`inbox/` for triage.
+When a PR merges — whether by `stead factory merge` or by a human under the `pr`
+ceiling — the record's outcome becomes merged, the contribution is marked merged,
+linked tasks close, and the next bundle reads the prior record. A human merge is
+picked up by `sync github`; if the PR head SHA differs from the commit Stead
+recorded, the record flags `human_edits`. Interpretive notes the model proposes
+land in `inbox/` for triage.
 
 ## Candidate specs
 

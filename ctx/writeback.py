@@ -46,20 +46,8 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
     merged = bool(result.get("merged"))
     today = date.today().isoformat()
     updated: list[str] = []
-
-    if merged and contrib.get("state") != "merged":
-        _patch(root, "contribution", contribution_ref, {"state": "merged"})
-        updated.append(contribution_ref)
-
     if merged:
-        for path, meta, _body in objects.iter_objects(root, "task"):
-            related = meta.get("related") or []
-            if isinstance(related, str):
-                related = [related]
-            if contribution_ref in related or contrib.get("id") in related:
-                if meta.get("status") != "done":
-                    _patch(root, "task", meta.get("id") or path.stem, {"status": "done"})
-                    updated.append(str(meta.get("id") or path.stem))
+        updated = _apply_merged(root, contribution_ref)
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     slug = re.sub(r"[^a-z0-9]+", "-",
@@ -198,6 +186,103 @@ def record_for_branch(root: Path, repo_id: str, branch: str) -> dict | None:
             return meta
         fallback = meta
     return fallback
+
+
+def _apply_merged(root: Path, contribution_ref: str) -> list[str]:
+    """Mark the contribution merged and close linked tasks. Returns what changed."""
+    found = objects.find(root, "contribution", contribution_ref)
+    if found is None:
+        return []
+    _path, contrib, _body = found
+    updated: list[str] = []
+    if contrib.get("state") != "merged":
+        _patch(root, "contribution", contribution_ref, {"state": "merged"})
+        updated.append(contribution_ref)
+    for path, meta, _body in objects.iter_objects(root, "task"):
+        related = meta.get("related") or []
+        if isinstance(related, str):
+            related = [related]
+        if contribution_ref in related or contrib.get("id") in related:
+            if meta.get("status") != "done":
+                _patch(root, "task", meta.get("id") or path.stem, {"status": "done"})
+                updated.append(str(meta.get("id") or path.stem))
+    return updated
+
+
+def _latest_record(root: Path, contribution_ref: str):
+    """The newest build record for one contribution (any outcome)."""
+    found = []
+    for path, meta, body in objects.iter_objects(root, "document"):
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if RECORD_TAG not in tags:
+            continue
+        if str(meta.get("contribution") or "") != contribution_ref:
+            continue
+        found.append((path, meta, body))
+    found.sort(key=lambda item: str(item[1].get("created") or ""), reverse=True)
+    return found[0] if found else None
+
+
+def mark_merged(root: Path, contribution_ref: str, *, url: str = "",
+                head_sha: str = "") -> dict:
+    """`stead factory merge` updates the existing build record to merged (it
+    does not write a second one) and applies the linked statuses. A human
+    merge is reconciled later by sync, not here."""
+    updated = _apply_merged(root, contribution_ref)
+    latest = _latest_record(root, contribution_ref)
+    if latest is not None:
+        path, meta, _body = latest
+        fields = {"outcome": "merged"}
+        if url:
+            fields["merged_url"] = url
+        recorded = str(meta.get("commit") or "")
+        if head_sha and recorded:
+            fields["human_edits"] = "true" if head_sha != recorded else "false"
+        _patch(root, "document", meta.get("id") or path.stem, fields)
+    return {"outcome": "merged", "updated": updated}
+
+
+def reconcile_records(root: Path, view_pr) -> dict:
+    """Reconcile build records against live PR state. READ-ONLY: view_pr(url)
+    returns the gh pr view JSON ({state, headRefOid, ...}) or None. A merged PR
+    updates the record's outcome and flags human edits (head SHA differs from
+    the recorded commit); a closed-unmerged PR becomes 'closed'. This is how a
+    human merge under the pr ceiling reaches the ledger."""
+    reconciled: list[str] = []
+    for path, meta, _body in objects.iter_objects(root, "document"):
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if RECORD_TAG not in tags:
+            continue
+        pr_url = meta.get("pr_url")
+        if not pr_url:
+            continue
+        if str(meta.get("outcome") or "") in ("merged", "closed", "failed"):
+            continue
+        try:
+            data = view_pr(pr_url)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        state = str(data.get("state") or "").upper()
+        fields: dict = {}
+        if state == "MERGED":
+            fields["outcome"] = "merged"
+            head = str(data.get("headRefOid") or "")
+            recorded = str(meta.get("commit") or "")
+            fields["human_edits"] = "true" if (head and recorded and head != recorded) else "false"
+            if data.get("mergedAt"):
+                fields["merged_at"] = str(data.get("mergedAt"))
+            contrib_ref = str(meta.get("contribution") or "")
+            if contrib_ref:
+                _apply_merged(root, contrib_ref)
+        elif state == "CLOSED":
+            fields["outcome"] = "closed"
+        else:
+            continue  # still open; nothing to reconcile yet
+        _patch(root, "document", meta.get("id") or path.stem, fields)
+        reconciled.append(str(meta.get("id") or path.stem))
+    return {"reconciled": len(reconciled), "ids": reconciled}
 
 
 def _patch(root: Path, otype: str, ref: str, fields: dict) -> None:

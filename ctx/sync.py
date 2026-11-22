@@ -236,5 +236,18 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
         conn.commit()
     finally:
         conn.close()
+    reconciled = 0
+    if not offline:
+        # Reconcile build records against live PR state (read-only gh pr view):
+        # a human merge under the pr ceiling reaches the ledger here.
+        from ctx import writeback
+
+        def view_pr(url):
+            try:
+                return _gh_json(["pr", "view", url, "--json", "state,headRefOid,mergedAt"])
+            except SystemExit:
+                return None
+
+        reconciled = writeback.reconcile_records(root, view_pr)["reconciled"]
     return {"offline": offline, "fetched": len(items), "new": n_new,
-            "updated": n_updated, **counts}
+            "updated": n_updated, "reconciled": reconciled, **counts}

@@ -2,9 +2,13 @@
 
 The ``runs`` table is a rebuildable index; the ``build-record`` documents are
 the versioned truth. This reads those documents and reports what the factory
-actually did: how many specs built, how many merged without a human edit, repair
-rounds, checks mode, and time. These are the numbers to publish, not Lighthouse
-on a loopback page.
+actually did: how many specs built, how many failed, how many merged after
+review (with or without a human edit), repair rounds, checks mode, time, and
+characters sent. Failed builds write a record too, so there is a failure rate.
+Merged/closed outcomes and human edits are reconciled from live PR state by
+``stead sync github`` (read-only), so a human merge under the ``pr`` ceiling
+reaches these numbers. These are the numbers to publish, not Lighthouse on a
+loopback page.
 """
 
 from __future__ import annotations
@@ -41,11 +45,13 @@ def collect(root: Path, repo: str | None = None) -> dict:
         records.append(meta)
     records.sort(key=lambda m: str(m.get("created") or ""), reverse=True)
 
-    outcomes = {"merged": 0, "published": 0, "committed": 0}
+    outcomes = {"merged": 0, "published": 0, "committed": 0, "failed": 0, "closed": 0}
     modes = {"docker": 0, "host": 0, "none": 0}
     elapsed = 0.0
     repairs = 0
     files = tests_touched = tests_deleted = 0
+    human_edits = 0
+    chars_sent = 0
     by_repo: dict[str, int] = {}
     for meta in records:
         outcome = str(meta.get("outcome") or "committed")
@@ -57,6 +63,9 @@ def collect(root: Path, repo: str | None = None) -> dict:
         files += len(_list(meta.get("files")))
         tests_touched += len(_list(meta.get("tests_touched")))
         tests_deleted += len(_list(meta.get("tests_deleted")))
+        chars_sent += int(_num(meta.get("chars_sent")))
+        if str(meta.get("human_edits") or "").lower() == "true":
+            human_edits += 1
         for tag in (meta.get("tags") or []):
             if str(tag).lower().startswith("repo:"):
                 key = str(tag)[5:]
@@ -66,12 +75,15 @@ def collect(root: Path, repo: str | None = None) -> dict:
         "builds": total,
         "outcomes": outcomes,
         "merged_share": round(outcomes["merged"] / total, 3) if total else 0.0,
+        "failure_rate": round(outcomes["failed"] / total, 3) if total else 0.0,
+        "human_edits": human_edits,
         "checks_modes": modes,
         "avg_elapsed_seconds": round(elapsed / total, 1) if total else 0.0,
         "repair_rounds": repairs,
         "files_touched": files,
         "tests_touched": tests_touched,
         "tests_deleted": tests_deleted,
+        "chars_sent": chars_sent,
         "by_repo": by_repo,
         "recent": [
             {"title": m.get("title", ""), "outcome": m.get("outcome", ""),
@@ -86,13 +98,16 @@ def collect(root: Path, repo: str | None = None) -> dict:
 def render(report: dict) -> str:
     if not report["builds"]:
         return ("No build records yet. Approve a spec and run `stead build`; "
-                "each successful build writes a build-record document.")
+                "each build, success or failure, writes a build-record document.")
     out = report["outcomes"]
     lines = [
         f"builds: {report['builds']}",
         f"merged: {out['merged']}  published: {out['published']}  "
-        f"committed (local): {out['committed']}",
-        f"merged share: {report['merged_share']:.0%}",
+        f"committed (local): {out['committed']}  failed: {out['failed']}  "
+        f"closed: {out['closed']}",
+        f"merged share: {report['merged_share']:.0%}  "
+        f"failure rate: {report['failure_rate']:.0%}",
+        f"merged after a human edit: {report['human_edits']}",
         f"checks: docker {report['checks_modes'].get('docker', 0)}  "
         f"host {report['checks_modes'].get('host', 0)}  "
         f"none {report['checks_modes'].get('none', 0)}",
@@ -101,6 +116,7 @@ def render(report: dict) -> str:
         f"files touched: {report['files_touched']}  "
         f"tests touched: {report['tests_touched']}  "
         f"tests deleted: {report['tests_deleted']}",
+        f"characters sent to the model: {report['chars_sent']}",
     ]
     if report["by_repo"]:
         lines.append("by repo: " + ", ".join(
