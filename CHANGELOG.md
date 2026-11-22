@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **A merged spec closes the issue it was drafted from.** On an own repo the PR
+  says `Closes #N`, so GitHub closes the issue, but `sync github` fetches open
+  issues only and never saw it. Recording the merge now marks the source issue
+  `closed` and closes tasks linked to it as well as to the draft. On other
+  repos the PR only tracks the issue, so it stays open.
 - **`spec draft`, `factory run --generate`, and `eval judge` use the model's
   `call_timeout`.** They had a fixed 120 s limit, so a 27B model drafting with
   the repo tree in the prompt timed out with a raw traceback. A timeout now

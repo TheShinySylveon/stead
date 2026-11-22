@@ -224,3 +224,69 @@ class MetricsTest(unittest.TestCase):
             frontmatter.dumps(doc, "# Notes\n"), encoding="utf-8")
         with self.assertRaises(writeback.WritebackError):
             writeback.mark_correct(self.root, "document-notes", True)
+
+
+class SourceIssueCloseTest(unittest.TestCase):
+    """A merged drafted spec closes the raw issue it came from (own repos)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name)
+        for folder in ("repos", "contributions", "documents", "tasks"):
+            (self.root / "context" / folder).mkdir(parents=True)
+
+    def _store(self, kind: str) -> None:
+        repo = {"id": "repo-me-app", "type": "repo", "title": "App",
+                "created": "2026-11-22", "updated": "2026-11-22",
+                "status": "active", "kind": kind}
+        (self.root / "context/repos/app.md").write_text(
+            frontmatter.dumps(repo, "# App\n"), encoding="utf-8")
+        base = {"type": "contribution", "title": "Feature", "created": "2026-11-22",
+                "updated": "2026-11-22", "repo": "repo-me-app", "kind": "issue",
+                "number": 7, "role": "author", "state": "open", "visibility": "public"}
+        source = dict(base, id="contribution-me-app-issue-7", tags=["stead-build"])
+        draft = dict(base, id="contribution-me-app-issue-7-spec", tags=["feature-spec"],
+                     drafted_from="contribution-me-app-issue-7",
+                     related=["contribution-me-app-issue-7"])
+        for meta in (source, draft):
+            (self.root / "context/contributions" / f"{meta['id'][len('contribution-'):]}.md"
+             ).write_text(frontmatter.dumps(meta, "# Feature\n"), encoding="utf-8")
+        task = {"id": "task-ship-feature", "type": "task", "title": "Ship the feature",
+                "created": "2026-11-22", "updated": "2026-11-22", "status": "doing",
+                "related": ["contribution-me-app-issue-7"]}
+        (self.root / "context/tasks/ship-feature.md").write_text(
+            frontmatter.dumps(task, "# Ship\n"), encoding="utf-8")
+        writeback.record_delivery(self.root, "contribution-me-app-issue-7-spec", {
+            "branch": "stead/7-feature", "commit": "abc", "files": ["app.py"],
+            "deleted": [], "checks": "make test", "checks_mode": "host",
+            "tests_touched": [], "tests_deleted": [], "elapsed_seconds": 1.0,
+            "repair_rounds": 0, "summary": "done", "published": True,
+            "merged": False, "pr_url": "https://github.com/me/app/pull/8"})
+
+    def _state(self, folder: str, name: str, key: str) -> str:
+        meta, _body = frontmatter.parse(
+            (self.root / "context" / folder / name).read_text(encoding="utf-8"))
+        return str(meta.get(key))
+
+    def _merge(self) -> None:
+        writeback.reconcile_records(
+            self.root, lambda _url: {"state": "MERGED", "headRefOid": "abc"})
+
+    def test_merging_a_draft_closes_its_source_issue_on_an_own_repo(self) -> None:
+        self._store("own")
+        self._merge()
+        self.assertEqual(self._state("contributions", "me-app-issue-7-spec.md", "state"),
+                         "merged")
+        self.assertEqual(self._state("contributions", "me-app-issue-7.md", "state"),
+                         "closed")
+        # A task linked to the raw issue (not the draft) closes too.
+        self.assertEqual(self._state("tasks", "ship-feature.md", "status"), "done")
+
+    def test_on_another_repo_the_source_issue_stays_open(self) -> None:
+        self._store("oss")
+        self._merge()
+        self.assertEqual(self._state("contributions", "me-app-issue-7-spec.md", "state"),
+                         "merged")
+        self.assertEqual(self._state("contributions", "me-app-issue-7.md", "state"),
+                         "open")

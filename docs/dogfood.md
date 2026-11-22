@@ -191,7 +191,8 @@ python -m stead --root ../stead-dogfood sync github
 
 When a PR merges — whether by `stead factory merge` or by a human under the `pr`
 ceiling — the record's outcome becomes merged, the contribution is marked merged,
-linked tasks close, and the next bundle reads the prior record. A human merge is
+the raw issue a spec was drafted from is marked closed (own repos, where the PR
+said `Closes #N`), linked tasks close, and the next bundle reads the prior record. A human merge is
 picked up by `sync github`; if the PR head SHA differs from the commit Stead
 recorded, the record flags `human_edits`. Interpretive notes the model proposes
 land in `inbox/` for triage.
