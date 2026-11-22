@@ -49,8 +49,8 @@ A fresh checkout shows Welcome instead.
   commits, and can publish or merge under that repo's reach.
 - A weekly local job that syncs read-only and drafts, plus `stead run file` to
   keep an approved draft as a private document.
-- A repo wiki: a home page with the essentials, then Overview, Specs,
-  Decisions, Glossary, Tasks, and History, generated from the files.
+- A repo wiki as a Confluence-style space: home page, page tree, child pages,
+  labels, metadata, and an on-page table of contents. Generated from files.
 - A first-run choice: this computer, or a shared Docker server where each person signs in.
 
 Docs: [docs/README.md](docs/README.md).

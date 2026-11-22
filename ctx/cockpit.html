@@ -210,6 +210,12 @@
     padding: var(--space-xs) var(--space-sm); border-radius: var(--radius-control); min-height: 36px; cursor: pointer; }
   .wiki-nav button:hover { background: var(--color-paper-2); color: var(--color-ink); }
   .wiki-nav button[aria-current="page"] { color: var(--color-accent); box-shadow: inset 2px 0 0 var(--color-accent); }
+  .wiki-node { display: block; }
+  .wiki-children { border-left: 1px solid var(--color-rule); margin-left: 10px; }
+  .wiki-children button { font-size: var(--text-xs); min-height: 30px; }
+  .wiki-toc { margin: 8px 0 14px; padding-left: 10px; border-left: 2px solid var(--color-rule); }
+  .wiki-toc a { display: block; color: var(--color-muted); text-decoration: none; }
+  .wiki-toc a:hover { color: var(--color-accent); }
   .wiki-body { min-width: 0; }
   .wiki-crumb { display: flex; gap: var(--space-2xs); align-items: center; color: var(--color-muted); font-size: var(--text-sm); margin-bottom: var(--space-xs); }
   .wiki-crumb button { appearance: none; border: 0; background: none; color: var(--color-accent); cursor: pointer; font: inherit; padding: 0; }
@@ -344,7 +350,7 @@ const TITLES = {
 const state = { snap: null, view: "home", q: "", onboardResult: null,
   scheduleText: "", scheduleProject: "", hookToken: "",
   showAllRuns: false, evals: {}, opener: null, dirty: false,
-  wikiRepo: "", wiki: null, wikiPage: "", wikiPageData: null };
+  wikiRepo: "", wiki: null, wikiPath: "", wikiPageData: null };
 
 function when(value) {
   if (!value) return "";
@@ -631,36 +637,61 @@ function renderRepos() {
     <div class="section-title">Contributions</div>
     ${rows || `<div class="empty">No cached issues or pull requests.</div>`}`;
 }
+function wikiTree(nodes, current, depth) {
+  return (nodes || []).map(node => {
+    const active = current === node.slug;
+    const open = active || (current && current.startsWith(node.slug + "/"));
+    const kids = (open && node.children && node.children.length)
+      ? `<div class="wiki-children">${wikiTree(node.children, current, depth + 1)}</div>` : "";
+    return `<div class="wiki-node"><button type="button" data-wiki-page="${esc(node.slug)}" ${active ? 'aria-current="page"' : ""} style="padding-left:${8 + depth * 14}px">${esc(node.title)}</button>${kids}</div>`;
+  }).join("");
+}
+function wikiToc(markdown) {
+  const rows = [];
+  String(markdown || "").split("\n").forEach(line => {
+    const match = line.match(/^(#{2,3}) (.+)$/);
+    if (match) rows.push({ level: match[1].length, text: match[2] });
+  });
+  if (rows.length < 2) return "";
+  return `<div class="wiki-toc"><div class="section-title">On this page</div>${rows.map(row =>
+    `<a href="#${headingId(row.text)}" class="meta" style="display:block;padding-left:${(row.level - 2) * 12}px">${esc(row.text)}</a>`).join("")}</div>`;
+}
 function renderWiki() {
   const repos = state.snap.repos || [];
   if (!state.wikiRepo) {
-    return `<p class="meta">Choose a repo. The wiki is the human record: the essentials first, then the detail.</p>
-      <div class="grid">${repos.map(r => `<button type="button" class="card" data-wiki-open="${esc(r.id)}" style="display:block;text-align:left">
-        <strong>${esc(r.title)}</strong>
-        <div class="meta">${esc(r.kind)} · ${esc(r.status)}${r.url ? " · " + esc(r.url) : ""}</div>
+    return `<p class="meta">Choose a repo. Each repo is a space: a home page, a page tree, and the detail behind it.</p>
+      <div class="grid">${repos.map(repo => `<button type="button" class="card" data-wiki-open="${esc(repo.id)}" style="display:block;text-align:left">
+        <strong>${esc(repo.title)}</strong>
+        <div class="meta">${esc(repo.kind)} · ${esc(repo.status)}${repo.url ? " · " + esc(repo.url) : ""}</div>
       </button>`).join("") || `<div class="empty">No repos yet. Add one on Repos.</div>`}</div>`;
   }
   if (!state.wiki) return `<p class="meta">Loading ${esc(state.wikiRepo)}…</p>`;
   const data = state.wiki;
   const page = state.wikiPageData && state.wikiPageData.page;
-  const nav = data.pages.map(item =>
-    `<button type="button" data-wiki-page="${esc(item.slug)}" ${page && page.slug === item.slug ? 'aria-current="page"' : ""}>${esc(item.title)}</button>`).join("");
   const header = `
     <div class="inline" style="justify-content:space-between;margin-bottom:0">
       <div class="meta">${esc(data.repo.kind)} · ${esc(data.repo.status)}${data.repo.url ? " · " + esc(data.repo.url) : ""}</div>
       <button type="button" class="quiet" data-wiki-picker>Change repo</button>
     </div>`;
+  const nav = `<nav class="wiki-nav" aria-label="Wiki pages">${wikiTree(data.tree, page ? page.path : "", 0)}</nav>`;
   if (!page) {
-    const start = (data.start || []).map(item => item.type
-      ? `<button type="button" class="card" data-open data-type="${esc(item.type)}" data-id="${esc(item.id)}" style="display:block;text-align:left">
-           <strong>${esc(item.title)}</strong><div class="meta">${esc(item.why)}</div></button>`
-      : `<div class="card"><strong>${esc(item.title)}</strong><div class="meta">${esc(item.why)}</div></div>`).join("");
-    const pages = data.pages.map(item =>
-      `<button type="button" class="card" data-wiki-page="${esc(item.slug)}" style="display:block;text-align:left">
-        <strong>${esc(item.title)}</strong></button>`).join("");
+    const start = (data.start || []).map(item => {
+      const inner = `<strong>${esc(item.title)}</strong><div class="meta">${esc(item.why)}</div>`;
+      if (item.slug) return `<button type="button" class="card" data-wiki-page="${esc(item.slug)}" style="display:block;text-align:left">${inner}</button>`;
+      if (item.type) return `<button type="button" class="card" data-open data-type="${esc(item.type)}" data-id="${esc(item.id)}" style="display:block;text-align:left">${inner}</button>`;
+      return `<div class="card">${inner}</div>`;
+    }).join("");
+    const groups = (data.tree || []).filter(node => node.slug !== "overview").map(node =>
+      `<button type="button" class="card" data-wiki-page="${esc(node.slug)}" style="display:block;text-align:left">
+        <strong>${esc(node.title)}</strong>
+        <div class="meta">${(node.children || []).length} page${(node.children || []).length === 1 ? "" : "s"}</div></button>`).join("");
     const counts = data.counts || {};
-    const recent = (data.recent || []).map(item =>
-      `<div class="row"><span><strong>${esc(item.title)}</strong><br><small>${esc(item.kind)}</small></span><span class="meta">${esc(when(item.when))}</span></div>`).join("");
+    const recent = (data.recent || []).map(item => {
+      const inner = `<span><strong>${esc(item.title)}</strong><br><small>${esc(item.kind)}</small></span><span class="meta">${esc(when(item.when))}</span>`;
+      return item.slug
+        ? `<button type="button" class="row" data-wiki-page="${esc(item.slug)}">${inner}</button>`
+        : `<div class="row">${inner}</div>`;
+    }).join("");
     return `${header}
       <h2 style="font-size:var(--text-2xl);margin-top:6px">${esc(data.repo.title)}</h2>
       <p class="meta" style="max-width:70ch">${inline(data.summary || "No summary yet. Add a sentence to the repo project.")}</p>
@@ -672,28 +703,41 @@ function renderWiki() {
       </div>
       <div class="section-title">Start here</div>
       <div class="grid">${start || `<div class="empty">Nothing to start with yet.</div>`}</div>
-      <div class="section-title">Pages</div>
-      <div class="grid">${pages}</div>
+      <div class="section-title">Space pages</div>
+      <div class="grid">${groups || `<div class="empty">No pages yet.</div>`}</div>
       <div class="section-title">Recent</div>
       <div class="list">${recent || `<div class="empty">No recent activity.</div>`}</div>`;
   }
-  const entries = (page.entries || []).map(item => {
-    const inner = `<span><strong>${esc(item.title)}</strong>${item.meta ? `<br><small>${esc(item.meta)}</small>` : ""}${item.body ? `<div class="meta" style="margin-top:4px">${inline(item.body)}</div>` : ""}</span>`;
-    return item.type
-      ? `<button type="button" class="row" data-open data-type="${esc(item.type)}" data-id="${esc(item.id)}">${inner}</button>`
-      : `<div class="row">${inner}</div>`;
-  }).join("");
+  const crumbs = (page.breadcrumb || []).map((crumb, index) =>
+    index === 0
+      ? `<button type="button" data-wiki-home>${esc(crumb.title)}</button>`
+      : `<button type="button" data-wiki-page="${esc(crumb.slug)}">${esc(crumb.title)}</button>`).join("<span>/</span>");
+  const labels = (page.labels || []).map(label => chip(label)).join("");
+  const meta = [page.updated ? "updated " + when(page.updated) : "", page.author ? "by " + page.author : ""]
+    .filter(Boolean).join(" · ");
+  const children = (page.children || []).map(item =>
+    `<button type="button" class="card" data-wiki-page="${esc(item.slug)}" style="display:block;text-align:left">
+      <strong>${esc(item.title)}</strong>
+      <div class="meta">${esc(item.meta || "")}</div>
+      ${item.blurb ? `<div class="meta" style="margin-top:4px">${inline(item.blurb)}</div>` : ""}
+      <div class="chips" style="margin-top:6px">${(item.labels || []).map(label => chip(label)).join("")}</div>
+    </button>`).join("");
   return `${header}
-    <div class="wiki-crumb"><button type="button" data-wiki-home>Wiki</button><span>/</span><span>${esc(data.repo.title)}</span><span>/</span><span>${esc(page.title)}</span></div>
+    <div class="wiki-crumb">${crumbs}</div>
     <div class="wiki">
-      <nav class="wiki-nav" aria-label="Wiki pages">${nav}</nav>
+      ${nav}
       <div class="wiki-body">
         <h2 style="font-size:var(--text-xl)">${esc(page.title)}</h2>
+        <div class="meta">${esc(meta)}</div>
+        ${labels ? `<div class="chips" style="margin:8px 0">${labels}</div>` : ""}
+        ${wikiToc(page.markdown)}
         ${page.markdown ? `<div class="reader-body">${renderMarkdown(page.markdown)}</div>` : ""}
-        ${entries ? `<div class="list" style="margin-top:12px">${entries}</div>` : `<div class="empty" style="margin-top:12px">Nothing here yet.</div>`}
+        ${children ? `<div class="section-title">Child pages</div><div class="grid">${children}</div>` : ""}
+        ${!page.markdown && !children ? `<div class="empty">Nothing here yet.</div>` : ""}
       </div>
     </div>`;
 }
+
 function renderInbox() {  const items = state.snap.inbox.filter(match);
   return `
     <form class="stack" id="capture">
@@ -914,6 +958,9 @@ function inline(s) {
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
 }
+function headingId(text) {
+  return "h-" + String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
+}
 function renderMarkdown(src) {
   const fences = [];
   const text = String(src || "").replace(/```[\w-]*\n?([\s\S]*?)```/g, (_, code) => {
@@ -929,7 +976,7 @@ function renderMarkdown(src) {
     const heading = lines[0].match(/^(#{1,3}) (.+)$/);
     if (heading && lines.length === 1) {
       const n = heading[1].length;
-      html += `<h${n}>${inline(heading[2])}</h${n}>`;
+      html += `<h${n} id="${headingId(heading[2])}">${inline(heading[2])}</h${n}>`;
       continue;
     }
     const items = lines.map(line => line.match(/^\s*[-*] \[[ xX]\] (.+)$/) || line.match(/^\s*[-*] (.+)$/));
@@ -945,9 +992,9 @@ async function openWiki(repo) {
   try {
     state.wikiRepo = repo;
     state.wiki = await api("/api/wiki?repo=" + encodeURIComponent(repo));
-    if (state.wikiPage) {
+    if (state.wikiPath) {
       state.wikiPageData = await api("/api/wiki?repo=" + encodeURIComponent(repo) +
-        "&page=" + encodeURIComponent(state.wikiPage));
+        "&page=" + encodeURIComponent(state.wikiPath));
     } else {
       state.wikiPageData = null;
     }
@@ -956,12 +1003,12 @@ async function openWiki(repo) {
     toast(err.message);
   }
 }
-async function openWikiPage(slug) {
+async function openWikiPage(path) {
   if (!state.wikiRepo) return;
   try {
-    state.wikiPage = slug;
+    state.wikiPath = path;
     state.wikiPageData = await api("/api/wiki?repo=" + encodeURIComponent(state.wikiRepo) +
-      "&page=" + encodeURIComponent(slug));
+      "&page=" + encodeURIComponent(path));
     render();
   } catch (err) {
     toast(err.message);
@@ -1346,7 +1393,7 @@ document.body.addEventListener("click", async (event) => {
   if (event.target.closest("[data-wiki-picker]")) {
     state.wikiRepo = "";
     state.wiki = null;
-    state.wikiPage = "";
+    state.wikiPath = "";
     state.wikiPageData = null;
     render();
     return;
@@ -1354,7 +1401,7 @@ document.body.addEventListener("click", async (event) => {
   const wikiPageBtn = event.target.closest("[data-wiki-page]");
   if (wikiPageBtn) { await openWikiPage(wikiPageBtn.dataset.wikiPage); return; }
   if (event.target.closest("[data-wiki-home]")) {
-    state.wikiPage = "";
+    state.wikiPath = "";
     state.wikiPageData = null;
     render();
     return;

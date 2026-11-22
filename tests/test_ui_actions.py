@@ -181,7 +181,7 @@ class CockpitActionsTest(unittest.TestCase):
         req.add_header("X-Ctx-Token", self.token)
         status, body = _read(req)
         self.assertEqual(status, 200)
-        self.assertIn("overview", [p["slug"] for p in body["pages"]])
+        self.assertIn("overview", [node["slug"] for node in body["tree"]])
         req = urllib.request.Request(
             f"http://127.0.0.1:{self.port}/api/wiki?repo=repo-me-app&page=overview")
         req.add_header("X-Ctx-Token", self.token)

@@ -120,19 +120,22 @@ history (last two quarters) → first task
 
 ### The wiki shape
 
-The human surface is a wiki, generated from the files. There is no second
-store to maintain.
+The human surface is a Confluence-style space, generated from the files. There
+is no second store to maintain.
 
-- **Repo home** — the name, a one-line summary, kind/status/autonomy chips,
-  counts, **Start here** (project, newest decision, current spec, glossary),
-  **Pages**, and **Recent**.
-- **Drill-down pages** — Overview, Specs, Decisions, Glossary, Tasks, History.
-  Each page lists entries; opening one shows the underlying file.
-- **Navigation** — breadcrumb plus a persistent page rail. A person can always
-  answer "where am I?" and "what is the next most useful page?".
+- **Space home** — the repo name, a one-line summary, kind/status/autonomy
+  chips, counts, **Start here** (project, newest decision, current spec,
+  glossary), **Space pages**, and **Recent**.
+- **Page tree** — a persistent left rail. Groups (Specs, Decisions, Glossary,
+  Tasks, History) expand to their child pages; the active branch stays open.
+- **Page header** — breadcrumb, labels, last updated, and author.
+- **Child pages** — each spec, decision, glossary entry, and task is its own
+  page with the full markdown, not a side panel.
+- **On this page** — an auto-generated table of contents for pages with two or
+  more headings.
 - **Progressive refinement** — the home answers "what is this and where do I
-  start?"; a page answers "what was decided and why?"; an entry answers "show
-  me the exact text".
+  start?"; a group answers "what is here?"; a child answers "show me the exact
+  text".
 
 The wiki is read-only and private by default. Agents do not read the wiki; they
 receive bundles. Both are projections of the same files.

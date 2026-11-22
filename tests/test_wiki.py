@@ -62,31 +62,41 @@ class WikiTest(unittest.TestCase):
             frontmatter.dumps(task, "# Write it\n"), encoding="utf-8")
         db.init_db(self.root)
 
-    def test_home_has_essentials_and_pages(self) -> None:
+    def test_home_has_essentials_and_tree(self) -> None:
         home = wiki.index(self.root, "repo-me-app")
         self.assertEqual(home["repo"]["title"], "App")
         self.assertIn("small service", home["summary"])
-        slugs = [item["slug"] for item in home["pages"]]
+        slugs = {node["slug"]: node for node in home["tree"]}
         for slug in ("overview", "specs", "decisions", "glossary", "tasks", "history"):
             self.assertIn(slug, slugs)
+        spec_children = [child["slug"] for child in slugs["specs"]["children"]]
+        self.assertIn("specs/contribution-me-app-issue-3", spec_children)
+        decision_children = [child["slug"] for child in slugs["decisions"]["children"]]
+        self.assertIn("decisions/document-adr-one", decision_children)
         self.assertEqual(home["counts"]["specs_open"], 1)
         self.assertEqual(home["counts"]["decisions"], 1)
         self.assertEqual(home["counts"]["tasks_open"], 1)
         self.assertEqual(home["counts"]["merged"], 1)
-        self.assertTrue(any(item["type"] == "document" for item in home["start"]))
+        self.assertTrue(any(item.get("slug") for item in home["start"]))
 
-    def test_pages_drill_down(self) -> None:
+    def test_pages_drill_down_to_children(self) -> None:
         specs = wiki.page(self.root, "repo-me-app", "specs")
-        self.assertEqual(specs["page"]["entries"][0]["title"], "Add a flag")
-        decisions = wiki.page(self.root, "repo-me-app", "decisions")
-        self.assertEqual(decisions["page"]["entries"][0]["id"], "document-adr-one")
+        self.assertEqual(specs["page"]["children"][0]["title"], "Add a flag")
+        spec = wiki.page(self.root, "repo-me-app", "specs/contribution-me-app-issue-3")
+        self.assertEqual(spec["page"]["title"], "Add a flag")
+        self.assertIn("Needs a flag", spec["page"]["markdown"])
+        decision = wiki.page(self.root, "repo-me-app", "decisions/document-adr-one")
+        self.assertIn("one cache", decision["page"]["markdown"])
+        self.assertIn("adr", decision["page"]["labels"])
         history = wiki.page(self.root, "repo-me-app", "history")
-        self.assertTrue(any("Fix the parser" in item["title"] for item in history["page"]["entries"]))
+        self.assertIn("Fix the parser", history["page"]["markdown"])
         overview = wiki.page(self.root, "repo-me-app", "overview")
         self.assertIn("Autonomy ceiling", overview["page"]["markdown"])
 
     def test_unknown_page_and_repo(self) -> None:
         with self.assertRaises(wiki.WikiError):
             wiki.page(self.root, "repo-me-app", "nope")
+        with self.assertRaises(wiki.WikiError):
+            wiki.page(self.root, "repo-me-app", "specs/contribution-missing")
         with self.assertRaises(wiki.WikiError):
             wiki.index(self.root, "repo-missing")

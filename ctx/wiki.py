@@ -1,26 +1,19 @@
-"""Repo wiki: a human-readable home page and drill-down pages.
+"""Repo wiki as a space: a page tree, child pages, labels, and metadata.
 
-Read-only. It composes existing context files and the run ledger; it does not
-call a model, write files, or touch GitHub. Agents use bundles instead.
+Read-only. Generated from the context files and the run ledger; no model call,
+no second store, no writes. Agents still receive scoped bundles.
 """
 
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 from ctx import db, objects
 
-PAGE_TITLES = [
-    ("overview", "Overview"),
-    ("specs", "Specs"),
-    ("decisions", "Decisions"),
-    ("glossary", "Glossary"),
-    ("tasks", "Tasks"),
-    ("history", "History"),
-]
-
 DECISION_TAGS = {"decision", "decisions", "adr", "architecture"}
 GLOSSARY_TAGS = {"glossary", "terms", "vocabulary"}
+MAX_CHILDREN = 100
 
 
 class WikiError(Exception):
@@ -28,10 +21,14 @@ class WikiError(Exception):
         super().__init__(message)
 
 
-def _tags(meta: dict) -> set[str]:
+def _tags(meta: dict) -> list[str]:
     raw = meta.get("tags") or []
     values = raw if isinstance(raw, list) else [str(raw)]
-    return {str(value).strip().lower() for value in values if str(value).strip()}
+    return [str(value).strip() for value in values if str(value).strip()]
+
+
+def _has_tag(meta: dict, wanted: set[str]) -> bool:
+    return bool({tag.lower() for tag in _tags(meta)} & wanted)
 
 
 def _first_paragraph(body: str) -> str:
@@ -46,6 +43,22 @@ def _first_paragraph(body: str) -> str:
             continue
         lines.append(stripped)
     return " ".join(lines)[:400]
+
+
+def _blurb(body: str) -> str:
+    return _first_paragraph(body)[:220]
+
+
+def _without_title(body: str, title: str) -> str:
+    """Drop a leading H1 that repeats the page title."""
+    lines = body.splitlines()
+    if lines and re.match(r"^#\s+(.+)$", lines[0].strip()):
+        heading = lines[0].strip()[2:].strip()
+        if heading.lower() == (title or "").strip().lower():
+            lines = lines[1:]
+            while lines and not lines[0].strip():
+                lines = lines[1:]
+    return "\n".join(lines).lstrip("\n")
 
 
 def _repo(root: Path, repo_ref: str):
@@ -80,31 +93,64 @@ def _runs(root: Path, contribution_ids: set[str]) -> list[dict]:
     return [dict(row) for row in rows if row["task_ref"] in contribution_ids]
 
 
-def _page_list(root: Path, repo_id: str, project_id: str) -> list[dict]:
+def _labels(meta: dict, *extra: str) -> list[str]:
+    labels = list(extra)
+    for key in ("kind", "state", "status"):
+        value = meta.get(key)
+        if value and str(value) not in labels:
+            labels.append(str(value))
+    for tag in _tags(meta):
+        if tag not in labels:
+            labels.append(tag)
+    return labels
+
+
+def _tree(root: Path, repo_id: str, project_id: str) -> list[dict]:
     docs = _project_objects(root, project_id, "document")
-    has_glossary = any(_tags(meta) & GLOSSARY_TAGS for _path, meta, _body in docs)
-    pages = []
-    for slug, title in PAGE_TITLES:
-        if slug == "glossary" and not has_glossary:
-            continue
-        pages.append({"slug": slug, "title": title})
-    return pages
+    specs = [item for item in _contributions(root, repo_id) if item[1].get("kind") == "issue"]
+    decisions = [item for item in docs if _has_tag(item[1], DECISION_TAGS)]
+    glossary = [item for item in docs if _has_tag(item[1], GLOSSARY_TAGS)]
+    tasks = _project_objects(root, project_id, "task")
+    tree = [{"slug": "overview", "title": "Overview", "children": []}]
+    tree.append({"slug": "specs", "title": "Specs", "children": [
+        {"slug": f"specs/{meta.get('id')}", "title": meta.get("title") or path.stem,
+         "children": []}
+        for path, meta, _body in specs[:MAX_CHILDREN]
+    ]})
+    tree.append({"slug": "decisions", "title": "Decisions", "children": [
+        {"slug": f"decisions/{meta.get('id')}", "title": meta.get("title") or path.stem,
+         "children": []}
+        for path, meta, _body in decisions[:MAX_CHILDREN]
+    ]})
+    if glossary:
+        tree.append({"slug": "glossary", "title": "Glossary", "children": [
+            {"slug": f"glossary/{meta.get('id')}", "title": meta.get("title") or path.stem,
+             "children": []}
+            for path, meta, _body in glossary[:MAX_CHILDREN]
+        ]})
+    tree.append({"slug": "tasks", "title": "Tasks", "children": [
+        {"slug": f"tasks/{meta.get('id')}", "title": meta.get("title") or path.stem,
+         "children": []}
+        for path, meta, _body in tasks[:MAX_CHILDREN]
+    ]})
+    tree.append({"slug": "history", "title": "History", "children": []})
+    return tree
 
 
 def index(root: Path, repo_ref: str) -> dict:
-    """The repo home: status, the essentials, and links into the wiki."""
+    """The space home: status, essentials, and the page tree."""
     repo_path, repo, repo_body = _repo(root, repo_ref)
     repo_id = repo.get("id", repo_path.stem)
     project_id = repo.get("project") or ""
     project = objects.find(root, "project", project_id) if project_id else None
     summary = _first_paragraph(repo_body) or (_first_paragraph(project[2]) if project else "")
-    specs = [(p, m, b) for p, m, b in _contributions(root, repo_id)
-             if m.get("kind") == "issue"]
+    specs = [(p, m, b) for p, m, b in _contributions(root, repo_id) if m.get("kind") == "issue"]
     contributions = _contributions(root, repo_id)
     docs = _project_objects(root, project_id, "document")
-    decisions = [(p, m, b) for p, m, b in docs if _tags(m) & DECISION_TAGS]
-    glossary = [(p, m, b) for p, m, b in docs if _tags(m) & GLOSSARY_TAGS]
+    decisions = [(p, m, b) for p, m, b in docs if _has_tag(m, DECISION_TAGS)]
+    glossary = [(p, m, b) for p, m, b in docs if _has_tag(m, GLOSSARY_TAGS)]
     tasks = _project_objects(root, project_id, "task")
+    open_specs = [item for item in specs if item[1].get("state") in (None, "", "open")]
     open_tasks = [item for item in tasks if item[1].get("status") != "done"]
     merged = [item for item in contributions if item[1].get("state") == "merged"]
     runs = _runs(root, {m.get("id") for _p, m, _b in contributions})
@@ -112,30 +158,25 @@ def index(root: Path, repo_ref: str) -> dict:
     start = []
     if project:
         start.append({"title": project[1].get("title") or project_id,
-                      "why": "the project record", "type": "project",
-                      "id": project_id})
+                      "why": "the project record", "type": "project", "id": project_id})
     if decisions:
         start.append({"title": decisions[0][1].get("title") or decisions[0][0].stem,
                       "why": "the newest decision", "type": "document",
                       "id": decisions[0][1].get("id")})
-    open_specs = [item for item in specs if item[1].get("state") in (None, "", "open")]
     if open_specs:
         start.append({"title": open_specs[0][1].get("title") or open_specs[0][0].stem,
-                      "why": "the current spec", "type": "contribution",
-                      "id": open_specs[0][1].get("id")})
+                      "why": "the current spec", "slug": f"specs/{open_specs[0][1].get('id')}"})
     if glossary:
         start.append({"title": glossary[0][1].get("title") or glossary[0][0].stem,
-                      "why": "shared vocabulary", "type": "document",
-                      "id": glossary[0][1].get("id")})
+                      "why": "shared vocabulary", "slug": f"glossary/{glossary[0][1].get('id')}"})
 
     recent = []
     for _path, meta, _body in merged[-3:]:
         recent.append({"when": meta.get("updated", ""), "kind": "merged",
-                       "title": meta.get("title", ""), "id": meta.get("id")})
+                       "title": meta.get("title", ""), "slug": f"history"})
     for run in runs[:3]:
         recent.append({"when": run["created"], "kind": f"run {run['verdict']}",
-                       "title": f"{run['factory']} · {run['prompt_version']}",
-                       "id": None})
+                       "title": f"{run['factory']} · {run['prompt_version']}", "slug": ""})
     recent.sort(key=lambda item: item["when"], reverse=True)
 
     return {
@@ -152,7 +193,7 @@ def index(root: Path, repo_ref: str) -> dict:
             "default_branch": repo.get("default_branch") or "",
         },
         "summary": summary,
-        "pages": _page_list(root, repo_id, project_id),
+        "tree": _tree(root, repo_id, project_id),
         "counts": {
             "specs_open": len(open_specs),
             "decisions": len(decisions),
@@ -164,89 +205,157 @@ def index(root: Path, repo_ref: str) -> dict:
     }
 
 
-def page(root: Path, repo_ref: str, slug: str) -> dict:
-    """One wiki page. Bodies are markdown; entries are clickable objects."""
+def _find_contrib(root: Path, repo_id: str, object_id: str):
+    for path, meta, body in _contributions(root, repo_id):
+        if meta.get("id") == object_id:
+            return path, meta, body
+    raise WikiError(f"page not found: {object_id}")
+
+
+def _find_doc(root: Path, project_id: str, object_id: str):
+    for path, meta, body in _project_objects(root, project_id, "document"):
+        if meta.get("id") == object_id:
+            return path, meta, body
+    raise WikiError(f"page not found: {object_id}")
+
+
+def _find_task(root: Path, project_id: str, object_id: str):
+    for path, meta, body in _project_objects(root, project_id, "task"):
+        if meta.get("id") == object_id:
+            return path, meta, body
+    raise WikiError(f"page not found: {object_id}")
+
+
+def _breadcrumb(tree: list[dict], path: str) -> list[dict]:
+    parts = path.split("/")
+    trail = []
+    for node in tree:
+        if node["slug"] == parts[0]:
+            trail.append({"slug": node["slug"], "title": node["title"]})
+            if len(parts) > 1:
+                for child in node.get("children") or []:
+                    if child["slug"] == path:
+                        trail.append({"slug": child["slug"], "title": child["title"]})
+                        break
+            break
+    return trail
+
+
+def page(root: Path, repo_ref: str, path: str) -> dict:
+    """One page. `path` is `group` or `group/<object-id>`."""
     repo_path, repo, _repo_body = _repo(root, repo_ref)
     repo_id = repo.get("id", repo_path.stem)
     project_id = repo.get("project") or ""
-    docs = _project_objects(root, project_id, "document")
-    entries: list[dict] = []
+    tree = _tree(root, repo_id, project_id)
+    group, _, object_id = path.partition("/")
     markdown = ""
+    labels: list[str] = []
+    updated = ""
+    author = ""
+    children: list[dict] = []
+    title = group.title()
 
-    if slug == "overview":
+    if group == "overview" and not object_id:
+        title = "Overview"
         project = objects.find(root, "project", project_id) if project_id else None
-        project_body = project[2] if project else ""
-        markdown = (f"## What this repo is\n\n{project_body.strip() or 'No project description yet.'}\n\n"
+        body = project[2] if project else ""
+        markdown = (f"## What this repo is\n\n{body.strip() or 'No project description yet.'}\n\n"
                     "## How work happens here\n\n"
                     f"- Trigger: `{repo.get('trigger') or 'on-demand'}`\n"
                     f"- Autonomy ceiling: `{repo.get('reach') or 'shadow'}`\n"
                     f"- Default branch: `{repo.get('default_branch') or 'main'}`\n"
                     f"- Local checkout: `{repo.get('code_path') or 'not set'}`\n")
-    elif slug == "specs":
-        for path, meta, body in _contributions(root, repo_id):
-            if meta.get("kind") != "issue":
-                continue
-            entries.append({
-                "type": "contribution", "id": meta.get("id"),
-                "title": meta.get("title", path.stem),
-                "meta": f"issue #{meta.get('number', '?')} · {meta.get('state', 'open')}",
-                "body": _first_paragraph(body),
-            })
-    elif slug == "decisions":
-        for path, meta, body in docs:
-            if not (_tags(meta) & DECISION_TAGS):
-                continue
-            entries.append({
-                "type": "document", "id": meta.get("id"),
-                "title": meta.get("title", path.stem),
-                "meta": f"updated {meta.get('updated', '')}",
-                "body": _first_paragraph(body),
-            })
-    elif slug == "glossary":
-        for path, meta, body in docs:
-            if not (_tags(meta) & GLOSSARY_TAGS):
-                continue
-            entries.append({
-                "type": "document", "id": meta.get("id"),
-                "title": meta.get("title", path.stem),
-                "meta": "shared terms", "body": body.strip()[:2000],
-            })
-    elif slug == "tasks":
-        for path, meta, _body in _project_objects(root, project_id, "task"):
-            entries.append({
-                "type": "task", "id": meta.get("id"),
-                "title": meta.get("title", path.stem),
-                "meta": meta.get("status", "to-do"), "body": "",
-            })
-    elif slug == "history":
+        labels = [repo.get("kind") or "oss", repo.get("status") or "active"]
+        updated = repo.get("updated", "")
+    elif group == "specs" and not object_id:
+        title = "Specs"
+        markdown = "Every spec cached for this repo. Open one for the full text."
+        children = [{"slug": f"specs/{m.get('id')}", "title": m.get("title") or p.stem,
+                     "meta": f"issue #{m.get('number', '?')} · {m.get('state', 'open')}",
+                     "blurb": _blurb(b), "labels": _labels(m)}
+                    for p, m, b in _contributions(root, repo_id) if m.get("kind") == "issue"]
+    elif group == "specs" and object_id:
+        p, m, b = _find_contrib(root, repo_id, object_id)
+        title = m.get("title") or p.stem
+        markdown = _without_title(b, title)
+        labels = _labels(m)
+        updated = m.get("updated", "")
+        author = m.get("actor", "")
+    elif group == "decisions" and not object_id:
+        title = "Decisions"
+        markdown = "Architecture and product decisions, newest first."
+        docs = _project_objects(root, project_id, "document")
+        children = [{"slug": f"decisions/{m.get('id')}", "title": m.get("title") or p.stem,
+                     "meta": f"updated {m.get('updated', '')}", "blurb": _blurb(b),
+                     "labels": _labels(m)}
+                    for p, m, b in docs if _has_tag(m, DECISION_TAGS)]
+    elif group == "decisions" and object_id:
+        p, m, b = _find_doc(root, project_id, object_id)
+        if not _has_tag(m, DECISION_TAGS):
+            raise WikiError(f"page not found: {path}")
+        title = m.get("title") or p.stem
+        markdown = _without_title(b, title)
+        labels = _labels(m)
+        updated = m.get("updated", "")
+        author = m.get("actor", "")
+    elif group == "glossary" and not object_id:
+        title = "Glossary"
+        markdown = "Shared vocabulary. Agents must not guess these terms."
+        docs = _project_objects(root, project_id, "document")
+        children = [{"slug": f"glossary/{m.get('id')}", "title": m.get("title") or p.stem,
+                     "meta": "shared terms", "blurb": _blurb(b), "labels": _labels(m)}
+                    for p, m, b in docs if _has_tag(m, GLOSSARY_TAGS)]
+    elif group == "glossary" and object_id:
+        p, m, b = _find_doc(root, project_id, object_id)
+        if not _has_tag(m, GLOSSARY_TAGS):
+            raise WikiError(f"page not found: {path}")
+        title = m.get("title") or p.stem
+        markdown = _without_title(b, title)
+        labels = _labels(m)
+        updated = m.get("updated", "")
+    elif group == "tasks" and not object_id:
+        title = "Tasks"
+        markdown = "Open work for this repo's project."
+        children = [{"slug": f"tasks/{m.get('id')}", "title": m.get("title") or p.stem,
+                     "meta": m.get("status", "to-do"), "blurb": _blurb(b),
+                     "labels": _labels(m)}
+                    for p, m, b in _project_objects(root, project_id, "task")]
+    elif group == "tasks" and object_id:
+        p, m, b = _find_task(root, project_id, object_id)
+        title = m.get("title") or p.stem
+        markdown = _without_title(b, title)
+        labels = _labels(m)
+        updated = m.get("updated", "")
+        author = m.get("actor", "")
+    elif group == "history" and not object_id:
+        title = "History"
         contributions = _contributions(root, repo_id)
         ids = {m.get("id") for _p, m, _b in contributions}
-        for path, meta, body in contributions:
-            if meta.get("state") not in {"merged", "closed"}:
-                continue
-            entries.append({
-                "type": "contribution", "id": meta.get("id"),
-                "title": meta.get("title", path.stem),
-                "meta": f"{meta.get('kind')} #{meta.get('number', '?')} · {meta.get('state')}",
-                "body": _first_paragraph(body),
-            })
-        for run in _runs(root, ids)[:20]:
-            entries.append({
-                "type": None, "id": None,
-                "title": f"run {run['id']} · {run['factory']}",
-                "meta": f"{run['mode']} · {run['verdict']} · {run['created']}",
-                "body": "",
-            })
+        merged = [item for item in contributions if item[1].get("state") in {"merged", "closed"}]
+        rows = [f"- **{m.get('title', p.stem)}** — {m.get('kind')} #{m.get('number', '?')} · "
+                f"{m.get('state')} · {m.get('updated', '')}"
+                for p, m, _b in merged]
+        runs = _runs(root, ids)[:20]
+        if runs:
+            rows.append("")
+            rows.append("### Factory runs")
+            rows.extend(f"- run {r['id']} · {r['factory']} · {r['mode']} · {r['verdict']} · "
+                        f"{r['created']}" for r in runs)
+        markdown = "Closed work and the run ledger.\n\n" + ("\n".join(rows) or "No history yet.")
     else:
-        raise WikiError(f"unknown wiki page: {slug}")
+        raise WikiError(f"page not found: {path}")
 
-    pages = _page_list(root, repo_id, project_id)
-    if not any(item["slug"] == slug for item in pages):
-        raise WikiError(f"page not available: {slug}")
     return {
         "repo": {"id": repo_id, "title": repo.get("title", repo_id)},
-        "pages": pages,
-        "page": {"slug": slug,
-                 "title": next(item["title"] for item in pages if item["slug"] == slug),
-                 "markdown": markdown, "entries": entries},
+        "tree": tree,
+        "page": {
+            "path": path,
+            "title": title,
+            "markdown": markdown,
+            "labels": labels,
+            "updated": updated,
+            "author": author,
+            "breadcrumb": _breadcrumb(tree, path),
+            "children": children,
+        },
     }

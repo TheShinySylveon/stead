@@ -33,7 +33,7 @@ See [First run](first-run.md).
 | Projects | Onboard a later project (repo + constitution, optional Spec Kit). Or add a project with no repo. Change a project's status. |
 | Library | Add and edit documents and meetings. Rename them. The id does not change. |
 | Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. |
-| Wiki | The human record for one repo: a home page with the essentials, then Overview, Specs, Decisions, Glossary, Tasks, and History. Entries open the underlying file. |
+| Wiki | The human record for one repo, as a Confluence-style space: home page, page tree, child pages with labels, metadata, and an on-page table of contents. Read-only. |
 | Inbox | Drop a note, or import a local `.eml`, `.ics`, `.md`, or `.txt` file. File it as a document, meeting, or task, or delete it. |
 | Factories | Assemble a shadow run. Check Draft with model to write `output.md`. Watch now assembles; Watch and build plans, edits, checks, commits, and publishes. Build with model has Publish and Merge-if-allowed options. New factory, per-case eval results, Judge, Promote prompt. |
 | Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add a sign-in, or reset its password. Sign out on a shared server. Choose who is writing. Add actors (`human` or `agent`). The weekly job. The capture webhook. Rebuild the index. |
