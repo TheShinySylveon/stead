@@ -112,6 +112,7 @@ def publish(root: Path, contribution_ref: str, *, runner=None,
     url = run(argv, code).strip()
     return {
         "reach": reach,
+        "repo": str(repo_meta.get("id") or ""),
         "branch": branch,
         "base": default,
         "url": url,
