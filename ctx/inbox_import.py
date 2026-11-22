@@ -102,3 +102,45 @@ def _transcript_title_text(filename: str, text: str) -> str:
 
 def _transcript_title(path: Path) -> str:
     return _transcript_title_text(path.name, path.read_text(encoding="utf-8"))
+
+
+def list_notes(root: Path) -> tuple[str, list[dict]]:
+    """Scan inbox/ for markdown notes. Returns (status, rows).
+
+    status is 'missing' when inbox/ does not exist, 'empty' when it holds no
+    markdown notes, or 'ok' with one row per note. Each row carries 'name',
+    'kind', and 'title'. Proposal files are classified by filename prefix as
+    'decision' or 'glossary'; every other note is 'note'. The title is the
+    first '# ' heading in the file, falling back to the file stem.
+    """
+    folder = root / "inbox"
+    if not folder.is_dir():
+        return "missing", []
+    rows = []
+    for path in sorted(folder.iterdir()):
+        if not path.is_file() or path.name.startswith(".") or path.name == "README.md":
+            continue
+        if not path.name.endswith(".md"):
+            continue
+        name = path.name
+        if name.startswith("propose-decision-"):
+            kind = "decision"
+        elif name.startswith("propose-glossary-"):
+            kind = "glossary"
+        else:
+            kind = "note"
+        try:
+            body = path.read_text(encoding="utf-8")
+        except OSError:
+            body = ""
+        title = ""
+        for line in body.splitlines():
+            if line.startswith("# "):
+                title = line[2:].strip()
+                break
+        if not title:
+            title = path.stem
+        rows.append({"name": name, "kind": kind, "title": title})
+    if not rows:
+        return "empty", []
+    return "ok", rows
