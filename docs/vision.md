@@ -302,6 +302,13 @@ factory a guided form (kind + input + sensible defaults) with a visible result
 and a next step; add `stead factory delete NAME` (refuse the four shipped
 factories unless `--force`) and a cockpit delete with confirmation.
 
+### CLI ↔ GUI parity
+
+Every CLI command should be reachable from the cockpit, so the browser is a
+first-class surface rather than a reduced one. Today publish and merge are
+deliberately CLI-only; parity should keep a human confirmation for those
+remote writes.
+
 **Safety / autonomy**
 
 - Independent reviewer pass before merge is **built**: a fresh model invocation
