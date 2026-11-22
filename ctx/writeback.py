@@ -80,9 +80,12 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         "created": today, "updated": today, "status": "active",
         "tags": [RECORD_TAG, f"repo:{repo_id}"],
         "outcome": outcome,
+        "contribution": str(contrib.get("id") or contribution_ref),
         "checks_mode": str(result.get("checks_mode") or "none"),
         "elapsed_seconds": str(result.get("elapsed_seconds") or 0),
         "repair_rounds": str(result.get("repair_rounds") or 0),
+        "chars_sent": str(result.get("chars_sent") or 0),
+        "chars_received": str(result.get("chars_received") or 0),
         "files": list(result.get("files") or []),
         "tests_touched": list(result.get("tests_touched") or []),
         "tests_deleted": list(result.get("tests_deleted") or []),
@@ -131,6 +134,70 @@ def _record_body(contrib: dict, result: dict, outcome: str) -> str:
     lines += ["", "Factual record written by Stead on delivery. Interpretive notes "
               "(decisions, glossary) are proposed to the inbox for a person to triage.", ""]
     return "\n".join(lines)
+
+
+def record_failure(root: Path, contribution_ref: str, error, *,
+                   branch: str = "", elapsed: float = 0.0,
+                   checks_mode: str = "none") -> dict:
+    """A failed build writes a record too, so metrics has a failure rate and
+    the watch loop can tell a delivered branch from a failed one."""
+    contrib, repo_meta = _repo_of(root, contribution_ref)
+    repo_id = str(repo_meta.get("id") or contrib.get("repo") or "repo")
+    today = date.today().isoformat()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    slug = re.sub(r"[^a-z0-9]+", "-",
+                  (contrib.get("title") or contribution_ref).lower()).strip("-") or "build"
+    folder = root / "context" / "documents"
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"build-{slug[:40]}-{stamp}"
+    path = folder / f"{name}.md"
+    n = 2
+    while path.exists():
+        path = folder / f"{name}-{n}.md"
+        n += 1
+    doc_id = f"document-{path.stem}"
+    title = f"Build: {contrib.get('title') or contribution_ref} (failed)"
+    meta = {
+        "id": doc_id, "type": "document", "title": title[:200],
+        "created": today, "updated": today, "status": "active",
+        "tags": [RECORD_TAG, f"repo:{repo_id}"],
+        "outcome": "failed",
+        "contribution": str(contrib.get("id") or contribution_ref),
+        "error_class": type(error).__name__,
+        "checks_mode": str(checks_mode or "none"),
+        "elapsed_seconds": str(elapsed or 0),
+    }
+    if branch:
+        meta["branch"] = branch
+    if repo_meta.get("project"):
+        meta["project"] = repo_meta["project"]
+    from ctx.actors import stamp as actor_stamp
+    actor_stamp(root, meta)
+    body = (f"# Build record: {contrib.get('title') or contrib.get('id')}\n\n"
+            f"Outcome: **failed** ({type(error).__name__}).\n\n"
+            f"```\n{str(error)[:2000]}\n```\n\n"
+            "The model's work in progress, if any, was committed to the build "
+            "branch and the checkout returned to the default branch. The full "
+            "transcript is in the run directory under factories/feature-builder/runs/.\n")
+    path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+    return {"id": doc_id, "path": path.relative_to(root).as_posix(),
+            "outcome": "failed"}
+
+
+def record_for_branch(root: Path, repo_id: str, branch: str) -> dict | None:
+    """The build record for one branch, preferring a delivered one over a
+    failed one. Lets the watch loop tell 'already built' from 'failed here'."""
+    fallback = None
+    for _path, meta, _body in objects.iter_objects(root, "document"):
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if RECORD_TAG not in tags or f"repo:{repo_id}".lower() not in tags:
+            continue
+        if meta.get("branch") != branch:
+            continue
+        if str(meta.get("outcome") or "") != "failed":
+            return meta
+        fallback = meta
+    return fallback
 
 
 def _patch(root: Path, otype: str, ref: str, fields: dict) -> None:

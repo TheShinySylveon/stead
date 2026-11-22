@@ -36,6 +36,7 @@ IGNORE_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
                ".specify", "dist", "build", ".next", "target"}
 MAX_FILE_BYTES = 200_000
 MAX_READ_CHARS = 40_000
+MAX_PROMPT_CHARS = 120_000
 MAX_STEPS = 30
 MAX_TOTAL_EDITS = 1_000_000
 MAX_MINUTES = 30
@@ -108,12 +109,20 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     actions: list[dict] = []
     git_before: dict = {}
     initial_dirty: set[str] = set()
+    on_branch = False
+    plan = ""
+    files: dict[str, str] = {}
+    deleted: list[str] = []
+    checks_mode = "none"
+    chars_sent = 0
+    chars_received = 0
     try:
         current = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
         if resume:
             if current != branch:
                 raise BuildError(f"--resume needs the build branch checked out ({branch}), now on {current}.")
             initial_dirty = set(_porcelain_paths(run, code))
+            on_branch = True
         else:
             if _git(run, code, ["status", "--porcelain"]).strip():
                 raise BuildError("the checkout has uncommitted changes. Commit, stash, or use --resume.")
@@ -122,6 +131,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             if _git(run, code, ["branch", "--list", branch]).strip():
                 raise BuildError(f"branch {branch} already exists. Use --resume or remove it.")
             _git(run, code, ["checkout", "-b", branch])
+            on_branch = True
         git_before = safety.git_state_snapshot(code)
         if responder is None:
             from ctx import models
@@ -129,9 +139,6 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             responder = lambda prompt: models.complete(prompt, settings, timeout=300)
         tree = _tree(code)
         prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta, ghost=ghost)
-        plan = ""
-        files: dict[str, str] = {}
-        deleted: list[str] = []
         edits = 0
         failures = 0
         no_test = 0
@@ -145,7 +152,10 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     "and planning. Write the full new content of the file you are "
                     "changing now, then run check, then finish.")
                 progress_nudged = True
-            reply = responder(prompt + "\n\n" + "\n\n".join(transcript))
+            full_prompt = prompt + "\n\n" + "\n\n".join(_fit_budget(prompt, transcript))
+            chars_sent += len(full_prompt)
+            reply = responder(full_prompt)
+            chars_received += len(reply) if isinstance(reply, str) else len(str(reply))
             replies.append(reply if isinstance(reply, str) else str(reply))
             action = _parse(reply)
             if action is None:
@@ -397,6 +407,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     "steps": len(actions),
                     "repair_rounds": failures,
                     "elapsed_seconds": round(time.monotonic() - started, 1),
+                    "chars_sent": chars_sent,
+                    "chars_received": chars_received,
                     "published": False,
                     "merged": False,
                 }
@@ -436,6 +448,19 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         raise BuildError(f"the model did not finish within {max_steps} steps")
     except Exception as exc:
         _record_failure(root, spec, replies, transcript, actions, exc)
+        # A failed build must not wedge the checkout for the next watched
+        # spec: quarantine the model's own work on the branch, discard check
+        # side effects, and return to the default branch.
+        _cleanup_failure(run, code, branch, default, files, deleted,
+                         initial_dirty, git_before, on_branch)
+        from ctx import writeback
+        try:
+            writeback.record_failure(
+                root, contribution_ref, exc, branch=branch,
+                elapsed=round(time.monotonic() - started, 1),
+                checks_mode=checks_mode)
+        except Exception:
+            pass
         raise
     finally:
         _unlock(lock)
@@ -613,6 +638,71 @@ def _resolved_rel(target: Path, code: Path) -> str:
         raise BuildError(f"path leaves the repository: {target}")
 
 
+def _fit_budget(prompt: str, transcript: list[str],
+                budget: int = MAX_PROMPT_CHARS) -> list[str]:
+    """Keep the whole prompt under a character budget. The transcript is
+    resent every step, so without a cap cost grows with the square of the
+    step count. Trim older read/search outputs first; they are the bulk."""
+    entries = list(transcript)
+
+    def size() -> int:
+        return len(prompt) + sum(len(e) + 2 for e in entries)
+
+    for i, entry in enumerate(entries):
+        if size() <= budget:
+            break
+        if entry.startswith("read ") or entry.startswith("search "):
+            head = entry.split("\n", 1)[0]
+            entries[i] = head + "\n[output trimmed to stay within the prompt budget]"
+    for i in range(len(entries)):
+        if size() <= budget:
+            break
+        if i >= len(entries) - 2:  # keep the newest feedback intact
+            break
+        entries[i] = "[earlier step trimmed to stay within the prompt budget]"
+    return entries
+
+
+def _cleanup_failure(run, code: Path, branch: str, default: str,
+                     files: dict, deleted: list, initial_dirty: set,
+                     git_before: dict, on_branch: bool) -> None:
+    """Best-effort: leave the checkout usable after a failed build.
+
+    The model's own work is committed as WIP on the isolated branch (never
+    pushed), check side effects are discarded, .git is restored, and the
+    default branch is checked out again so the next watched spec can run.
+    Never masks the original error.
+    """
+    if not on_branch:
+        return
+    try:
+        if git_before:
+            after = safety.git_state_snapshot(code)
+            if after != git_before:
+                safety.git_state_restore(code, git_before, after)
+    except Exception:
+        pass
+    try:
+        expected = set(files) | set(deleted) | initial_dirty
+        tracked = _tracked_files(run, code)
+        stage = sorted(p for p in expected if (code / p).exists() or p in tracked)
+        if stage:
+            _git(run, code, ["add", "-A", "--", *stage])
+        if _git(run, code, ["diff", "--cached", "--name-only"]).strip():
+            _git(run, code, ["commit", "-m", f"WIP: failed build on {branch}"])
+    except Exception:
+        pass
+    try:
+        _git(run, code, ["checkout", "--", "."])
+        _git(run, code, ["clean", "-fd"])
+    except Exception:
+        pass
+    try:
+        _git(run, code, ["checkout", default])
+    except Exception:
+        pass
+
+
 def _search(code: Path, query: str) -> list[str]:
     needle = query.lower()
     hits: list[str] = []
@@ -706,7 +796,8 @@ def _transcript_md(replies: list[str], transcript: list[str]) -> str:
 
 def _record_failure(root: Path, spec: dict, replies: list[str],
                     transcript: list[str], actions: list[dict], error) -> None:
-    """A failed build still leaves a trace: what the model said and did."""
+    """A failed build still leaves a trace: what the model said and did, and
+    a runs row so the daily budget counts attempts, not just successes."""
     try:
         stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
         slug = re.sub(r"[^a-z0-9]+", "-",
@@ -715,12 +806,26 @@ def _record_failure(root: Path, spec: dict, replies: list[str],
         folder.mkdir(parents=True, exist_ok=True)
         (folder / "failure.json").write_text(json.dumps({
             "error": str(error),
+            "error_class": type(error).__name__,
             "model_turns": len(replies),
             "actions": actions,
         }, indent=2) + "\n", encoding="utf-8")
         (folder / "transcript.md").write_text(
             f"# Failed build\n\nError: {error}\n\n"
             + _transcript_md(replies, transcript), encoding="utf-8")
+        from ctx import db
+        if db.db_path(root).exists():
+            conn = db.connect(root)
+            try:
+                conn.execute(
+                    "INSERT INTO runs (factory, task_ref, project, prompt_version, "
+                    "mode, bundle_path, output, verdict, created) VALUES "
+                    "('feature-builder', ?, NULL, 'build', 'shadow', ?, ?, 'fail', ?)",
+                    (spec.get("id"), folder.relative_to(root).as_posix(),
+                     str(error)[:2000], db.utcnow()))
+                conn.commit()
+            finally:
+                conn.close()
     except Exception:
         pass
 

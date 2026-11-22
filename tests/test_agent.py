@@ -589,6 +589,128 @@ class CommitStepTest(BuildFixture):
         self.assertEqual(result["files"], ["app.py", "tests/test_app.py"])
 
 
+class FailureCleanupTest(BuildFixture):
+    """A failed build must not wedge the checkout for the next watched spec."""
+
+    def test_failure_returns_to_default_and_quarantines_wip(self) -> None:
+        self._set_repo(checks='python -c "import sys; sys.exit(1)"')
+        responder = self._responder([
+            {"action": "plan", "summary": "Change it."},
+            {"action": "write", "path": "app.py", "content": "print('wip')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError):
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder, repair_rounds=0)
+        # Back on the default branch, clean, so the next spec can build.
+        self.assertEqual(_git(self.code, "rev-parse", "--abbrev-ref", "HEAD").strip(), "main")
+        self.assertEqual(_git(self.code, "status", "--porcelain").strip(), "")
+        # The model's work is quarantined on the branch, not lost.
+        wip = _git(self.code, "show", "stead/42-add-a-name-flag:app.py")
+        self.assertIn("wip", wip)
+
+    def test_failure_discards_check_side_effects(self) -> None:
+        (self.code / "tests").mkdir()
+        (self.code / "tests/test_app.py").write_text("assert True\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "a real test")
+        self._set_repo(checks="python app.py")
+        payload = ("import pathlib\n"
+                   "p = pathlib.Path(__file__).parent\n"
+                   "(p / 'tests/test_app.py').write_text('# gutted\\n')\n"
+                   "(p / 'junk.txt').write_text('side effect\\n')\n"
+                   "print('hi')\n")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add flag."},
+            {"action": "write", "path": "app.py", "content": payload},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError):
+            agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertEqual(_git(self.code, "rev-parse", "--abbrev-ref", "HEAD").strip(), "main")
+        # The protected test is restored, the untracked junk is gone.
+        self.assertEqual((self.code / "tests/test_app.py").read_text(encoding="utf-8"),
+                         "assert True\n")
+        self.assertFalse((self.code / "junk.txt").exists())
+
+    def test_failure_writes_a_record_with_the_error_class(self) -> None:
+        self._set_repo(checks='python -c "import sys; sys.exit(1)"')
+        responder = self._responder([
+            {"action": "plan", "summary": "Change it."},
+            {"action": "write", "path": "app.py", "content": "print('x')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError):
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder, repair_rounds=0)
+        records = list((self.root / "context/documents").glob("build-*.md"))
+        self.assertEqual(len(records), 1)
+        meta, _body = frontmatter.parse(records[0].read_text(encoding="utf-8"))
+        self.assertEqual(meta["outcome"], "failed")
+        self.assertEqual(meta["error_class"], "BuildError")
+        self.assertEqual(meta["branch"], "stead/42-add-a-name-flag")
+        self.assertEqual(meta["contribution"], "contribution-me-app-issue-42")
+
+    def test_a_failed_build_counts_against_the_daily_budget(self) -> None:
+        from ctx import factory
+        self._set_repo(checks='python -c "import sys; sys.exit(1)"')
+        before = factory._builds_today(self.root)
+        responder = self._responder([
+            {"action": "plan", "summary": "Change it."},
+            {"action": "write", "path": "app.py", "content": "print('x')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError):
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder, repair_rounds=0)
+        self.assertEqual(factory._builds_today(self.root), before + 1)
+
+    def test_watch_tells_a_delivered_branch_from_a_failed_one(self) -> None:
+        from ctx import writeback
+        # A failed record on the branch -> not 'already built'.
+        writeback.record_failure(self.root, "contribution-me-app-issue-42",
+                                 agent.BuildError("checks failed"),
+                                 branch="stead/42-add-a-name-flag")
+        rec = writeback.record_for_branch(self.root, "repo-me-app",
+                                          "stead/42-add-a-name-flag")
+        self.assertEqual(rec["outcome"], "failed")
+        # A delivered record on the same branch wins.
+        writeback.record_delivery(self.root, "contribution-me-app-issue-42",
+                                  {"branch": "stead/42-add-a-name-flag",
+                                   "commit": "abc", "files": ["app.py"]})
+        rec = writeback.record_for_branch(self.root, "repo-me-app",
+                                          "stead/42-add-a-name-flag")
+        self.assertNotEqual(rec["outcome"], "failed")
+
+
+class PromptBudgetTest(BuildFixture):
+    def test_read_outputs_are_trimmed_to_fit_the_budget(self) -> None:
+        big = "x" * 40_000
+        prompt = "system"
+        transcript = [f"read a.py:\n{big}", f"read b.py:\n{big}",
+                      f"read c.py:\n{big}", "wrote app.py (10 bytes)"]
+        fitted = agent._fit_budget(prompt, transcript, budget=50_000)
+        total = len(prompt) + sum(len(e) + 2 for e in fitted)
+        self.assertLessEqual(total, 50_000)
+        # The newest feedback survives; older reads are stubbed.
+        self.assertEqual(fitted[-1], "wrote app.py (10 bytes)")
+        self.assertIn("trimmed", fitted[0])
+
+    def test_build_records_characters_sent_and_received(self) -> None:
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertGreater(result["chars_sent"], 0)
+        self.assertGreater(result["chars_received"], 0)
+        records = list((self.root / "context/documents").glob("build-*.md"))
+        meta, _body = frontmatter.parse(records[0].read_text(encoding="utf-8"))
+        self.assertEqual(int(meta["chars_sent"]), result["chars_sent"])
+
+
 class GhostBuildTest(BuildFixture):
     """reach: ghost — purely spec, docs, and a code plan. Zero code applied."""
 

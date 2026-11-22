@@ -694,7 +694,8 @@ def _stale_flag(path: Path, meta: dict, today, stale: list[str]) -> None:
 
 
 def _builds_today(root: Path) -> int:
-    """Count live feature-builder runs recorded today. Missing index means 0."""
+    """Count build ATTEMPTS recorded today (success or failure). Missing index
+    means 0. prompt_version='build' separates agent builds from assemblies."""
     import sqlite3
     from ctx import db
     if not db.db_path(root).exists():
@@ -703,7 +704,7 @@ def _builds_today(root: Path) -> int:
     try:
         row = conn.execute(
             "SELECT COUNT(*) AS n FROM runs WHERE factory = 'feature-builder' "
-            "AND mode = 'live' AND created LIKE ?",
+            "AND prompt_version = 'build' AND created LIKE ?",
             (db.utcnow()[:10] + "%",)).fetchone()
         return int(row["n"] if row else 0)
     except sqlite3.Error:
@@ -773,7 +774,15 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
                     skipped.append({"id": meta.get("id"), "reason": f"git missing: {exc}"})
                     continue
                 if exists.stdout.strip():
-                    skipped.append({"id": meta.get("id"), "reason": "already built"})
+                    from ctx import writeback
+                    record = writeback.record_for_branch(
+                        root, repo[1].get("id") or "", branch)
+                    if record is not None and str(record.get("outcome") or "") != "failed":
+                        reason = "already built"
+                    else:
+                        reason = ("branch exists after a failed build; "
+                                  "resume it or remove the branch")
+                    skipped.append({"id": meta.get("id"), "reason": reason})
                     continue
             from ctx.agent import BuildError, build as build_spec
             from ctx.models import ModelError
@@ -781,6 +790,7 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
                 result = build_spec(root, meta["id"], publish=publish, merge=merge,
                                     max_minutes=int(defaults.get("build_minutes") or 30))
             except (BuildError, ModelError) as exc:
+                built += 1  # a failed build still spent the budget
                 skipped.append({"id": meta.get("id"), "reason": str(exc)})
                 continue
             built += 1
