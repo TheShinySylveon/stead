@@ -41,23 +41,23 @@ def _snippet(text: str, query: str) -> str:
 
 
 def _repo_refs(meta: dict, body: str) -> set[str]:
-    """Repo references in frontmatter fields or `repo:` tags in the body."""
+    """Repo references: the `repo` frontmatter field and `repo:` tags.
+
+    Only those two. A body line or another field that merely mentions
+    `repo:` is prose, not a relation, and does not put an object in a repo."""
     refs: set[str] = set()
     value = meta.get("repo")
     if isinstance(value, list):
-        refs.update(str(v) for v in value if v is not None)
+        refs.update(str(v).strip() for v in value if v is not None)
     elif value is not None:
-        refs.add(str(value))
-    for value in meta.values():
-        if isinstance(value, str) and "repo:" in value:
-            refs.add(value.split("repo:", 1)[1].strip().strip(","))
-        elif isinstance(value, list):
-            for item in value:
-                if isinstance(item, str) and "repo:" in item:
-                    refs.add(item.split("repo:", 1)[1].strip().strip(","))
-    for line in body.splitlines():
-        if "repo:" in line:
-            refs.add(line.split("repo:", 1)[1].strip().strip(","))
+        refs.add(str(value).strip())
+    tags = meta.get("tags") or []
+    if isinstance(tags, str):
+        tags = [tags]
+    for tag in tags:
+        text = str(tag).strip()
+        if text.lower().startswith("repo:"):
+            refs.add(text[len("repo:"):].strip())
     return {r for r in refs if r}
 
 

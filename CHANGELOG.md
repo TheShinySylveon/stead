@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+- **`spec approve` refuses a spec the build would refuse.** More than 8
+  acceptance criteria, or a description under 25 or over 400 words, now fails
+  approval with what to fix, and `spec draft` tells the model the limit and
+  warns about a draft that breaks it. The first #27 draft had 10 criteria; it
+  was drafted and approved, then refused by the build as `large-spec`.
+- **`context search --repo` counts only relations.** The `repo` field and
+  `repo:` tags put an object in a repo; a body line reading `repo: X` no
+  longer does (the deviation recorded when #30 was hand-checked).
 - **A merged spec closes the issue it was drafted from.** On an own repo the PR
   says `Closes #N`, so GitHub closes the issue, but `sync github` fetches open
   issues only and never saw it. Recording the merge now marks the source issue

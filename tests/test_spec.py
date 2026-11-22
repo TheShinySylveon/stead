@@ -100,7 +100,7 @@ class SpecApprovalTest(unittest.TestCase):
         (self.root / "context/repos/app.md").write_text(
             frontmatter.dumps(repo, "# App\n"), encoding="utf-8")
 
-    DRAFT = ("Draft the spec.\n\n## Acceptance criteria\n\n"
+    DRAFT = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n"
              "- [ ] the flag works\n\n## Plan\n\nEdit app.py.\n")
 
     def test_draft_refuses_the_sync_cache_stub(self) -> None:
@@ -184,7 +184,7 @@ class SpecApprovalTest(unittest.TestCase):
 
     def test_made_up_plan_paths_are_flagged(self) -> None:
         self._seed_repo_with_code()
-        draft = ("Search.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
+        draft = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
                  "- Add `stead/context/search.py`.\n- Register it in `stead/cli.py`.\n"
                  "- Test in `tests/test_search.py`; run `python -m unittest`.\n")
         result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
@@ -195,9 +195,46 @@ class SpecApprovalTest(unittest.TestCase):
 
     def test_real_and_new_paths_in_real_folders_pass(self) -> None:
         self._seed_repo_with_code()
-        draft = ("Search.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
+        draft = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
                  "- New `ctx/search.py`, edit `ctx/cli.py`, test in "
                  "`tests/test_context_search.py`. See `https://example.com/a/b`.\n")
         result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
                                  responder=lambda _p: draft)
         self.assertEqual(result["warnings"], [])
+
+
+    LONG = ("Add a small command-line flag so a caller can change the greeting "
+            "without editing the source; the default output stays the same when "
+            "the flag is absent, and a test covers it.")
+
+    def _set_body(self, body: str) -> None:
+        meta, _old = frontmatter.parse(self.path.read_text(encoding="utf-8"))
+        self.path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+
+    def test_approve_refuses_a_spec_with_too_many_criteria(self) -> None:
+        criteria = "".join(f"- [ ] case {n} works\n" for n in range(1, 11))
+        self._set_body(f"{self.LONG}\n\n## Acceptance criteria\n\n{criteria}")
+        with self.assertRaises(spec.SpecError) as caught:
+            spec.approve(self.root, "contribution-me-app-issue-1")
+        self.assertIn("10 acceptance criteria", str(caught.exception))
+        self.assertIn("at most 8", str(caught.exception))
+        meta, _body = frontmatter.parse(self.path.read_text(encoding="utf-8"))
+        self.assertNotIn("spec_sha", meta)
+
+    def test_approve_refuses_a_vague_spec(self) -> None:
+        self._set_body("Add a flag.\n\n## Acceptance criteria\n\n- [ ] it works\n")
+        with self.assertRaises(spec.SpecError) as caught:
+            spec.approve(self.root, "contribution-me-app-issue-1")
+        self.assertIn("at least 25", str(caught.exception))
+
+    def test_draft_warns_when_a_build_would_refuse_it(self) -> None:
+        self._seed_repo()
+        criteria = "".join(f"- [ ] case {n} works\n" for n in range(1, 11))
+        draft = f"{self.LONG}\n\n## Acceptance criteria\n\n{criteria}\n## Plan\n\nEdit app.py.\n"
+        prompts: list[str] = []
+        result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                 responder=lambda p: prompts.append(p) or draft)
+        self.assertIn("At most 8 criteria", prompts[0])
+        self.assertEqual(len(result["warnings"]), 1)
+        self.assertIn("a build would refuse this draft", result["warnings"][0])
+        self.assertIn("10 acceptance criteria", result["warnings"][0])
