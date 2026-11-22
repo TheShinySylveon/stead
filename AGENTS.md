@@ -223,9 +223,11 @@ offline.
 
 ## feature-builder (issue → PR, shadow/draft-PR only)
 
-A build target is a `contribution` with `kind: issue`, `role: author`, linked to a
-`repo`, tagged `feature-spec`, whose body has a description + a `## Acceptance
-criteria` checklist. `stead factory run --factory feature-builder --contribution ID`
+A build target is a `contribution` with `kind: issue`, linked to a `repo`,
+tagged `feature-spec` (or `stead-build`, the synced GitHub label), whose body
+has a description + a `## Acceptance criteria` checklist and a `## Plan`
+section. `stead spec draft --contribution ID` turns a synced issue into one.
+`stead factory run --factory feature-builder --contribution ID`
 assembles a deterministic, LLM-free, network-free bundle (spec + criteria + repo
 conventions + related docs + sibling contributions for a duplicate sweep) and
 flags thin/large/criteria-less specs for decomposition. A pluggable coding agent

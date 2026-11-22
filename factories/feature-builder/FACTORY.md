@@ -77,11 +77,13 @@ The reaches above are the rungs. A repo may sit on any rung.
 
 ## Buildable spec convention
 
-A build target is a `contribution` with `kind: issue`, `role: author`, linked
-to a `repo`, tagged `feature-spec`, whose body contains the feature
-description plus a `## Acceptance criteria` checklist (`- [ ]` items).
-See CONVENTIONS.md → "Buildable feature specs". Author it with
-`stead contribution add` (then edit the body) or by hand + `stead init`.
+A build target is a `contribution` with `kind: issue`, linked to a `repo`,
+tagged `feature-spec` (or `stead-build`, the synced GitHub label), whose body
+contains the feature description plus a `## Acceptance criteria` checklist
+(`- [ ]` items) and, after it, a `## Plan` section. See CONVENTIONS.md →
+"Buildable feature specs". Author it with `stead spec draft --contribution ID`
+(from a synced issue) or `stead contribution add` (then edit the body), or by
+hand + `stead init`.
 
 ## Spec-driven, planning-first (every run)
 
@@ -103,8 +105,9 @@ local, and network-free for both. Full flow, install, and own-vs-OSS rules:
 - **On demand (default):**
   `python -m stead factory run --factory feature-builder --contribution <spec-id>`
   Optional `--reach` cannot exceed the repo ceiling.
-- **Watch:** `python -m stead factory watch` assembles open authored issues
-  tagged `feature-spec` whose repo `trigger` is `watch` and whose spec flags
+- **Watch:** `python -m stead factory watch` assembles open enabled issues
+  tagged `feature-spec` (or `stead-build`) whose repo `trigger` is `watch` and
+  whose spec flags
   are clear. Scheduler-agnostic: any cron / Task Scheduler / Hermes job can
   invoke that command. It does not push.
 

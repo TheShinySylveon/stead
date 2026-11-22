@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+- **The MVP loop, end to end (M0–M7).** An issue carrying the `stead-build`
+  label syncs read-only, `stead spec draft` turns it into an approvable spec in
+  one model call, `stead spec approve` binds approval to the body hash, and
+  `stead build` implements it in its own `git worktree` — the user's checkout
+  is never touched and Stead never runs `git clean`. `build --publish` opens the
+  PR, and `factory comment` links it on the issue (gated: `allow_comment`,
+  `kind: own`). A human reviews and merges; `sync github` reconciles the outcome.
+- **Build correctness harness (M1).** The builder asks for structured JSON
+  output (`json_schema` `response_format`, with a fallback on a 400), logs
+  characters/latency, and enforces the three-run fail-before/pass-after gate:
+  the base suite must pass, a new test must fail against the base without the
+  code change, and the branch must pass.
+- **One automatic attempt per approved hash (M0.6).** A build-class failure
+  blocks a re-run until re-approval or `--retry`; infrastructure failures don't
+  consume the attempt. A killed build's started marker is reclaimed as an
+  infrastructure failure record.
+- **Metrics split build-class from infrastructure failures**, and the failure
+  rate is build-class only.
+- **Monitor cadence.** `schedule show/install --interval hourly|daily` runs a
+  read-only sync + `factory watch --build --publish` on its own task, separate
+  from the weekly digest job.
+- The sign-off runbook (rubric, frozen issue sets A/B/C + hold-out, baseline
+  procedure, and the `pr`-ceiling procedure) is in `docs/dogfood.md`.
+
 - **`ghost` reach — a new lowest rung below shadow.** First option in every
   ceiling dropdown (cockpit and CLI). Ghost is purely spec, docs, and a code
   plan for human approval: the build plans first and may write or delete

@@ -74,9 +74,9 @@ real model runs and a green PR at the `pr` ceiling, per [Dogfood](dogfood.md).
 |---|---|
 | Model config + `model test`/`list` (local LM Studio/Ollama) | working |
 | Monitor: `sync github` + `trigger: watch` + scheduler | working (read-only) |
-| Spec/docs/plan: `ghost` rung | built; **validate the monitor→ghost→approve flow end to end** |
+| Spec/docs/plan: `spec draft` + `spec approve` | built; **validate the monitor→draft→approve flow end to end** |
 | Spec approval by content hash | working |
-| Build correctness on a local model | **blocker** — run 1 passed checks but did not implement the spec |
+| Build correctness on a local model | harness built (structured output, fail-before/pass-after); **first-attempt score not run** |
 | `require_tests`, protected paths, scrubbed/container checks | working |
 | PR from isolated branch (`pr`) | working |
 | **Comment on the issue linking the PR** | built (gated: `allow_comment`, `kind: own`) |
@@ -86,14 +86,17 @@ real model runs and a green PR at the `pr` ceiling, per [Dogfood](dogfood.md).
 
 ## Blockers (the only work to do)
 
-1. **Build correctness.** A build must meet the spec or fail honestly.
-   `require_tests` + firmer protocol added; a re-run is validating. First.
-2. **Issue commenting.** A gated remote write that posts a comment on the source
-   issue linking the PR (and CI status). Not built. Required for the human to
-   merge and close together. Design: explicit per-repo permission, never from
-   assembly, reviewable; see [Trust](trust.md#github-writes-beyond-opening-a-pr).
-3. **Validate the ghost flow.** Confirm monitor → spec/docs/plan → approve →
-   build works as one path, not just isolated commands.
+The code for the full loop is landed (see
+[Milestone progress](#milestone-progress)). What remains is operational, not
+more code:
+
+1. **Build correctness on a real model.** Run the baseline and score Set B on a
+   single first attempt — a build must meet the spec or fail honestly. See
+   [Dogfood](dogfood.md).
+2. **Reach a green PR at `pr`.** `build --publish --wait` with CI as a required
+   check, then a human review and merge.
+3. **Run the sign-off (M7).** The monitor → draft → approve → build → PR →
+   comment → merge loop on the frozen Set C + hold-out.
 
 ## Deferred until MVP (recorded, not lost)
 
@@ -101,11 +104,10 @@ real model runs and a green PR at the `pr` ceiling, per [Dogfood](dogfood.md).
   [Vision](vision.md#open-items-from-review).
 - Filing issues upstream (humans file issues for MVP; Stead comments) —
   [Vision](vision.md).
-- Acceptance check in CI; independent reviewer pass —
-  [Trust](trust.md#empty-work-ci-and-acceptance-checks).
+- Per-spec acceptance check in CI (the fail-before/pass-after gate already runs
+  locally) — [Trust](trust.md#empty-work-ci-and-acceptance-checks).
 - Pluggable executor; patch-level edits — [Vision](vision.md).
 - Eval redesign — [Vision](vision.md), [Factories](factories.md).
-- Token/dollar budgets — [Trust](trust.md#known-gaps).
 - Shared-server hardening (roles, permissions, rate limit, TLS) —
   [Trust](trust.md#shared-server-every-account-is-an-admin).
 - `.stead/` publish, global search/timeline, kanban changes —

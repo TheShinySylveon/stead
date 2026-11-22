@@ -25,16 +25,17 @@ Everything the model produces is treated as untrusted input:
 A synced issue cannot become a build target by itself. `stead build` requires
 all of these:
 
-- the contribution is `kind: issue` and `role: author`;
+- the contribution is `kind: issue` and **enabled** — tagged `feature-spec`
+  (locally authored) or `stead-build` (the GitHub label, synced);
 - its body has a description and a `## Acceptance criteria` checklist;
-- it carries the `feature-spec` tag;
 - its repo has `code_path` and a ceiling above `shadow`;
 - **a person approved this exact body** with `stead spec approve`.
 
 Approval stores a SHA-256 of the body (`spec_sha`). Any later edit or sync that
 changes the body invalidates the approval, so the model never builds text
-nobody approved. The `author` role and the `feature-spec` tag are **labels, not
-permissions**: anyone with file access can set them. The hash is the gate.
+nobody approved. The `author` role and the `feature-spec`/`stead-build` tags are
+**labels, not permissions**: anyone with file access can set them. The hash is
+the gate.
 
 For a public repo, that is the real control against prompt injection through an
 issue body: a person decides the text is a spec before any model reads it as

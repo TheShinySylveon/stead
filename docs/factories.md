@@ -67,12 +67,12 @@ python -m stead factory run --factory weekly-project-status \
 
 ### feature-builder
 
-Turns a feature spec you authored into a build bundle. The spec is a
-contribution with `kind: issue`, `role: author`, tag `feature-spec`, and a
-`## Acceptance criteria` checklist. A person must also approve the body with
-`stead spec approve`; the approval is a hash, so any edit needs re-approval.
-The bundle marks everything that is not the approved spec as untrusted, and
-includes prior `build-record` documents for the repo.
+Turns an enabled feature spec into a build bundle. The spec is a
+contribution with `kind: issue`, tagged `feature-spec` (or `stead-build`, the
+synced GitHub label), and a `## Acceptance criteria` checklist. A person must
+also approve the body with `stead spec approve`; the approval is a hash, so any
+edit needs re-approval. The bundle marks everything that is not the approved
+spec as untrusted, and includes prior `build-record` documents for the repo.
 
 ```bash
 python -m stead factory run --factory feature-builder \
@@ -136,10 +136,10 @@ python -m stead factory run --factory context-maintenance --shadow
 python -m stead factory new --name NAME --title "What it drafts"
 ```
 
-`stead factory watch` assembles open authored `feature-spec` issues on repos
-set to watch, and skips flagged specs. With `--build` it also runs the model
-build on each one; `--publish` opens the pull request and `--merge` merges when
-the repo says `reach: merge` and the checks are green. A spec whose branch
+`stead factory watch` assembles open enabled `feature-spec`/`stead-build` issues
+on repos set to watch, and skips flagged specs. With `--build` it also runs the
+model build on each one; `--publish` opens the pull request and `--merge` merges
+when the repo says `reach: merge` and the checks are green. A spec whose branch
 already exists is skipped.
 
 `stead factory publish` pushes an isolated branch and opens a pull request
