@@ -100,6 +100,10 @@ cd stead
 python -m stead ui
 ```
 
+Then go to **http://127.0.0.1:8765/** — that is the cockpit's default address.
+Stead prints the URL at startup and opens a browser; if no browser opens, use
+that address. `--port N` changes the port.
+
 A fresh checkout has an empty `context/`. Welcome asks for a project title, an
 optional GitHub URL, and whether this copy is for this computer or a shared
 server. Nothing is pushed.
@@ -108,7 +112,10 @@ Without a browser:
 
 ```bash
 python -m stead welcome --title "My Project"
+python -m stead ui --no-browser    # then visit http://127.0.0.1:8765/
 ```
+
+Next: [Getting started](docs/getting-started.md) and [Cockpit](docs/cockpit.md).
 
 ## This computer or a shared server
 
@@ -116,7 +123,7 @@ python -m stead welcome --title "My Project"
 |---|---|---|
 | Who | One person, and the agents on that machine | Several people, one process |
 | How | `python -m stead ui` | `docker compose pull && docker compose up --no-build` |
-| Network | Loopback only | Published port, each person signs in |
+| Network | Loopback only (`127.0.0.1:8765`) | Published port `8765`, each person signs in |
 | Index | One `state.db` on that machine | One `state.db` inside the container |
 
 Choosing Shared server in Welcome does not open a port on your laptop. It
