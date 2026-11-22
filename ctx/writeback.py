@@ -16,6 +16,7 @@ next bundle can read it. The SQLite ``runs`` table stays a rebuildable index.
 from __future__ import annotations
 
 import re
+import subprocess
 from datetime import date, datetime, timezone
 from pathlib import Path
 
@@ -344,7 +345,8 @@ def _latest_record(root: Path, contribution_ref: str):
         if str(meta.get("contribution") or "") != contribution_ref:
             continue
         found.append((path, meta, body))
-    found.sort(key=lambda item: str(item[1].get("created") or ""), reverse=True)
+    found.sort(key=lambda item: (str(item[1].get("created") or ""),
+                                 _record_order(item[0])), reverse=True)
     return found[0] if found else None
 
 
@@ -362,9 +364,116 @@ def mark_merged(root: Path, contribution_ref: str, *, url: str = "",
             fields["merged_url"] = url
         recorded = str(meta.get("commit") or "")
         if head_sha and recorded:
-            fields["human_edits"] = "true" if head_sha != recorded else "false"
+            fields["human_edits"] = human_edits(root, meta, head_sha)
         _patch(root, "document", meta.get("id") or path.stem, fields)
     return {"outcome": "merged", "updated": updated}
+
+
+def mark_published(root: Path, repo_id: str, branch: str, url: str) -> dict | None:
+    """`stead factory publish` (run on its own, after a build) points the
+    branch's delivered record at the pull request, so `sync github` can
+    reconcile the merge later. `build --publish` writes the url into the new
+    record itself and does not come through here."""
+    meta = delivered_record_for_branch(root, repo_id, branch)
+    if meta is None or not url:
+        return None
+    fields = {"pr_url": url}
+    if str(meta.get("outcome") or "") == "committed":
+        fields["outcome"] = "published"
+    _patch(root, "document", str(meta.get("id") or ""), fields)
+    return {"id": meta.get("id"), **fields}
+
+
+def _git_out(code: Path, args: list[str], stdin: str | None = None) -> str | None:
+    """stdout of one local git command, or None when it fails."""
+    try:
+        done = subprocess.run(["git", *args], cwd=code, input=stdin,
+                              capture_output=True, text=True, encoding="utf-8",
+                              errors="replace", timeout=120)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return done.stdout if done.returncode == 0 else None
+
+
+def _patch_id(code: Path, old: str, new: str) -> str | None:
+    """A stable id for the change from ``old`` to ``new`` that ignores line
+    numbers, so the same change on a newer base gets the same id."""
+    diff = _git_out(code, ["diff", "--no-color", "--no-ext-diff", old, new])
+    if diff is None:
+        return None
+    if not diff.strip():
+        return ""
+    out = _git_out(code, ["patch-id", "--stable"], stdin=diff)
+    return out.split()[0] if out and out.split() else None
+
+
+def only_base_merges(code: Path, recorded: str, head: str) -> bool | None:
+    """Whether every commit between the build's commit and the PR head is a
+    clean merge of the base branch (GitHub's "Update branch").
+
+    True: the branch only took in the base, so its own change is still the
+    build's. False: a commit on the branch line added or changed something, a
+    merge resolved a conflict differently, or history was rewritten. None:
+    it can't be told from the local checkout (missing objects, git error).
+
+    The PR head may exist only on GitHub, so its objects are fetched first
+    (best effort, objects only; nothing is pushed)."""
+    _git_out(code, ["fetch", "-q", "origin", head])
+    for sha in (recorded, head):
+        if _git_out(code, ["cat-file", "-e", f"{sha}^{{commit}}"]) is None:
+            return None
+    if _git_out(code, ["merge-base", "--is-ancestor", recorded, head]) is None:
+        return False
+    rows = _git_out(code, ["rev-list", "--first-parent", "--parents", f"{recorded}..{head}"])
+    if rows is None:
+        return None
+    for row in rows.splitlines():
+        shas = row.split()
+        if not shas:
+            continue
+        commit, parents = shas[0], shas[1:]
+        if len(parents) != 2:
+            return False  # a commit made on the branch itself
+        branch_side, base_side = parents
+        fork = _git_out(code, ["merge-base", branch_side, base_side])
+        if fork is None:
+            return None
+        before = _patch_id(code, fork.strip(), branch_side)
+        after = _patch_id(code, base_side, commit)
+        if before is None or after is None:
+            return None
+        if before != after:
+            return False
+    return True
+
+
+def _code_for(root: Path, meta: dict) -> Path | None:
+    for tag in meta.get("tags") or []:
+        text = str(tag)
+        if not text.lower().startswith("repo:"):
+            continue
+        found = objects.find(root, "repo", text[len("repo:"):])
+        if found is None:
+            continue
+        code_path = str(found[1].get("code_path") or "")
+        if code_path and Path(code_path).is_dir():
+            return Path(code_path)
+    return None
+
+
+def human_edits(root: Path, meta: dict, head: str) -> str:
+    """Return "true" when the merged PR head carries changes the build did not make.
+
+    A different head SHA alone is not enough: under a strict up-to-date rule
+    nearly every PR is updated from the base before merge, and that merge is
+    not an edit. When the local checkout can't tell, a different head counts
+    as an edit, as before."""
+    recorded = str(meta.get("commit") or "")
+    if not head or not recorded or head == recorded:
+        return "false"
+    code = _code_for(root, meta)
+    clean = only_base_merges(code, recorded, head) if code is not None else None
+    return "false" if clean else "true"
 
 
 def mark_correct(root: Path, record_ref: str, correct: bool) -> dict:
@@ -390,9 +499,10 @@ def mark_correct(root: Path, record_ref: str, correct: bool) -> dict:
 def reconcile_records(root: Path, view_pr) -> dict:
     """Reconcile build records against live PR state. READ-ONLY: view_pr(url)
     returns the gh pr view JSON ({state, headRefOid, ...}) or None. A merged PR
-    updates the record's outcome and flags human edits (head SHA differs from
-    the recorded commit); a closed-unmerged PR becomes 'closed'. This is how a
-    human merge under the pr ceiling reaches the ledger."""
+    updates the record's outcome and flags human edits (the head carries
+    changes beyond the recorded commit; merges of the base branch don't
+    count); a closed-unmerged PR becomes 'closed'. This is how a human merge
+    under the pr ceiling reaches the ledger."""
     reconciled: list[str] = []
     for path, meta, _body in objects.iter_objects(root, "document"):
         tags = {str(t).lower() for t in (meta.get("tags") or [])}
@@ -413,9 +523,7 @@ def reconcile_records(root: Path, view_pr) -> dict:
         fields: dict = {}
         if state == "MERGED":
             fields["outcome"] = "merged"
-            head = str(data.get("headRefOid") or "")
-            recorded = str(meta.get("commit") or "")
-            fields["human_edits"] = "true" if (head and recorded and head != recorded) else "false"
+            fields["human_edits"] = human_edits(root, meta, str(data.get("headRefOid") or ""))
             if data.get("mergedAt"):
                 fields["merged_at"] = str(data.get("mergedAt"))
             contrib_ref = str(meta.get("contribution") or "")

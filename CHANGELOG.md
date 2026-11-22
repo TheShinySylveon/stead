@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **Updating a Stead PR from main no longer counts as a human edit.** The
+  merged head is compared with the build commit by content: commits on the
+  branch line must all be clean merges of the base (same patch id before and
+  after). A direct commit, a change slipped into the update merge, or a head
+  the checkout can't see still counts as an edit. Under a strict up-to-date
+  rule nearly every PR is updated before merge, so the old SHA check flagged
+  almost all of them. `stead factory publish` run on its own now saves the
+  PR url on the build record (outcome `published`), so `sync github` can
+  reconcile its merge, and `factory merge` updates the newest record of the
+  day rather than an arbitrary same-day one.
 - **Builds can change long files.** A read longer than the read limit now
   says where it was cut and how to read on, `read` takes a `start`/`end` line
   range, and a new `edit` action replaces one exact snippet (it must match one

@@ -73,7 +73,9 @@ A build is **correct** when, checked by hand against the built change:
 
 A PR that needed human commits before merge is **not** a first-attempt success.
 It is recorded separately as "success with human edits" (the ledger already
-detects this by comparing the merged head SHA to the recorded build commit).
+detects this by comparing the merged head to the recorded build commit; a
+merge that only brings the branch up to date with the base, like GitHub's
+"Update branch", is not an edit).
 
 Record the verdict per build with
 `python -m stead --root ../stead-dogfood metrics mark ID --correct true|false`,

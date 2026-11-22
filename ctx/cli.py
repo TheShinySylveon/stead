@@ -1281,6 +1281,8 @@ def main(argv: list[str] | None = None) -> int:
             opened = publish(root, args.contribution)
         except PublishError as exc:
             raise SystemExit(str(exc)) from exc
+        from ctx import writeback
+        writeback.mark_published(root, opened["repo"], opened["branch"], opened["url"])
         print(f"opened {opened['url']}")
         print(f"branch {opened['branch']} -> {opened['base']} [{opened['reach']}]")
         print("not merged. A person reviews.")
