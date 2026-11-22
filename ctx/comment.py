@@ -39,6 +39,17 @@ def _comment_body(pr_url: str) -> str:
     return f"{COMMENT_MARKER}\nStead opened a pull request for this issue: {pr_url}\n"
 
 
+def _pr_in_repo(pr_url: str, owner_name: str) -> bool:
+    return f"github.com/{owner_name}/pull/" in (pr_url or "").rstrip("/")
+
+
+def _authenticated_login(run, code: Path) -> str:
+    try:
+        return run(["gh", "api", "user", "--jq", ".login"], code).strip()
+    except CommentError:
+        return ""
+
+
 def comment(root: Path, contribution_ref: str, pr_url: str, *, runner=None) -> dict:
     """Post (or update) the Stead comment linking the PR on the source issue."""
     found = objects.find(root, "contribution", contribution_ref)
@@ -62,9 +73,12 @@ def comment(root: Path, contribution_ref: str, pr_url: str, *, runner=None) -> d
     if not code.is_dir():
         raise CommentError("set the repo code_path before commenting")
     owner_name = _owner_name(repo_meta)
+    if not _pr_in_repo(pr_url, owner_name):
+        raise CommentError(f"the PR url {pr_url!r} is not in {owner_name}")
     run = runner or _run
 
-    existing = _find_marked_comment(run, owner_name, number, code)
+    login = _authenticated_login(run, code)
+    existing = _find_marked_comment(run, owner_name, number, code, login)
     text = _comment_body(pr_url)
     if existing is not None:
         run(["gh", "api", "-X", "PATCH",
@@ -73,15 +87,16 @@ def comment(root: Path, contribution_ref: str, pr_url: str, *, runner=None) -> d
         return {"updated": True,
                 "url": f"https://github.com/{owner_name}/issues/{number}"
                        f"#issuecomment-{existing}"}
-    url = run(["gh", "issue", "comment", str(number), "--body", text],
-              code).strip()
+    url = run(["gh", "issue", "comment", str(number), "--repo", owner_name,
+               "--body", text], code).strip()
     return {"created": True, "url": url or ""}
 
 
-def _find_marked_comment(run, owner_name: str, number, code: Path):
-    """The id of the existing marked Stead comment, or None."""
+def _find_marked_comment(run, owner_name: str, number, code: Path, login: str):
+    """The id of the existing marked Stead comment authored by the authenticated
+    user, or None. Reads all pages and ignores strangers' comments."""
     try:
-        raw = run(["gh", "api",
+        raw = run(["gh", "api", "--paginate",
                    f"repos/{owner_name}/issues/{number}/comments"], code)
     except CommentError:
         return None
@@ -92,8 +107,13 @@ def _find_marked_comment(run, owner_name: str, number, code: Path):
     if not isinstance(comments, list):
         return None
     for item in comments:
-        if isinstance(item, dict) and COMMENT_MARKER in (item.get("body") or ""):
-            return item.get("id")
+        if not isinstance(item, dict) or COMMENT_MARKER not in (item.get("body") or ""):
+            continue
+        if login:
+            author = (item.get("user") or {}).get("login") if isinstance(item.get("user"), dict) else None
+            if author != login:
+                continue
+        return item.get("id")
     return None
 
 

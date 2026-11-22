@@ -1156,6 +1156,10 @@ def main(argv: list[str] | None = None) -> int:
             print("checks: none configured on the repo")
         if result["published"]:
             print(f"opened {result['pr_url']}")
+            if result.get("comment"):
+                print(f"commented on the issue: {result['comment'].get('url')}")
+            if result.get("comment_error"):
+                print(f"warning: issue comment failed: {result['comment_error']}")
             if result.get("merged"):
                 print(f"merged {result['merged_url']}")
             elif args.merge:

@@ -40,9 +40,13 @@ class CommentTest(unittest.TestCase):
 
         def runner(argv, _cwd):
             calls.append(argv)
-            if argv[1] == "api":
+            if argv[1] == "api" and argv[2] == "user":
+                return "me\n"
+            if argv[1] == "api" and "--paginate" in argv:
                 return "[]"
             if argv[1] == "issue":
+                self.assertIn("--repo", argv)
+                self.assertIn("me/app", argv)
                 self.assertIn(COMMENT_MARKER, argv[argv.index("--body") + 1])
                 return "https://github.com/me/app/issues/5#issuecomment-1\n"
             raise AssertionError(argv)
@@ -54,8 +58,11 @@ class CommentTest(unittest.TestCase):
 
     def test_comment_updates_the_marked_comment_in_place(self) -> None:
         def runner(argv, _cwd):
-            if argv[1] == "api" and "comments" in argv[2]:
-                return '[{"id": 42, "body": "' + COMMENT_MARKER + ' old\\n"}]'
+            if argv[1] == "api" and argv[2] == "user":
+                return "me\n"
+            if argv[1] == "api" and "--paginate" in argv:
+                return ('[{"id": 42, "body": "' + COMMENT_MARKER + ' old\\n", '
+                        '"user": {"login": "me"}}]')
             if argv[1] == "api" and "PATCH" in argv:
                 return "{}"
             raise AssertionError(argv)
@@ -65,6 +72,28 @@ class CommentTest(unittest.TestCase):
         self.assertTrue(result["updated"])
         self.assertEqual(result["url"],
                          "https://github.com/me/app/issues/5#issuecomment-42")
+
+    def test_comment_ignores_a_strangers_marked_comment(self) -> None:
+        def runner(argv, _cwd):
+            if argv[1] == "api" and argv[2] == "user":
+                return "me\n"
+            if argv[1] == "api" and "--paginate" in argv:
+                return ('[{"id": 9, "body": "' + COMMENT_MARKER + ' theirs\\n", '
+                        '"user": {"login": "stranger"}}]')
+            if argv[1] == "issue":
+                self.assertIn("--repo", argv)
+                return "https://github.com/me/app/issues/5#issuecomment-1\n"
+            raise AssertionError(argv)
+
+        result = comment(self.root, "contribution-me-app-issue-5",
+                         "https://github.com/me/app/pull/9", runner=runner)
+        self.assertTrue(result["created"])  # does not overwrite the stranger's
+
+    def test_comment_rejects_a_pr_in_another_repo(self) -> None:
+        with self.assertRaises(CommentError) as caught:
+            comment(self.root, "contribution-me-app-issue-5",
+                    "https://github.com/other/repo/pull/9", runner=lambda *a: "")
+        self.assertIn("not in", str(caught.exception))
 
     def test_comment_requires_allow_comment(self) -> None:
         path = self.root / "context/repos/app.md"
