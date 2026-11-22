@@ -184,14 +184,16 @@ checks and record the outcome in the ledger.
 
 ## GitHub writes beyond opening a PR
 
-Today the only remote writes are `publish` (push an isolated branch, open a PR)
-and `merge`. Sync is strictly read-only. The [MVP](mvp.md) requires Stead to
-**comment on the source issue linking the PR** (and CI status) so a human can
-merge and close together; filing issues upstream is deferred (humans file
-issues for now). Commenting is not built yet. When added it must be gated like
-publish/merge: explicit per-repo permission, never from assembly, never the
-default, and reviewable. Commenting is lower-risk than merging but is still a
-public remote write under the user's identity.
+Today the remote writes are `publish` (push an isolated branch, open a PR),
+`merge`, and the gated issue **comment**. Sync is strictly read-only. The
+[MVP](mvp.md) requires Stead to **comment on the source issue linking the PR**
+so a human can merge and close together; filing issues upstream is deferred
+(humans file issues for now). The comment is gated like publish/merge: explicit
+per-repo `allow_comment: true`, `kind: own` only, never from assembly, never the
+default, and idempotent (one marked comment, updated in place). It carries no CI
+status today — a stale status is worse than none — but the marked comment is the
+place CI status could later be refreshed on `--wait`. It is lower-risk than
+merging but is still a public remote write under the user's identity.
 
 ## Shared server: every account is an admin
 

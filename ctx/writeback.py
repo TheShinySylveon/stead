@@ -104,6 +104,10 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         meta["commit"] = result["commit"]
     if result.get("pr_url"):
         meta["pr_url"] = result["pr_url"]
+    if result.get("comment") and isinstance(result["comment"], dict):
+        meta["comment_url"] = result["comment"].get("url") or ""
+    if result.get("comment_error"):
+        meta["comment_error"] = str(result["comment_error"])[:500]
     if repo_meta.get("project"):
         meta["project"] = repo_meta["project"]
     if run_id is not None:
