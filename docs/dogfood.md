@@ -199,7 +199,8 @@ land in `inbox/` for triage.
 ## Candidate specs
 
 Small, real, testable improvements to Stead. Each is a build target once
-authored and approved.
+authored and approved. These are Set A (tuning), filed as GitHub issues with
+the `stead-build` label: 1 is #25, 2 was built as #20, 3 is #27.
 
 ### 1. `stead context search`
 
@@ -225,17 +226,23 @@ Time-window the dogfood numbers.
 - [ ] a test covers the filter and the empty window
 ```
 
-### 3. `doctor` flags an unapproved feature spec
+### 3. `stead inbox list`
 
-Make the approval gate visible to a hand editor.
+Show what is waiting in the inbox.
 
 ```
 ## Acceptance criteria
-- [ ] `stead doctor` warns on a contribution tagged feature-spec with no spec_sha
-- [ ] it warns when spec_sha is present but the body changed
-- [ ] approved specs produce no warning
-- [ ] a test covers all three cases
+- [ ] `stead inbox list` lists each inbox note with its file name, kind, and title
+- [ ] `--kind KIND` limits the list to one kind (decision, glossary, or note)
+- [ ] an empty or missing inbox prints a clear message, not nothing
+- [ ] listing is read-only: nothing is moved, edited, or deleted
+- [ ] a test covers a listing, the kind filter, and an empty inbox
 ```
+
+This replaced "`doctor` flags an unapproved feature spec" on 2026-11-22,
+before any of it was built: that spec was the same check as frozen Set B #2
+(only the tag differed), so tuning on it would have leaked a scoring spec.
+Set B is unchanged.
 
 ## Baseline (M1.1) and measurement record
 
