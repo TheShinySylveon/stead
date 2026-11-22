@@ -583,3 +583,50 @@ class PipelineStageTest(unittest.TestCase):
         row = self._row()
         self.assertEqual(row["stage"], "built")
         self.assertEqual([a["key"] for a in row["actions"]], ["publish"])
+
+    def _repo(self, reach="merge", allow_comment=True, kind="own"):
+        (self.root / "context/repos").mkdir(parents=True, exist_ok=True)
+        meta = {"id": "repo-me-app", "type": "repo", "title": "App",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "active", "kind": kind, "default_branch": "main",
+                "reach": reach}
+        if allow_comment:
+            meta["allow_comment"] = True
+        (self.root / "context/repos/app.md").write_text(
+            frontmatter.dumps(meta, "# App\n"), encoding="utf-8")
+
+    def test_published_offers_merge_and_comment(self):
+        from ctx import spec
+        self._repo()
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("published", spec_sha=spec.body_hash(body),
+                     pr_url="https://github.com/me/app/pull/7")
+        row = self._row()
+        self.assertEqual(row["stage"], "published")
+        self.assertEqual([a["key"] for a in row["actions"]], ["merge", "comment"])
+
+    def test_published_without_comment_offers_merge_only(self):
+        from ctx import spec
+        self._repo(allow_comment=False)
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("published", spec_sha=spec.body_hash(body),
+                     pr_url="https://github.com/me/app/pull/7")
+        row = self._row()
+        self.assertEqual(row["stage"], "published")
+        self.assertEqual([a["key"] for a in row["actions"]], ["merge"])
+
+    def test_merged_build_shows_merged(self):
+        from ctx import spec
+        self._repo()
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("merged", spec_sha=spec.body_hash(body),
+                     pr_url="https://github.com/me/app/pull/7")
+        row = self._row()
+        self.assertEqual(row["stage"], "merged")
+        self.assertEqual(row["actions"], [])
