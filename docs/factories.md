@@ -86,7 +86,8 @@ decomposition instead of being built. `method` on the spec is `spec-kit` or
 
 **Build with model** (or `stead build --contribution ID`) goes one step
 further. With a model configured it asks for a plan first, lets the model
-list, read, search, write, and delete files inside the repo's `code_path`,
+list, read, search, edit, write, and delete files inside the repo's `code_path`
+(a long file is read in line ranges and changed by exact replacement),
 runs the repo's `checks:` command, feeds failures back for repair, commits on
 an isolated branch, and stops. `--publish` opens the pull request; `--wait`
 waits for its checks and `--merge` merges under `reach: merge`. `--resume`

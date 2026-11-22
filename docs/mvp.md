@@ -106,7 +106,9 @@ more code:
   [Vision](vision.md).
 - Per-spec acceptance check in CI (the fail-before/pass-after gate already runs
   locally) — [Trust](trust.md#empty-work-ci-and-acceptance-checks).
-- Pluggable executor; patch-level edits — [Vision](vision.md).
+- Pluggable executor; unified-diff edits (line-range reads and exact-snippet
+  `edit` landed, so a file longer than one read is buildable) —
+  [Vision](vision.md).
 - Eval redesign — [Vision](vision.md), [Factories](factories.md).
 - Shared-server hardening (roles, permissions, rate limit, TLS) —
   [Trust](trust.md#shared-server-every-account-is-an-admin).

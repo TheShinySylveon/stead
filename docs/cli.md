@@ -239,7 +239,8 @@ the same repo. It runs automatically after `build --publish` when enabled.
 repo `code_path`, and a buildable, approved spec. Every build runs in its own
 `git worktree`, so the user's checkout is never touched: there is no "must be on
 the default branch" or "must be clean" precondition, and Stead never runs
-`git clean`. The model must first write a plan, then it may list, read, search,
+`git clean`. The model must first write a plan, then it may list, read (a whole
+file, or a line range of a long one), search, edit (replace one exact snippet),
 write, delete, and run the configured checks inside the worktree. It cannot
 touch `.git`, leave the repo, choose a shell command, or write a protected test
 or CI path unless the repo opts in (adding a brand-new test file is allowed).

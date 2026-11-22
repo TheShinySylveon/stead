@@ -58,7 +58,7 @@ _ACTION_RESPONSE_FORMAT = {
             "type": "object",
             "properties": {
                 "action": {"type": "string", "enum": [
-                    "plan", "list", "read", "search", "write", "delete",
+                    "plan", "list", "read", "search", "write", "edit", "delete",
                     "check", "propose", "finish"]},
                 "path": {"type": "string"},
                 "content": {"type": "string"},
@@ -67,6 +67,10 @@ _ACTION_RESPONSE_FORMAT = {
                 "kind": {"type": "string"},
                 "title": {"type": "string"},
                 "text": {"type": "string"},
+                "start": {"type": "integer"},
+                "end": {"type": "integer"},
+                "old": {"type": "string"},
+                "new": {"type": "string"},
             },
             "required": ["action"],
             "additionalProperties": False,
@@ -76,7 +80,8 @@ _ACTION_RESPONSE_FORMAT = {
 
 # The fields the build loop reads from an action object. A test asserts each is
 # declared in the schema above, so a strict server never drops one.
-_ACTION_FIELDS = {"action", "path", "content", "summary", "query", "kind", "title", "text"}
+_ACTION_FIELDS = {"action", "path", "content", "summary", "query", "kind", "title", "text",
+                  "start", "end", "old", "new"}
 
 
 class BuildError(Exception):
@@ -326,9 +331,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             _remain_running(root, deadline)
             if plan and not files and not deleted and _step >= 5 and not progress_nudged:
                 transcript.append(
-                    "You have a plan but have not written any file yet. Stop reading "
-                    "and planning. Write the full new content of the file you are "
-                    "changing now, then run check, then finish.")
+                    "You have a plan but have not changed any file yet. Stop reading "
+                    "and planning. Edit the file you are changing now (or write a new "
+                    "file), then run check, then finish.")
                 progress_nudged = True
             full_prompt = prompt + "\n\n" + "\n\n".join(_fit_budget(prompt, transcript))
             chars_sent += len(full_prompt)
@@ -390,7 +395,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     continue
                 text = target.read_text(encoding="utf-8", errors="replace")
                 actions.append({"action": "read", "path": rel})
-                transcript.append(f"read {rel}:\n{text[:MAX_READ_CHARS]}")
+                transcript.append(_read_view(rel, text, action.get("start"), action.get("end")))
                 continue
             if kind == "search":
                 query = str(action.get("query") or "").strip()
@@ -409,20 +414,20 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if plan:
                     transcript.append(
                         "A plan is already recorded. Do not send plan again. Now act: "
-                        "read the file you will change, write its full new content, run "
-                        "check, then finish. Send one action per reply.")
+                        "read the part of the file you will change, edit it (or write a "
+                        "new file), run check, then finish. Send one action per reply.")
                     continue
                 plan = summary
                 actions.append({"action": "plan"})
                 transcript.append(
                     "Plan recorded. You may now write spec/doc markdown for approval. No code."
                     if ghost else
-                    "Plan recorded. Do not plan again. Next: read the target file, write "
-                    "its full new content, run check, then finish. One action per reply.")
+                    "Plan recorded. Do not plan again. Next: read the target file, edit "
+                    "it (or write a new file), run check, then finish. One action per reply.")
                 continue
-            if kind == "write":
+            if kind in ("write", "edit"):
                 if not plan:
-                    raise BuildError("the model tried to write before a plan. Planning comes first.",
+                    raise BuildError(f"the model tried to {kind} before a plan. Planning comes first.",
                                      reason="protocol")
                 rel = _safe_rel(action.get("path") or "")
                 if ghost and not _is_doc_path(rel):
@@ -430,7 +435,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         f"ghost writes the plan and spec/doc changes only: refusing {rel}. "
                         "Zero code. Only markdown (.md, .markdown, .mdx) may change.",
                         reason="gate")
-                text = action.get("content")
+                text = action.get("content") if kind == "write" else ""
                 if not isinstance(text, str):
                     transcript.append("write: content must be a string")
                     continue
@@ -459,11 +464,24 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if safety.secret_by(rel) or safety.secret_by(resolved_rel):
                     raise BuildError(f"refusing to write {rel}: it looks like a secret file",
                                      reason="gate")
+                note = ""
+                if kind == "edit":
+                    if _ignored(target, code) or not target.is_file():
+                        transcript.append(f"edit: no file at {rel}. Use write to create a new file.")
+                        continue
+                    current = target.read_text(encoding="utf-8", errors="replace")
+                    try:
+                        text, note = _apply_edit(current, action.get("old"), action.get("new"))
+                    except ValueError as exc:
+                        transcript.append(f"edit {rel}: {exc}")
+                        continue
                 data = text.encode("utf-8")
                 if len(data) > MAX_FILE_BYTES:
-                    transcript.append(f"write: {rel} is over {MAX_FILE_BYTES} bytes")
+                    transcript.append(f"{kind}: {rel} would be over {MAX_FILE_BYTES} bytes")
                     continue
-                edits += len(data)
+                # An edit spends only what it changed, not the whole file.
+                edits += (len(data) if kind == "write"
+                          else len(str(action.get("new") or "").encode("utf-8")))
                 if edits > MAX_TOTAL_EDITS:
                     raise BuildError("the model tried to write too much in one build",
                                      reason="budget")
@@ -473,8 +491,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_text(text, encoding="utf-8")
                 files[rel] = text
-                actions.append({"action": "write", "path": rel})
-                transcript.append(f"wrote {rel} ({len(data)} bytes)")
+                actions.append({"action": kind, "path": rel})
+                transcript.append(f"edited {rel}: {note}" if kind == "edit"
+                                  else f"wrote {rel} ({len(data)} bytes)")
                 continue
             if kind == "delete":
                 if not plan:
@@ -1242,6 +1261,80 @@ def _search(code: Path, query: str) -> list[str]:
     return hits
 
 
+def _line_number(value) -> int | None:
+    try:
+        number = int(value)
+    except (TypeError, ValueError):
+        return None
+    return number if number > 0 else None
+
+
+def _read_view(rel: str, text: str, start=None, end=None) -> str:
+    """One read result. A whole small file reads as before. A line range, or a
+    file too long for one read, comes back with a header naming the lines shown
+    and how to read the rest, so the model never mistakes a part for the whole."""
+    first = _line_number(start)
+    last = _line_number(end)
+    ranged = first is not None or last is not None
+    if not ranged and len(text) <= MAX_READ_CHARS:
+        return f"read {rel}:\n{text}"
+    lines = text.splitlines(keepends=True)
+    total = len(lines)
+    if total == 0:
+        return f"read {rel}: the file is empty"
+    first = first or 1
+    last = last or total
+    if first > total:
+        return f"read {rel}: line {first} is past the end; the file has {total} lines"
+    last = max(first, min(last, total))
+    shown, size, stop = [], 0, first - 1
+    for index in range(first - 1, last):
+        line = lines[index]
+        if shown and size + len(line) > MAX_READ_CHARS:
+            break
+        shown.append(line[:MAX_READ_CHARS])
+        size += len(line)
+        stop = index + 1
+    body = "".join(shown)
+    if not body.endswith("\n"):
+        body += "\n"
+    footer = ""
+    if stop < last:
+        footer = (f"[cut off at line {stop} of {total} by the read limit. "
+                  f'Read on with {{"action":"read","path":"{rel}","start":{stop + 1}}}, '
+                  "or search for a name to find its line.]")
+    elif stop < total:
+        footer = f"[the file continues to line {total}.]"
+    return f"read {rel} lines {first}-{stop} of {total}:\n{body}{footer}".rstrip("\n")
+
+
+def _apply_edit(current: str, old, new) -> tuple[str, str]:
+    """Replace exactly one occurrence of ``old`` with ``new``. Raises
+    ValueError with a message the model can act on."""
+    if not isinstance(old, str) or not old:
+        raise ValueError("old is required: the exact existing text to replace")
+    if not isinstance(new, str):
+        raise ValueError("new is required: the replacement text (it may be empty)")
+    count = current.count(old)
+    if count == 0:
+        hint = " Read the file again and copy the text exactly, including indentation."
+        first = next((line.strip() for line in old.splitlines() if line.strip()), "")
+        if first:
+            where = [str(n) for n, line in enumerate(current.splitlines(), 1)
+                     if first in line][:5]
+            if where:
+                hint = (f" Its first line appears at line {', '.join(where)}; read "
+                        "there and copy the text exactly, including indentation.")
+        raise ValueError("old was not found in the file." + hint)
+    if count > 1:
+        raise ValueError(f"old matches {count} places. Include more surrounding "
+                         "lines so it matches exactly one.")
+    line = current.count("\n", 0, current.index(old)) + 1
+    updated = current.replace(old, new, 1)
+    return updated, (f"replaced the text at line {line}; "
+                     f"the file now has {len(updated.splitlines())} lines")
+
+
 def _wait_for_checks(code: Path, number, minutes: int) -> None:
     if not number:
         return
@@ -1371,18 +1464,25 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         "Reply with exactly one JSON object per turn. No prose, no code fences.\n"
         'Actions: {"action":"plan","summary":"..."}, '
         '{"action":"list","path":"."}, {"action":"read","path":"a.py"}, '
+        '{"action":"read","path":"a.py","start":120,"end":220}, '
         '{"action":"search","query":"name"}, '
-        '{"action":"write","path":"a.py","content":"full file text"}, '
+        '{"action":"edit","path":"a.py","old":"exact existing text","new":"replacement"}, '
+        '{"action":"write","path":"new.py","content":"full file text"}, '
         '{"action":"delete","path":"old.py"}, {"action":"check"}, '
         '{"action":"propose","kind":"decision|glossary","title":"...","text":"..."}, '
         '{"action":"finish","summary":"..."}.\n'
         'Send exactly ONE action object per reply — never an {"actions":[...]} '
         "array, never prose, never code fences. Your first action must be a single "
         "plan. Plan ONCE; after the plan is recorded, do not send plan again. Then "
-        "read the real file, write its full new content, run check, and finish. "
+        "read the real file, change it, run check, and finish. "
         "Do not write before the plan. "
         + check_line +
-        "write replaces the whole file. Read a file before changing it, and use the "
+        "To change an existing file, use edit: old must be copied exactly from a "
+        "read and match exactly one place; include a few surrounding lines to make "
+        "it unique. write replaces the whole file, so use it for new files or small "
+        "files you have read in full. A long file is shown in parts: search for a "
+        "name to get its line number, then read that line range. "
+        "Read a file before changing it, and use the "
         "exact paths from the repository tree below — do not invent filenames. "
         "Stay inside the repository. Do not touch .git. "
         "Do not edit or delete existing tests, CI config, or the checks "

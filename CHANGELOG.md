@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Builds can change long files.** A read longer than the read limit now
+  says where it was cut and how to read on, `read` takes a `start`/`end` line
+  range, and a new `edit` action replaces one exact snippet (it must match one
+  place; a miss or an ambiguous match is fed back, not fatal). Edits pass the
+  same protected-path gates as `write`. Before this, a read silently stopped
+  at 40,000 characters, so a model could not see or safely rewrite
+  `ctx/cli.py` (73,000) and the issue #1 dogfood build looped on reads.
 - **The MVP loop, end to end (M0–M7).** An issue carrying the `stead-build`
   label syncs read-only, `stead spec draft` turns it into an approvable spec in
   one model call, `stead spec approve` binds approval to the body hash, and
