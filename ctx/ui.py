@@ -227,15 +227,20 @@ def _flow_for(root: Path, meta: dict, body: str, drafts: dict,
             return _flow("closed", "Closed", cid, [])
         return _flow("pr", "PR open", cid, [])
 
+    # A draft's terminal state (merged/closed) wins, but otherwise the source
+    # issue's own terminal state wins: a source closed by hand must not keep
+    # offering Build through its still-open draft.
     draft = drafts.get(cid)
-    if draft is not None:
+    if draft is not None and str(draft[0].get("state") or "").lower() in ("merged", "closed"):
         return _active_flow(root, draft[0], draft[1], records)
-    if _is_authored_spec(meta):
-        return _active_flow(root, meta, body, records)
     if state == "merged":
         return _flow("merged", "Merged", cid, [])
     if state == "closed":
         return _flow("closed", "Closed", cid, [])
+    if draft is not None:
+        return _active_flow(root, draft[0], draft[1], records)
+    if _is_authored_spec(meta):
+        return _active_flow(root, meta, body, records)
     return _flow("draft", "Ready to draft", cid, ["draft"])
 
 
@@ -269,9 +274,13 @@ def _published_flow(root: Path, meta: dict, record: dict) -> dict:
     actions = []
     if _merge_eligible(root, meta):
         actions.append("merge")
-    if _comment_eligible(root, meta):
+    if _comment_eligible(root, meta) and not _is_commented(record):
         actions.append("comment")
     return _flow("published", "PR opened", cid, actions)
+
+
+def _is_commented(record: dict | None) -> bool:
+    return bool(record) and str(record.get("commented") or "").lower() == "true"
 
 
 def _is_authored_spec(meta: dict) -> bool:
@@ -315,8 +324,12 @@ def _comment_eligible(root: Path, meta: dict) -> bool:
     repo_meta = _repo_for(root, meta)
     if repo_meta is None:
         return False
-    return (str(repo_meta.get("kind") or "") == "own"
-            and bool(repo_meta.get("allow_comment")))
+    if str(repo_meta.get("kind") or "") != "own":
+        return False
+    if not bool(repo_meta.get("allow_comment")):
+        return False
+    # The comment posts on the spec's source issue number; without one it fails.
+    return bool(meta.get("number"))
 
 
 def list_inbox(root: Path) -> list[dict]:
@@ -1399,9 +1412,13 @@ def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
     _refuse_shared_remote(root)
     from ctx.comment import CommentError, comment
     try:
-        return {"ok": True, **comment(root, contribution, pr_url)}
+        result = comment(root, contribution, pr_url)
     except CommentError as exc:
         raise UiError(str(exc)) from exc
+    # Record that the comment is done, so the pipeline stops offering it.
+    from ctx import writeback
+    writeback.mark_commented(root, contribution)
+    return {"ok": True, **result}
 
 
 def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -> dict:

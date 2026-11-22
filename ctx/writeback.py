@@ -398,6 +398,21 @@ def mark_published(root: Path, repo_id: str, branch: str, url: str) -> dict | No
     return {"id": meta.get("id"), **fields}
 
 
+def mark_commented(root: Path, contribution_ref: str) -> None:
+    """Mark the newest build record for a spec as commented, so the cockpit
+    pipeline stops offering the (idempotent) comment action after it runs."""
+    best = None
+    for path, meta, _body in objects.iter_objects(root, "document"):
+        if RECORD_TAG not in {str(t).lower() for t in (meta.get("tags") or [])}:
+            continue
+        if str(meta.get("contribution") or "") != contribution_ref:
+            continue
+        if best is None or str(meta.get("updated") or "") >= str(best[1].get("updated") or ""):
+            best = (path, meta)
+    if best is not None:
+        _patch(root, "document", str(best[1].get("id") or ""), {"commented": "true"})
+
+
 def _git_out(code: Path, args: list[str], stdin: str | None = None) -> str | None:
     """stdout of one local git command, or None when it fails."""
     try:
