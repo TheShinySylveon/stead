@@ -294,6 +294,7 @@ DEFAULT_METHOD = "spec-kit"
 # Deterministic spec-quality heuristics (no LLM): a buildable spec needs a
 # substantive description and an `## Acceptance criteria` checklist.
 _AC_HEADER = re.compile(r"^##\s+acceptance\s+criteria\s*$", re.IGNORECASE | re.MULTILINE)
+_PLAN_HEADER = re.compile(r"^##\s+plan\s*$", re.IGNORECASE | re.MULTILINE)
 _CHECKLIST_ITEM = re.compile(r"^\s*[-*]\s+\[([ xX])\]\s+(.+?)\s*$", re.MULTILINE)
 _NEXT_H2 = re.compile(r"^##\s+", re.MULTILINE)
 _HEADING_LINE = re.compile(r"^#+\s.*$", re.MULTILINE)
@@ -319,6 +320,20 @@ def split_spec(body: str) -> tuple[str, list[tuple[bool, str]]]:
     criteria = [(m.group(1).lower() == "x", m.group(2))
                 for m in _CHECKLIST_ITEM.finditer(section)]
     return description, criteria
+
+
+def spec_plan(body: str) -> str:
+    """The code plan inside the approved spec body (the `## Plan` section after
+    the acceptance criteria). Empty when absent. It is hash-covered because it
+    lives in the body, unlike a plan dropped in the run folder."""
+    match = _PLAN_HEADER.search(body)
+    if match is None:
+        return ""
+    section = body[match.end():]
+    nxt = _NEXT_H2.search(section)
+    if nxt:
+        section = section[:nxt.start()]
+    return section.strip()
 
 
 def spec_flags(description: str, criteria: list[tuple[bool, str]]) -> list[str]:

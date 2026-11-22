@@ -729,6 +729,10 @@ def build_parser() -> argparse.ArgumentParser:
     sp = sub.add_parser("spec", help="approve a feature spec by its body hash").add_subparsers(dest="sub", required=True)
     spa = sp.add_parser("approve", help="approve the current body of a contribution as a build spec")
     spa.add_argument("--contribution", required=True)
+    spd = sp.add_parser("draft", help="draft a feature spec from a raw issue in one model call")
+    spd.add_argument("--contribution", required=True)
+    spd.add_argument("--redraft", action="store_true",
+                     help="replace the body of the existing draft and clear its approval")
 
     sy = sub.add_parser("sync", help="sync external context (read-only)").add_subparsers(dest="sub", required=True)
     sg = sy.add_parser("github", help="cache your GitHub PRs/reviews/issues via gh (READ-ONLY)")
@@ -1079,6 +1083,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "spec" and args.sub == "approve":
         from ctx.spec import SpecError, approve
+        from ctx import objects
+        found = objects.find(root, "contribution", args.contribution)
+        if found is not None:
+            print("--- approving this body ---")
+            print(found[2].strip())
+            print("----------------------------")
         try:
             approved = approve(root, args.contribution)
         except SpecError as exc:
@@ -1086,6 +1096,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"approved {approved['id']}")
         print(f"spec sha256: {approved['sha']}")
         print("any change to the body needs re-approval before a build")
+        return 0
+    if args.command == "spec" and args.sub == "draft":
+        from ctx.models import ModelError
+        from ctx.spec import SpecError, draft_spec
+        try:
+            drafted = draft_spec(root, args.contribution, redraft=args.redraft)
+        except (SpecError, ModelError) as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"drafted {drafted['id']} -> {drafted['path']}")
+        print(f"from {drafted['drafted_from']} (the source issue body is untouched)")
+        print(f"review and approve it with: python -m stead spec approve "
+              f"--contribution {drafted['id']}")
         return 0
     if args.command == "review":
         from ctx.models import ModelError
