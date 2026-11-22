@@ -276,6 +276,32 @@ user-facing limits live in the README; the engineering roadmap (PR feedback
 repair, queue and workers, check auto-detection, patch-level edits, post-merge
 cleanup) is `PLAN.md` §7, which is human-owned.
 
+### ASAP — cockpit Factories UX (reported in use)
+
+The Factories tab is the weakest surface and undermines confidence in the whole
+factory idea. Reported directly by a user:
+
+- **Nothing is self-evident.** The tab never explains what a factory is, what
+  each control does (Assemble shadow, Build with model, Watch now / Watch and
+  build, reach, Judge, Promote), or what input a factory needs. A first-time user
+  cannot tell what will happen before clicking.
+- **Creating a factory has no options and feels like nothing happens.** The New
+  factory form takes only a name and a title. There is no choice of factory kind
+  or input (project / spec / none), no trigger / reach / checks / method, and no
+  clear confirmation or guided next step after scaffolding. A "code factory"
+  cannot be meaningfully configured from the UI: `code_path`, `checks`, and
+  `reach` live on the repo, and the tab never points there.
+- **A factory cannot be deleted.** `stead delete` covers context objects only
+  (project, task, document, meeting, repo, actor). There is no `factory delete`
+  command and no cockpit control, so scaffolding is one-way.
+
+Fix direction: explain the tab in plain language (what a factory is, the
+plan → build → verify → deliver loop, what ghost / shadow / draft-pr / pr / merge
+mean); give each factory a one-line "what it does / what it needs"; make New
+factory a guided form (kind + input + sensible defaults) with a visible result
+and a next step; add `stead factory delete NAME` (refuse the four shipped
+factories unless `--force`) and a cockpit delete with confirmation.
+
 **Safety / autonomy**
 
 - Independent reviewer pass before merge: a second model or prompt, recorded as

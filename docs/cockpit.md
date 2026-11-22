@@ -41,7 +41,7 @@ See [First run](first-run.md).
 | Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. On a shared server, trigger, reach, code_path, and the checks/protected-path fields are read-only. |
 | Wiki | A Confluence-style space per repo: home, page tree, child pages, labels, metadata, on-page table of contents. Arrange reorders and pins; Request a change files a request document instead of editing generated pages. |
 | Inbox | Drop a note, or import a local `.eml`, `.ics`, `.md`, or `.txt` file. File it as a document, meeting, or task, or delete it. |
-| Factories | Assemble a shadow run. Check Draft with model to write `output.md`. Watch now assembles; Watch and build plans, edits, checks, and commits locally. Publish and merge are CLI-only. New factory, per-case eval results, Judge, Promote prompt. A shared server refuses any build. |
+| Factories | Assemble a shadow run. Check Draft with model to write `output.md`. Watch now assembles; Watch and build plans, edits, checks, and commits locally. Publish and merge are CLI-only. New factory, per-case eval results, Judge, Promote prompt. A shared server refuses any build. New factory takes only a name and title; there is no factory delete yet (tracked as ASAP). |
 | Settings | This computer or a shared server. The rented model. The install factory default. Rotate the access token. Add a sign-in, or reset its password. Sign out on a shared server. Choose who is writing. Add actors (`human` or `agent`). The weekly job. The capture webhook. Rebuild the index. |
 
 Opening a project, task, document, or meeting shows the note and an editor.

@@ -232,6 +232,10 @@ Pull requests build the Docker image. `main` publishes
   (hand the edit loop to a headless agent in a sandbox, keep the gates) and a
   stronger eval gate are planned; see [Vision](docs/vision.md) and
   [PLAN.md §7](PLAN.md).
+- **The Factories tab is rough.** It does not explain itself, New factory takes
+  only a name and a title (no kind, input, or autonomy options), and a factory
+  cannot be deleted yet. This is tracked as ASAP in
+  [Vision](docs/vision.md#open-items-from-review).
 - A normal `stead ui` stays on loopback. `--deploy` and Docker are the only
   public binds. They start with an account, or with the token until the first
   account exists.

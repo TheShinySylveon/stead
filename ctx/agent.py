@@ -95,6 +95,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     started = time.monotonic()
     deadline = started + max(1, max_minutes) * 60
     lock = _lock(code)
+    replies: list[str] = []
+    transcript: list[str] = []
+    actions: list[dict] = []
     try:
         current = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
         if resume:
@@ -114,17 +117,16 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             responder = lambda prompt: models.complete(prompt, settings, timeout=300)
         tree = _tree(code)
         prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta, ghost=ghost)
-        transcript: list[str] = []
         plan = ""
         files: dict[str, str] = {}
         deleted: list[str] = []
-        actions: list[dict] = []
         edits = 0
         failures = 0
         checks_mode = "none" if ghost or not checks else "host"
         for _step in range(max_steps):
             _remain_running(root, deadline)
             reply = responder(prompt + "\n\n" + "\n\n".join(transcript))
+            replies.append(reply if isinstance(reply, str) else str(reply))
             action = _parse(reply)
             if action is None:
                 transcript.append("Your last reply was not one JSON object. Reply with JSON only.")
@@ -332,7 +334,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         result["merged_url"] = merged.get("url") or opened["url"]
                 elif merge:
                     raise BuildError("--merge needs --publish; nothing was pushed")
-                run_id = _record_run(root, spec, result, mode="live" if publish else "shadow")
+                run_id = _record_run(root, spec, result, mode="live" if publish else "shadow",
+                                     transcript=transcript, replies=replies)
                 from ctx import writeback
                 try:
                     record = writeback.record_delivery(root, contribution_ref, result, run_id)
@@ -344,6 +347,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 'action must be plan, list, read, search, write, delete, check, '
                 'propose, or finish.')
         raise BuildError(f"the model did not finish within {max_steps} steps")
+    except Exception as exc:
+        _record_failure(root, spec, replies, transcript, actions, exc)
+        raise
     finally:
         _unlock(lock)
 
@@ -496,13 +502,17 @@ def _wait_for_checks(code: Path, number, minutes: int) -> None:
         time.sleep(15)
 
 
-def _record_run(root: Path, spec: dict, result: dict, *, mode: str):
+def _record_run(root: Path, spec: dict, result: dict, *, mode: str,
+                transcript=None, replies=None):
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     slug = re.sub(r"[^a-z0-9]+", "-", (spec.get("title") or "build").lower()).strip("-") or "build"
     folder = root / "factories/feature-builder/runs" / f"{stamp}-build-{slug[:40]}"
     folder.mkdir(parents=True, exist_ok=True)
     (folder / "plan.md").write_text(result.get("plan", "") + "\n", encoding="utf-8")
     (folder / "summary.md").write_text(result.get("summary", "") + "\n", encoding="utf-8")
+    if replies is not None:
+        (folder / "transcript.md").write_text(
+            _transcript_md(replies, transcript or []), encoding="utf-8")
     result["run_dir"] = folder.relative_to(root).as_posix()
     (folder / "build.json").write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
     from ctx import db
@@ -520,6 +530,42 @@ def _record_run(root: Path, spec: dict, result: dict, *, mode: str):
         return cur.lastrowid
     finally:
         conn.close()
+
+
+def _transcript_md(replies: list[str], transcript: list[str]) -> str:
+    lines = ["# Build transcript", ""]
+    for index, reply in enumerate(replies, 1):
+        lines.append(f"## Model reply {index}")
+        lines.append("```")
+        lines.append(str(reply)[:4000])
+        lines.append("```")
+        lines.append("")
+    if transcript:
+        lines.append("## Feedback given to the model")
+        lines.append("")
+        lines.extend(str(item) for item in transcript)
+    return "\n".join(lines) + "\n"
+
+
+def _record_failure(root: Path, spec: dict, replies: list[str],
+                    transcript: list[str], actions: list[dict], error) -> None:
+    """A failed build still leaves a trace: what the model said and did."""
+    try:
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        slug = re.sub(r"[^a-z0-9]+", "-",
+                      (spec.get("title") or "build").lower()).strip("-") or "build"
+        folder = root / "factories/feature-builder/runs" / f"{stamp}-build-{slug[:40]}-failed"
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / "failure.json").write_text(json.dumps({
+            "error": str(error),
+            "model_turns": len(replies),
+            "actions": actions,
+        }, indent=2) + "\n", encoding="utf-8")
+        (folder / "transcript.md").write_text(
+            f"# Failed build\n\nError: {error}\n\n"
+            + _transcript_md(replies, transcript), encoding="utf-8")
+    except Exception:
+        pass
 
 
 def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
