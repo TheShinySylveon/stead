@@ -621,6 +621,7 @@ def build_parser() -> argparse.ArgumentParser:
     doc.add_argument("--json", action="store_true", help="machine-readable report")
     met = sub.add_parser("metrics", help="dogfood numbers from the build records")
     met.add_argument("--repo", help="only this repo id")
+    met.add_argument("--since", help="only records created on or after YYYY-MM-DD")
     met.add_argument("--json", action="store_true", help="machine-readable report")
     met_sub = met.add_subparsers(dest="metrics_sub")
     metmark = met_sub.add_parser("mark",
@@ -943,7 +944,10 @@ def main(argv: list[str] | None = None) -> int:
         if getattr(args, "metrics_sub", None) == "mark":
             return cmd_metrics_mark(root, args.record, args.correct == "true")
         from ctx import metrics
-        report = metrics.collect(root, repo=args.repo)
+        try:
+            report = metrics.collect(root, repo=args.repo, since=args.since)
+        except ValueError as exc:
+            raise SystemExit(str(exc)) from exc
         if args.json:
             import json as _json
             print(_json.dumps(report, indent=2))
