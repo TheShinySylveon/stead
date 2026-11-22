@@ -76,7 +76,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     repo = objects.find(root, "repo", spec.get("repo") or "")
     if repo is None:
         raise BuildError(f"repo not found: {spec.get('repo')!r}")
-    _repo_path, repo_meta, _repo_body = repo
+    _repo_path, repo_meta, repo_body = repo
     code = Path(repo_meta.get("code_path") or "")
     if not repo_meta.get("code_path") or not code.is_dir():
         raise BuildError("set the repo code_path to a local checkout before building")
@@ -138,7 +138,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             settings = models.resolve(root)
             responder = lambda prompt: models.complete(prompt, settings, timeout=300)
         tree = _tree(code)
-        prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta, ghost=ghost)
+        context = factory.feature_build_context(root, spec, body, repo_meta, repo_body)
+        prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta,
+                                ghost=ghost, context=context)
         edits = 0
         failures = 0
         no_test = 0
@@ -831,7 +833,7 @@ def _record_failure(root: Path, spec: dict, replies: list[str],
 
 
 def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
-                   repo_meta: dict, *, ghost: bool = False) -> str:
+                   repo_meta: dict, *, ghost: bool = False, context: str = "") -> str:
     if ghost:
         check_line = "No checks run in ghost mode. "
     else:
@@ -877,7 +879,8 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         "If the work implies a decision or a glossary term, propose it with "
         "propose; it goes to the inbox for a person, never straight into context. "
         "Match the repo's existing style and tests. Finish when the spec is met.\n\n"
-        f"Feature: {spec.get('title')}\n"
+        + (context + "\n\n" if context else "")
+        + f"Feature: {spec.get('title')}\n"
         "Acceptance criteria:\n"
         + "\n".join(f"- {text}" for _done, text in criteria) + "\n\n"
         "Repository tree (depth 2):\n" + tree

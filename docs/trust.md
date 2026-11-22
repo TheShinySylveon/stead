@@ -38,10 +38,12 @@ permissions**: anyone with file access can set them. The hash is the gate.
 
 For a public repo, that is the real control against prompt injection through an
 issue body: a person decides the text is a spec before any model reads it as
-one. Everything in the bundle that is not the approved spec — repo notes,
-related documents, prior builds, sibling issues — is marked **untrusted
-context**, and the prompt tells the model to treat instructions inside it as
-data.
+one. Everything that is not the approved spec — repo notes, related documents,
+prior builds, sibling issues — is marked **untrusted context**, and the prompt
+tells the model to treat instructions inside it as data. This holds for the
+`stead build` agent too: it reads the approved spec body plus the repo
+conventions, related documents, and prior build records, with the non-spec
+sections marked untrusted.
 
 ## Checks run untrusted code
 
@@ -178,7 +180,7 @@ outbound calls are the ones a command makes:
 |---|---|---|
 | `stead sync github` | Read-only `gh` queries for your PRs, reviews, and issues | GitHub, through `gh` |
 | `stead factory run --generate` | The assembled prompt: digest = cached public contributions; project status = one project's tasks, documents, meetings; feature-builder = spec, criteria, repo notes, related documents | Your configured model endpoint |
-| `stead build` | The system prompt, repo tree, spec, and every file the model reads, plus check output | Your configured model endpoint |
+| `stead build` | The system prompt, the approved spec body, repo conventions and related context (marked untrusted), the repo tree, every file the model reads, and check output | Your configured model endpoint |
 | `stead eval judge` | The draft and its pass criteria | Your configured model endpoint |
 | `stead ui` | Nothing. The page has no external assets. | Loopback, or your own container |
 
