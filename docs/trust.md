@@ -13,10 +13,10 @@ Everything the model produces is treated as untrusted input:
 - It may only write inside the repo's `code_path`. `..`, absolute paths, and
   `.git` are refused.
 - It must plan before it writes.
-- Its writes to tests, CI config, and paths the repo marks protected are
-  refused (see below). Files that look like secrets (`.env`, `*.pem`, `*.key`,
-  `id_rsa`, `credentials.json`) are hidden from the tree, search, and read, and
-  cannot be written or deleted.
+- Its writes to existing tests, CI config, and paths the repo marks protected are
+  refused (see below). Adding a brand-new test file is allowed. Files that look
+  like secrets (`.env`, `*.pem`, `*.key`, `id_rsa`, `credentials.json`) are hidden
+  from the tree, search, and read, and cannot be written or deleted.
 - Merge is a separate command that re-reads the pull request from GitHub. A
   model cannot ask `stead build` to merge past the repo ceiling.
 
@@ -54,9 +54,11 @@ code execution with the permissions of your user account.
 | Control | Default | What it stops |
 |---|---|---|
 | Scrubbed environment | On | Checks cannot read `STEAD_MODEL_API_KEY`, `GH_TOKEN`, cloud keys, or the deployment token from the environment. Only `PATH`, home, temp, locale, Windows system variables, and `checks_env:` are passed. |
-| Container isolation | Opt-in: `checks_isolation: docker` + `checks_image` | Checks get no network, dropped capabilities, a PID limit, and a memory/CPU cap. The checkout is mounted at `/src` so the checks can read and write it. |
+| Container isolation | Opt-in: `checks_isolation: docker` + `checks_image` | Checks get no network, dropped capabilities, a PID limit, and a memory/CPU cap. The checkout is mounted at `/src` so the checks can read and write it, but `.git` is mounted read-only. A timed-out container is named and killed, not left running. |
+| Git hygiene | On | Every Stead git call (build, publish, merge, watch) runs with the checkout's hooks and fsmonitor disabled, so a planted hook or `core.fsmonitor` never executes on the host. Every check run is bracketed by a `.git/config` and hooks content snapshot; any change fails the build, in host mode too. |
+| Commit boundary | On | `finish` stages only the model's own writes (`git add -A -- <paths>`), never the whole tree. Anything else the checks changed fails the build; a protected or secret path fails hardest. The ledger (`tests_touched`, `ci_touched`, the file list) is computed from the staged diff, not the tool log. |
 | Wall-clock budget | 30 minutes per build | A repair loop cannot run forever. `--max-minutes` changes it; watched builds use `build_minutes`. |
-| Step and edit caps | 30 steps, 1 MB written | A model cannot loop or dump unbounded output. |
+| Step, edit, and prompt caps | 30 steps, 1 MB written, 120k prompt chars | A model cannot loop, dump unbounded output, or grow the resent transcript without bound; older read outputs are trimmed first. |
 | Stop file | `.stead-stop` | A build and a watched run stop between steps. `stead factory stop` creates it. |
 
 The container is not available for every repo (it needs Docker and an image
@@ -80,6 +82,20 @@ A repo can opt in with `allow_test_edits: true`, `allow_ci_edits: true`, or
 `allow_protected: true`, and can add its own paths with `protected_paths:`.
 When tests are allowed, the build records `tests_touched` in its run log.
 
+Adding a **brand-new** test file is allowed by default: that is the discipline
+`require_tests` asks for, and a new file does not weaken an existing test.
+Editing or deleting an existing test stays refused. `conftest.py` and
+`__init__.py` change how other tests run, so they are never "new test"
+additions; an explicit `protected_paths:` entry always wins. Matching is
+case-insensitive on every platform (`.GitHub/...`, `TESTS/...`, `.ENV` are
+protected too) and checks the symlink-resolved path, so a symlinked directory
+inside the repo cannot sidestep `tests/**`.
+
+Protection on the **tool** is not enough: checks execute model-written code,
+and that code can change any file. So the commit step enforces the boundary
+too — it stages only the model's writes, refuses any other change the checks
+made, and computes `tests_touched`/`ci_touched` from the real diff.
+
 The checks command itself lives in the repo's frontmatter, outside the
 checkout, so the model cannot rewrite it. If `checks:` calls a file the model
 can edit (`make test`, `npm test`), add that file to `protected_paths:`.
@@ -100,9 +116,13 @@ there to catch the files you would otherwise miss.
 3. Every reported check is green.
 4. The checks run is trusted: `checks_isolation: docker`, or the repo
    explicitly sets `trust_checks: host`.
-5. The default branch has required status checks. Otherwise "branch protection
-   is not bypassed" would protect nothing. A repo can acknowledge that with
-   `merge_without_required_checks: true`.
+5. The default branch has required status checks — read from branch protection,
+   or from the branch rules API (rulesets) when protection is not readable.
+   Otherwise "branch protection is not bypassed" would protect nothing. A repo
+   can acknowledge that with `merge_without_required_checks: true`.
+6. The pull request head still equals the commit Stead built and recorded. The
+   merge passes `--match-head-commit <sha>`, so a head that moved (a human
+   pushed edits) is refused rather than merged unreviewed.
 
 The command never passes `--admin`, never pushes the default branch, and never
 merges a draft. It does not add an independent reviewer pass; that is a known
@@ -164,9 +184,13 @@ per-object permissions, no roles, and no approval queue for context edits.
   `checks:`, `checks_isolation`, `checks_image`, `protected_paths:`,
   `trust_checks`, the `allow_*` flags, reach, trigger, `code_path`,
   `default_branch`, the contribution `author` role, authoring a spec with
-  acceptance criteria, and spec approval. This closes the indirect route where
-  an account edits the config and a scheduled build on that host executes it
-  later. Edit those on the machine that runs builds.
+  acceptance criteria, spec approval, **the model endpoint, and the install
+  factory defaults**. The model endpoint matters because the configured model
+  (and its key) drives every scheduled build on the host; the install defaults
+  set trigger and reach for every repo without explicit values. Setting a model
+  also drops the stored key whenever `base_url` moves to a different host, so a
+  key never rides along to a new endpoint. Edit all of these on the machine that
+  runs builds.
 - Put the server behind a reverse proxy that terminates TLS and does SSO if
   you expose it. The built-in server speaks HTTP, has no login rate limit, and
   is not hardened for the public internet.
@@ -178,7 +202,7 @@ outbound calls are the ones a command makes:
 
 | Command | What is sent | Where |
 |---|---|---|
-| `stead sync github` | Read-only `gh` queries for your PRs, reviews, and issues | GitHub, through `gh` |
+| `stead sync github` | Read-only `gh` queries for your PRs, reviews, and issues; read-only PR state to reconcile build records (merged/closed, human edits) | GitHub, through `gh` |
 | `stead factory run --generate` | The assembled prompt: digest = cached public contributions; project status = one project's tasks, documents, meetings; feature-builder = spec, criteria, repo notes, related documents | Your configured model endpoint |
 | `stead build` | The system prompt, the approved spec body, repo conventions and related context (marked untrusted), the repo tree, every file the model reads, and check output | Your configured model endpoint |
 | `stead eval judge` | The draft and its pass criteria | Your configured model endpoint |
@@ -206,7 +230,11 @@ spec title; it never includes private notes.
 
 A delivered build writes **facts** back automatically: a versioned
 `build-record` document, the contribution state on merge, and linked task
-status. It also feeds prior records into the next bundle for that repo.
+status. A failed build writes a record too (with its error class), so the
+ledger has a failure rate. `stead factory merge` updates the record to merged;
+a human merge under the `pr` ceiling is reconciled by `stead sync github`,
+which also flags a human edit when the PR head differs from the recorded
+commit. Prior records feed the next bundle for that repo.
 
 Anything **interpretive** — a decision, a glossary term — the build may only
 *propose* as an inbox note. A person triages it into `context/documents/`. The
@@ -217,8 +245,10 @@ agent cannot quietly rewrite the context that later builds depend on.
 - No independent reviewer pass before merge. The gates are the repo's checks,
   the required-check rule, protected test/CI paths, and explicit `reach: merge`.
 - No token or dollar budget. Bounds are wall-clock (`--max-minutes`), a step
-  cap, a total-edit cap, and a daily watched-build count. A provider that
-  reports usage could fund a spend cap; that is not wired up.
+  cap, a total-edit cap, a 120k-character prompt budget, and a daily
+  watched-build count that counts attempts (failures included), not just
+  successes. Each build records `chars_sent` as a cost proxy; a provider that
+  reports usage could fund a spend cap, which is not wired up.
 - No per-object permissions or roles on the shared server.
 - No login rate limiting, TLS, or CSRF token beyond the custom `X-Ctx-Token`
   header and `SameSite=Lax` session cookie. Use a proxy.

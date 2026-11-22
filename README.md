@@ -21,7 +21,8 @@ The same files work for a small team behind one shared container.
 > that loop works.
 
 Version **0.1.0**. Licensed under Apache-2.0. Copyright 2026 Tyler Rathbone.
-See [LICENSE](LICENSE). The command is `stead`.
+See [LICENSE](LICENSE). The command is `python -m stead` (or `stead.cmd` on
+Windows); there is no installed `stead` entry point yet.
 
 ## How it fits together
 
