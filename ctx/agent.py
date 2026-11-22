@@ -1065,11 +1065,15 @@ def _run_checks(code: Path, command: str, repo_meta: dict,
         ok, output, mode = safety.run_checks(code, command, repo_meta, timeout=remaining)
     except safety.SafetyError as exc:
         raise BuildError(str(exc), reason="infrastructure") from exc
-    if safety.git_state_snapshot(code) != before:
+    changed = safety.git_state_changes(before, safety.git_state_snapshot(code))
+    if changed:
         raise BuildError(
-            "checks changed .git (config or hooks). A check run must not rewrite "
-            "git's own execution surface: hooks and config would run on the host "
-            "with Stead's environment. Refusing to continue.", reason="tamper")
+            "checks changed .git (" + ", ".join(k.rsplit("/", 2)[-1] if "/hooks/" not in k
+                                              else "hooks/" + k.rsplit("/", 1)[-1]
+                                              for k in changed) + "). "
+            "A check run must not rewrite git's own execution surface: hooks and "
+            "config would run on the host with Stead's environment. Refusing to "
+            "continue.", reason="tamper")
     return ok, output, mode
 
 
@@ -1285,7 +1289,9 @@ def _cleanup_failure(run, anchor: Path, code: Path, branch: str, default: str,
     try:
         if git_before:
             after = safety.git_state_snapshot(code)
-            if after != git_before:
+            # Undo only a change that matters; a person's own branch tracking
+            # or identity setting made during the build is left alone.
+            if safety.git_state_changes(git_before, after):
                 safety.git_state_restore(code, git_before, after)
     except Exception:
         pass

@@ -784,6 +784,38 @@ class CommitStepTest(BuildFixture):
             self._build()
         self.assertIn(".git", str(caught.exception))
 
+    def test_branch_tracking_written_during_checks_is_not_tamper(self) -> None:
+        # A person's `git push -u` or new tracking branch while a build runs
+        # writes [branch "..."] to the shared config. That is not a check
+        # rewriting git, so the build goes on and the setting is kept.
+        gitdir = str(self.code / ".git").replace("\\", "/")
+        self._with_checks(
+            "import pathlib\n"
+            f"cfg = pathlib.Path(r'{gitdir}') / 'config'\n"
+            "cfg.write_text(cfg.read_text() + '\\n[branch \"feature/x\"]\\n'\n"
+            "               '\\tremote = origin\\n\\tmerge = refs/heads/feature/x\\n'\n"
+            "               '[user]\\n\\tname = Someone\\n')\n"
+            "print('hi')\n")
+        result = self._build()
+        self.assertTrue(result["ok"])
+        self.assertEqual(
+            _git(self.code, "config", "--get", "branch.feature/x.remote").strip(), "origin")
+
+    def test_an_alias_written_during_checks_is_tamper(self) -> None:
+        gitdir = str(self.code / ".git").replace("\\", "/")
+        self._with_checks(
+            "import pathlib\n"
+            f"cfg = pathlib.Path(r'{gitdir}') / 'config'\n"
+            "cfg.write_text(cfg.read_text() + '\\n[alias]\\n\\tst = !echo pwned\\n')\n"
+            "print('hi')\n")
+        with self.assertRaises(agent.BuildError) as caught:
+            self._build()
+        self.assertIn(".git", str(caught.exception))
+        self.assertEqual(
+            subprocess.run(["git", "config", "--get", "alias.st"], cwd=self.code,
+                           capture_output=True, text=True).stdout.strip(), "",
+            "the alias was restored away")
+
     def test_untracked_leftovers_are_removed_not_committed(self) -> None:
         self._with_checks(
             "import pathlib\n"

@@ -323,6 +323,75 @@ def git_state_snapshot(code: Path) -> dict:
     return snap
 
 
+# Config keys a person's ordinary git work writes while a build runs: `git push
+# -u`, a new tracking branch, setting an identity. None of them makes git run
+# anything. Every other key (hooksPath, fsmonitor, sshCommand, aliases, filter
+# and diff drivers, credential helpers, includes, remote URLs, ...) still counts.
+_HARMLESS_CONFIG_KEYS = (
+    re.compile(r"^branch\..+\.[a-z0-9-]+$"),
+    re.compile(r"^user\.[a-z0-9-]+$"),
+)
+
+
+def _config_entries(data: bytes) -> list[tuple[str, str]] | None:
+    """The settings in one git config file, as git itself parses them, without
+    following includes. None when git cannot parse it."""
+    handle, name = tempfile.mkstemp(suffix=".gitconfig")
+    try:
+        with os.fdopen(handle, "wb") as out:
+            out.write(data)
+        done = subprocess.run(
+            ["git", "config", "--no-includes", "--file", name, "--list", "-z"],
+            capture_output=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    finally:
+        with contextlib.suppress(OSError):
+            os.unlink(name)
+    if done.returncode != 0:
+        return None
+    entries = []
+    for item in done.stdout.split(b"\0"):
+        if not item:
+            continue
+        key, _sep, value = item.partition(b"\n")
+        entries.append((key.decode("utf-8", "replace"), value.decode("utf-8", "replace")))
+    return entries
+
+
+def _significant(entries: list[tuple[str, str]]) -> list[tuple[str, str]]:
+    return sorted(e for e in entries
+                  if not any(rx.match(e[0]) for rx in _HARMLESS_CONFIG_KEYS))
+
+
+def _is_config_key(key: str) -> bool:
+    return "/hooks/" not in key and (key.endswith("/config")
+                                     or key.endswith("/config.worktree"))
+
+
+def git_state_changes(before: dict, after: dict) -> list[str]:
+    """What changed between two snapshots in a way that matters.
+
+    Any hook change counts. A config file counts unless every setting that
+    changed is a harmless one (branch tracking, user identity), so a person's
+    `git push -u` during a build is not mistaken for a check rewriting git.
+    A config git cannot parse counts as changed."""
+    changed: list[str] = []
+    for key in sorted(set(before) | set(after)):
+        old, new = before.get(key), after.get(key)
+        if old == new:
+            continue
+        if (_is_config_key(key) and isinstance(old, (bytes, type(None)))
+                and isinstance(new, (bytes, type(None)))):
+            old_entries = _config_entries(old or b"")
+            new_entries = _config_entries(new or b"")
+            if (old_entries is not None and new_entries is not None
+                    and _significant(old_entries) == _significant(new_entries)):
+                continue
+        changed.append(key)
+    return changed
+
+
 def git_state_restore(code: Path, before: dict, after: dict) -> list[str]:
     """Undo .git changes a check run made. Returns what could not be restored."""
     problems: list[str] = []
