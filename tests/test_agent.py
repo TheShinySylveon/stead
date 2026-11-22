@@ -276,11 +276,13 @@ class BuildTest(BuildFixture):
         self.assertIn("protected path", str(caught.exception))
 
     def test_protection_is_case_insensitive(self) -> None:
-        (self.code / "tests").mkdir()
-        (self.code / "tests/test_app.py").write_text("assert True\n", encoding="utf-8")
-        _git(self.code, "add", "-A")
-        _git(self.code, "commit", "-m", "a real test")
-        for relative in ("TESTS/test_app.py", ".GitHub/workflows/ci.yml", ".ENV"):
+        from ctx import safety
+        # Pure matching: a case variant of a protected or secret glob is still
+        # protected, on every platform (macOS/Windows filesystems are
+        # case-insensitive, so those are the real paths).
+        for rel in ("TESTS/test_app.py", ".GitHub/workflows/ci.yml", ".ENV"):
+            self.assertTrue(safety.protected_by(rel, {}) or safety.secret_by(rel), rel)
+        for relative in (".GitHub/workflows/ci.yml", ".ENV"):
             responder = self._responder([
                 {"action": "plan", "summary": "Case trick."},
                 {"action": "write", "path": relative, "content": "x"},
@@ -297,12 +299,12 @@ class BuildTest(BuildFixture):
         import os
         (self.code / "tests").mkdir()
         (self.code / "tests/test_app.py").write_text("assert True\n", encoding="utf-8")
-        _git(self.code, "add", "-A")
-        _git(self.code, "commit", "-m", "a real test")
         try:
             os.symlink(self.code / "tests", self.code / "tlink", target_is_directory=True)
         except (OSError, NotImplementedError):
             self.skipTest("symlinks not available on this platform")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "a real test and a symlink")
         responder = self._responder([
             {"action": "plan", "summary": "Go around via the symlink."},
             {"action": "write", "path": "tlink/test_app.py", "content": "gutted\n"},
