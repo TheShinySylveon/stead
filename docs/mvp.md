@@ -74,6 +74,11 @@ Results live in [Dogfood](dogfood.md); safety gates in [Trust](trust.md).
 - **M2 (issue comment) — done.** A gated, idempotent comment links the PR on the
   source issue (`allow_comment: true`, `kind: own` only, never from assembly);
   auto-runs on `build --publish` when enabled, or via `stead factory comment`.
+- **M4 / M6 / M7 (operational) — runbook ready.** M6 (reconcile-on-sync) is
+  wired into `sync github`; M4 (reach `pr` + required CI) and M7 (the fixed
+  rubric, pre-registered issue sets A/B/C + hold-out, and the sign-off
+  procedure) are documented in [Dogfood](dogfood.md) and need the human's real
+  model + CI runs, not more code.
 
 ## In scope (state)
 
@@ -86,7 +91,7 @@ Results live in [Dogfood](dogfood.md); safety gates in [Trust](trust.md).
 | Build correctness on a local model | **blocker** — run 1 passed checks but did not implement the spec |
 | `require_tests`, protected paths, scrubbed/container checks | working |
 | PR from isolated branch (`pr`) | working |
-| **Comment on the issue linking the PR** | **not built — MVP blocker** |
+| **Comment on the issue linking the PR** | built (gated: `allow_comment`, `kind: own`) |
 | Write-back record + `stead metrics` | working |
 | Merge gates (green + required checks, no `--admin`) | working (human merges at MVP) |
 | `stead doctor`, cockpit local read/build | working |

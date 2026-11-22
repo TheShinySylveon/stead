@@ -54,13 +54,54 @@ gets done on this repo. The full scope and definition of done are in
 
 Honest gaps in the contract today (MVP blockers):
 
-- **Issue commenting is not built.** Posting a comment that links the PR is
-  required for the human to merge and close in one place. A gated remote write;
-  see [Trust](trust.md#github-writes-beyond-opening-a-pr).
 - **The build loop is not yet reliable on a small model.** We are stabilizing at
   `shadow` (local, hand-reviewed) until a build consistently reaches a green PR.
   The `pr` ceiling applies once it does.
 - **The monitor → ghost → approve → build path needs end-to-end validation.**
+  The pieces exist (label intake, `spec draft`, `spec approve`, worktree build,
+  publish, comment); the sign-off run below exercises them as one path.
+
+## Correctness rubric (fixed before the run)
+
+A build is **correct** when, checked by hand against the built change:
+
+1. every `## Acceptance criteria` item is actually satisfied (not just "checks
+   passed");
+2. the mechanical fail-before/pass-after gate holds (the new test fails without
+   the change and passes with it);
+3. CI is green on the PR.
+
+A PR that needed human commits before merge is **not** a first-attempt success.
+It is recorded separately as "success with human edits" (the ledger already
+detects this by comparing the merged head SHA to the recorded build commit).
+
+## Pre-registered issue sets
+
+Frozen before any tuning. None of the M7 sign-off issues may have been used for
+tuning.
+
+- **Set A — tuning (3).** The three candidate specs below. Used to tune the
+  harness; NOT scored.
+- **Set B — unseen scoring (3).** Reserved for a single first-attempt score once
+  the harness is frozen: (1) `stead contribution list --json`, (2) `doctor`
+  reports an unapproved `stead-build`-labeled issue, (3) `stead status` prints a
+  build-record summary. Not listed in detail here so they stay unseen.
+- **Set C — M7 fresh end-to-end (2) + 1 hold-out.** Run the full
+  monitor→draft→approve→build→PR→comment→merge loop fresh. The hold-out is
+  scored separately and was never used in tuning or M1.
+
+## M4 — build → PR → CI (procedure)
+
+To reach a real green PR at the `pr` ceiling:
+
+1. `stead repo set <id> --reach pr` (human merges; no auto-merge).
+2. `stead build --contribution ID --publish --wait` so publish opens the PR and
+   `--wait` polls its checks.
+3. Configure branch protection with CI as a **required** status check on the
+   default branch (so a red PR cannot merge).
+4. Confirm the PR body carries `Closes #N`, and that `.git`/hook protection holds
+   against a real `gh` session.
+
 
 ## Why a separate checkout
 
