@@ -282,6 +282,13 @@ cleanup) is `PLAN.md` §7, which is human-owned.
 The Factories tab is the weakest surface and undermines confidence in the whole
 factory idea. Reported directly by a user:
 
+- **The spec lifecycle is split across two tabs.** Drafting, approving, building,
+  and publishing a spec are the Repos tab's flow cards (Draft → Approve → Build
+  → Publish), while `feature-builder`'s "Assemble shadow" / "Build with model"
+  are a separate Factories tab panel — one flow, two surfaces, no shared stage,
+  so a person bounces between tabs to take an issue to a PR. Consolidate the
+  whole lifecycle onto a single surface (one tab, one card, next-step-only
+  controls) so draft → approve → build → publish reads in one place.
 - **Nothing is self-evident.** The tab never explains what a factory is, what
   each control does (Assemble shadow, Build with model, Watch now / Watch and
   build, reach, Judge, Promote), or what input a factory needs. A first-time user
@@ -296,12 +303,14 @@ factory idea. Reported directly by a user:
   (project, task, document, meeting, repo, actor). There is no `factory delete`
   command and no cockpit control, so scaffolding is one-way.
 
-Fix direction: explain the tab in plain language (what a factory is, the
-plan → build → verify → deliver loop, what ghost / shadow / draft-pr / pr / merge
-mean); give each factory a one-line "what it does / what it needs"; make New
-factory a guided form (kind + input + sensible defaults) with a visible result
-and a next step; add `stead factory delete NAME` (refuse the four shipped
-factories unless `--force`) and a cockpit delete with confirmation.
+Fix direction: first pull the `feature-builder` build controls onto the same
+surface as the spec pipeline so the whole issue → PR flow lives on one tab (see
+the split-lifecycle bullet above); then explain the tab in plain language (what
+a factory is, the plan → build → verify → deliver loop, what ghost / shadow /
+draft-pr / pr / merge mean); give each factory a one-line "what it does / what it
+needs"; make New factory a guided form (kind + input + sensible defaults) with a
+visible result and a next step; add `stead factory delete NAME` (refuse the four
+shipped factories unless `--force`) and a cockpit delete with confirmation.
 
 ### CLI ↔ GUI parity
 
