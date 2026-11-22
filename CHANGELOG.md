@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+- **Builds report progress while they run (#19).** `stead build` prints one
+  line per model step to stderr (step, action and path, prompt size, call
+  time) plus phase changes (worktree, base suite, fail-before gate, checks,
+  commit, outcome), and appends the same lines to
+  `factories/feature-builder/runs/<stamp>-build-<slug>.progress.log` as they
+  happen. When the build ends the log moves into its run folder as
+  `progress.log`. Lines never hold file contents or model replies.
+- **`stead metrics` lists same-day records newest first**, ordering by the
+  stamp in the record's file name, and `--since` reuses one date parser.
 - **`sync github --repo OWNER/NAME` scopes the sync.** Each `gh search` gets
   `--repo`, out-of-scope results are dropped, and label intake skips owned
   repos outside the scope. `--remember` saves the scope in `stead.json` for

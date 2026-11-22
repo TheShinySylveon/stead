@@ -1505,3 +1505,72 @@ class ReadAndEditTest(BuildFixture):
         self.assertIn("protected", str(caught.exception))
         self.assertEqual((self.code / "tests/test_app.py").read_text(encoding="utf-8"),
                          "assert True\n")
+
+
+class ProgressLogTest(BuildFixture):
+    """A running build writes progress as it goes (issue #19)."""
+
+    def _runs(self) -> Path:
+        return self.root / "factories/feature-builder/runs"
+
+    def test_a_build_logs_each_step_and_moves_the_log_into_its_run(self) -> None:
+        lines: list[str] = []
+        live: list[bool] = []
+
+        def respond_and_peek(replies):
+            queue = list(replies)
+
+            def respond(_prompt: str) -> str:
+                live.append(any(self._runs().glob("*.progress.log")))
+                return json.dumps(queue.pop(0))
+            return respond
+
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=respond_and_peek([
+                                 {"action": "plan", "summary": "Add the flag."},
+                                 {"action": "read", "path": "app.py", "start": 1, "end": 1},
+                                 {"action": "write", "path": "app.py",
+                                  "content": "import argparse\nprint('hi')\n"},
+                                 {"action": "finish", "summary": "Done."},
+                             ]), progress=lines.append)
+        self.assertTrue(result["ok"])
+        self.assertTrue(all(live[1:]), "the log exists while the build runs")
+        text = "\n".join(lines)
+        self.assertIn("worktree ready on stead/42-add-a-name-flag", text)
+        self.assertIn("step 1/30  plan", text)
+        self.assertIn("step 2/30  read app.py lines 1-1", text)
+        self.assertIn("step 3/30  write app.py", text)
+        self.assertIn("committed ", text)
+        self.assertIn("done: committed", text)
+        self.assertNotIn("import argparse", text)  # never file contents
+        log = self.root / result["run_dir"] / "progress.log"
+        self.assertEqual(log.read_text(encoding="utf-8").strip(), text)
+        self.assertEqual(list(self._runs().glob("*.progress.log")), [])
+
+    def test_a_failed_build_keeps_its_log_with_the_reason(self) -> None:
+        lines: list[str] = []
+        responder = self._responder([
+            {"action": "plan", "summary": "Escape."},
+            {"action": "write", "path": "../escape.txt", "content": "x"},
+        ])
+        with self.assertRaises(agent.BuildError):
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder, progress=lines.append)
+        self.assertTrue(lines[-1].split("] ", 1)[1].startswith("failed ("))
+        logs = list(self._runs().glob("*-failed/progress.log"))
+        self.assertEqual(len(logs), 1)
+        self.assertIn("failed (", logs[0].read_text(encoding="utf-8"))
+
+    def test_the_progress_log_never_holds_a_secret(self) -> None:
+        (self.code / ".env").write_text("API_TOKEN=SECRET-VALUE\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "local env")
+        lines: list[str] = []
+        agent.build(self.root, "contribution-me-app-issue-42", responder=self._responder([
+            {"action": "plan", "summary": "Look around."},
+            {"action": "read", "path": ".env"},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ]), progress=lines.append)
+        self.assertIn("read .env", "\n".join(lines))
+        self.assertNotIn("API_TOKEN=SECRET-VALUE", "\n".join(lines))

@@ -103,8 +103,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
           repair_rounds: int = 2, max_steps: int = MAX_STEPS,
           max_minutes: int = MAX_MINUTES,
           max_tokens: int | None = None,
-          max_cost: float | None = None) -> dict:
+          max_cost: float | None = None,
+          progress=None) -> dict:
     """Plan and implement one authored feature spec. Raises BuildError.
+
+    Progress is written live to a log under the runs folder (and passed to
+    ``progress(line)`` when given), then moved into the run's folder.
 
     A spec gets one automatic build attempt per approved content hash: a
     build-class failure blocks a re-run until the body is re-approved (a new
@@ -231,6 +235,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     commit_base = ""
     base_tracked_cf: set[str] = set()
     branch_tracked: set[str] = set()
+    progress_log = _Progress(root, spec, echo=progress)
+    progress_log(f"build started: {spec.get('title') or contribution_ref}")
     try:
         # Every build runs in its own git worktree, so the user's checkout is
         # never touched: no "must be on default", no "must be clean", and no
@@ -261,6 +267,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             _git(run, anchor, ["worktree", "add", "-b", branch, str(wt), default])
         code = wt
         on_branch = True
+        progress_log(f"worktree ready on {branch}")
         _write_started(root, spec, body, worktree=str(wt))
         # Where this run starts, what the default branch tracks, and what the
         # branch already tracks (for --resume). The commit guard uses these:
@@ -277,7 +284,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             # (a) The base alone must pass before the model runs: a pre-existing
             # red suite cannot satisfy "fails before", and it is a harness
             # problem, not the model's.
+            progress_log("running the base suite (it must pass before the model starts)")
             ok, _output, _mode = _run_checks(code, checks, repo_meta, deadline)
+            progress_log("base suite " + ("passed" if ok else "FAILED"))
             if not ok:
                 raise BuildError(
                     "the base suite is red before the model ran. Fix the repo's "
@@ -364,6 +373,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         f"the build hit its cost budget (${spent:.2f} > ${cost_budget:.2f}). "
                         "Raise --max-cost, or split the spec.")
             action = _parse(reply)
+            progress_log(f"step {_step + 1}/{max_steps}  {_describe(action)}  "
+                 f"({len(full_prompt) // 1000}k chars sent, {_step_latency / 1000:.0f}s)")
             if action is None:
                 transcript.append("Your last reply was not one JSON object. Reply with JSON only.")
                 continue
@@ -539,6 +550,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     transcript.append("check: no checks command is configured on this repo")
                     continue
                 ok, output, checks_mode = _run_checks(code, checks, repo_meta, deadline)
+                progress_log("checks " + ("passed" if ok else "failed"))
                 actions.append({"action": "check", "ok": ok})
                 transcript.append(("checks passed" if ok else "checks failed") + ":\n" +
                                   (output[-4000:] or "(no output)"))
@@ -595,9 +607,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         new_tests = [p for p in list(files)
                                      if safety.is_test_path(p)
                                      and p.casefold() not in base_tracked_cf]
+                        if new_tests:
+                            progress_log("fail-before gate: running the new test without the change")
                         if new_tests and not _require_fail_before(
                                 run, anchor, code, default, new_tests, files,
                                 checks, repo_meta, deadline):
+                            progress_log("fail-before gate: the new test passes without the change")
                             no_test += 1
                             if no_test > repair_rounds:
                                 raise BuildError(
@@ -612,7 +627,10 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                                 "your change and passes with it, then run check "
                                 "and finish again. Do not finish yet.")
                             continue
+                    progress_log("running the final checks")
                     ok, output, checks_mode = _run_checks(code, checks, repo_meta, deadline)
+                    progress_log("final checks " + ("passed" if ok else
+                                            f"failed (repair round {failures + 1})"))
                     if not ok:
                         failures += 1
                         if failures > repair_rounds:
@@ -672,6 +690,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         message += f" (#{spec['number']})"
                     _git(run, code, ["commit", "-m", message])
                     commit = _git(run, code, ["rev-parse", "HEAD"]).strip()
+                    progress_log(f"committed {commit[:12]} on {branch}")
                     # The committed range is the source of truth for the ledger.
                     range_changed, range_deleted = _range_changes(run, code, commit_base)
                     if (set(range_changed) | set(range_deleted)
@@ -741,6 +760,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     raise BuildError("--merge needs --publish; nothing was pushed")
                 run_id = _record_run(root, spec, result, mode="live" if publish else "shadow",
                                      transcript=transcript, replies=replies)
+                progress_log("done: " + ("merged" if result.get("merged") else
+                                 "published" if result.get("published") else "committed"))
+                progress_log.finish(root / result["run_dir"])
                 from ctx import writeback
                 try:
                     record = writeback.record_delivery(root, contribution_ref, result, run_id)
@@ -749,8 +771,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     pass
                 return result
             transcript.append(
-                'action must be plan, list, read, search, write, delete, check, '
-                'propose, or finish.')
+                'action must be plan, list, read, search, edit, write, delete, '
+                'check, propose, or finish.')
         raise BuildError(f"the model did not finish within {max_steps} steps",
                          reason="protocol")
     except Exception as exc:
@@ -760,8 +782,11 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         # gets a record and spends the budget. A precondition failure (no
         # approval, missing repo) or an unreachable model does not, and its
         # empty branch is removed so the spec stays eligible.
+        progress_log(f"failed ({reason}): {str(exc).splitlines()[0][:200] if str(exc) else type(exc).__name__}")
+        folder = None
         if model_worked:
-            _record_failure(root, spec, replies, transcript, actions, exc, reason)
+            folder = _record_failure(root, spec, replies, transcript, actions, exc, reason)
+        progress_log.finish(folder)
         _cleanup_failure(run, anchor, code, branch, default, files, deleted,
                          git_before, on_branch, model_worked, reason)
         if model_worked:
@@ -876,6 +901,64 @@ def _unlock(path: Path) -> None:
 
 def _stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+
+
+class _Progress:
+    """Live progress for one build: a line per event, appended to a log under
+    the runs folder as it happens (and echoed when asked), so a long build on
+    a slow model can be followed. Lines name actions, paths, and sizes only:
+    never file contents, model replies, or settings."""
+
+    def __init__(self, root: Path, spec: dict, echo=None):
+        slug = re.sub(r"[^a-z0-9]+", "-",
+                      (spec.get("title") or "build").lower()).strip("-") or "build"
+        self.path = (root / "factories/feature-builder/runs"
+                     / f"{_stamp()}-build-{slug[:40]}.progress.log")
+        self.echo = echo
+        self.started = time.monotonic()
+
+    def __call__(self, text: str) -> None:
+        elapsed = int(time.monotonic() - self.started)
+        line = f"[{elapsed // 60:02d}:{elapsed % 60:02d}] {text}"
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            with self.path.open("a", encoding="utf-8") as handle:
+                handle.write(line + "\n")
+        except OSError:
+            pass
+        if self.echo is not None:
+            try:
+                self.echo(line)
+            except Exception:
+                pass
+
+    def finish(self, folder: Path | None) -> None:
+        """Move the live log into the run's folder as progress.log."""
+        if folder is None or not self.path.exists():
+            return
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            os.replace(self.path, folder / "progress.log")
+        except OSError:
+            pass
+
+
+def _describe(action: dict | None) -> str:
+    """One short phrase for a model action, for the progress log."""
+    if not isinstance(action, dict):
+        return "unparseable reply"
+    kind = str(action.get("action") or "?")
+    path = str(action.get("path") or "")
+    if kind == "read":
+        start, end = action.get("start"), action.get("end")
+        if start is not None or end is not None:
+            return f"read {path} lines {start or 1}-{end or 'end'}"
+        return f"read {path}"
+    if kind == "search":
+        return f"search {str(action.get('query') or '')[:60]!r}"
+    if kind in ("write", "edit", "delete", "list"):
+        return f"{kind} {path}".strip()
+    return kind
 
 
 def _retired_branch(run, anchor: Path, branch: str) -> str:
@@ -1402,7 +1485,7 @@ def _transcript_md(replies: list[str], transcript: list[str]) -> str:
 
 def _record_failure(root: Path, spec: dict, replies: list[str],
                     transcript: list[str], actions: list[dict], error,
-                    reason: str = "build") -> None:
+                    reason: str = "build") -> Path | None:
     """A build that reached the model and failed leaves a trace: what the model
     said and did, and a runs row so the daily budget counts attempts."""
     try:
@@ -1434,8 +1517,9 @@ def _record_failure(root: Path, spec: dict, replies: list[str],
                 conn.commit()
             finally:
                 conn.close()
+        return folder
     except Exception:
-        pass
+        return None
 
 
 def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
