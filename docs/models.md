@@ -60,6 +60,18 @@ python -m stead model set --provider ollama --name llama3.2
 python -m stead model test
 ```
 
+A build gives each model call 300 seconds. A large local model can need more,
+because it takes in whole files and writes whole files back; a 27B model
+reading a 1,400-line file can run past five minutes in one call. Raise the
+limit per model (30 to 7200 seconds); `model show` prints it:
+
+```bash
+python -m stead model set --provider custom --name my-27b --base-url http://127.0.0.1:1234/v1 --call-timeout 1200
+```
+
+A timeout stops the build with a recorded failure and uses the spec's one
+attempt, so re-run with `--retry` after raising the limit.
+
 A hosted provider needs a key and sends prompts to that provider; see
 [Trust](trust.md) for exactly what leaves the machine.
 

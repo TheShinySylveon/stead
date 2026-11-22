@@ -793,6 +793,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="USD per 1M input tokens, for a cost budget")
     ms.add_argument("--output-price", type=float,
                     help="USD per 1M output tokens, for a cost budget")
+    ms.add_argument("--call-timeout", type=int, metavar="SECONDS",
+                    help="seconds one model call may take during a build or "
+                         "review (default 300, 30 to 7200). Raise it for a large "
+                         "local model.")
     mt = model.add_parser("test", help="one live call to prove the model works. Never prints the key.")
     mt.add_argument("--prompt", default="Reply with exactly one word: ok")
     mt.add_argument("--timeout", type=int, default=60)
@@ -1051,7 +1055,8 @@ def main(argv: list[str] | None = None) -> int:
                     api_key_env=args.key_env,
                     block="reviewer" if args.review else "model",
                     input_price=args.input_price,
-                    output_price=args.output_price)
+                    output_price=args.output_price,
+                    call_timeout=args.call_timeout)
                 if args.review:
                     print("reviewer model saved in stead.json (gitignored). "
                           "It falls back to the builder model when unset.")
@@ -1066,6 +1071,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"base_url: {shown['base_url'] or '(none)'}")
         print(f"key: {'set (' + shown['key_from'] + ')' if shown['key_set'] else 'not set'} "
               f"via {shown['key_env']}")
+        print(f"call timeout: {shown['call_timeout']}s")
         return 0
     if args.command == "eval":
         from ctx import models
@@ -1177,6 +1183,14 @@ def main(argv: list[str] | None = None) -> int:
                                max_tokens=args.max_tokens, max_cost=args.max_cost)
         except (BuildError, ModelError) as exc:
             raise SystemExit(str(exc)) from exc
+        except TimeoutError as exc:
+            from ctx import models as models_mod
+            seconds = models_mod.public_model(root)["call_timeout"]
+            raise SystemExit(
+                f"the model did not reply within {seconds}s, so the build stopped. "
+                "The failure is recorded. Raise the limit with "
+                "`stead model set ... --call-timeout SECONDS` or use a faster model, "
+                "then re-run with --retry (a timeout uses the spec's attempt).") from exc
         print(f"plan: {result['plan']}")
         print(f"files: {', '.join(result['files'])}")
         print(f"branch: {result['branch']}  commit: {result['commit'][:12]}")

@@ -136,6 +136,35 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(models.resolve(self.root, "reviewer")["name"], "gpt-review")
         self.assertEqual(models.resolve(self.root)["name"], "llama3.2")
 
+    def test_call_timeout_defaults_to_300_and_can_be_raised(self) -> None:
+        models.set_model(self.root, provider="ollama", name="llama3.2")
+        self.assertEqual(models.resolve(self.root)["call_timeout"], 300)
+        self.assertEqual(models.public_model(self.root)["call_timeout"], 300)
+        models.set_model(self.root, provider="ollama", name="llama3.2",
+                         call_timeout=1200)
+        self.assertEqual(models.resolve(self.root)["call_timeout"], 1200)
+        # Re-saving the model without the option keeps the configured value.
+        models.set_model(self.root, provider="ollama", name="qwen")
+        self.assertEqual(models.resolve(self.root)["call_timeout"], 1200)
+
+    def test_call_timeout_out_of_range_is_refused(self) -> None:
+        for bad in (5, 10_000):
+            with self.assertRaises(models.ModelError):
+                models.set_model(self.root, provider="ollama", name="llama3.2",
+                                 call_timeout=bad)
+
+    def test_build_timeout_is_a_clean_message_not_a_traceback(self) -> None:
+        models.set_model(self.root, provider="ollama", name="llama3.2",
+                         call_timeout=450)
+        with mock.patch("ctx.agent.build", side_effect=TimeoutError("timed out")):
+            with self.assertRaises(SystemExit) as caught:
+                cli.main(["--root", str(self.root), "build",
+                          "--contribution", "contribution-x"])
+        message = str(caught.exception.code)
+        self.assertIn("did not reply within 450s", message)
+        self.assertIn("--call-timeout", message)
+        self.assertIn("--retry", message)
+
     def test_prices_are_stored_for_a_cost_budget(self) -> None:
         models.set_model(self.root, provider="openai", name="gpt-test",
                          api_key="k", input_price=2.5, output_price=10)

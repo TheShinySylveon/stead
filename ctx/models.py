@@ -50,6 +50,21 @@ class ModelError(Exception):
         super().__init__(message)
 
 
+DEFAULT_CALL_TIMEOUT = 300
+CALL_TIMEOUT_RANGE = (30, 7200)
+
+
+def _call_timeout(value) -> int:
+    """Seconds one model call may take. A large local model reading a big file
+    can need well over the default; a bad stored value falls back to it."""
+    try:
+        seconds = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_CALL_TIMEOUT
+    low, high = CALL_TIMEOUT_RANGE
+    return seconds if low <= seconds <= high else DEFAULT_CALL_TIMEOUT
+
+
 def public_model(root: Path) -> dict:
     """What Settings may show. Never includes the key."""
     raw = _block(root)
@@ -66,13 +81,15 @@ def public_model(root: Path) -> dict:
         "key_env": key_env,
         "input_price_per_mtok": _price(raw.get("input_price_per_mtok")),
         "output_price_per_mtok": _price(raw.get("output_price_per_mtok")),
+        "call_timeout": _call_timeout(raw.get("call_timeout")),
     }
 
 
 def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
               api_key: str | None = None, api_key_env: str = ENV_KEY,
               block: str = "model", input_price: float | None = None,
-              output_price: float | None = None) -> dict:
+              output_price: float | None = None,
+              call_timeout: int | None = None) -> dict:
     if provider not in PROVIDERS:
         raise ModelError(f"invalid provider {provider!r}")
     if block not in {"model", "reviewer"}:
@@ -80,6 +97,11 @@ def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
     name = (name or "").strip()
     if not name or len(name) > 200 or any(c in name for c in "\r\n"):
         raise ModelError("a model needs a name")
+    if call_timeout is not None:
+        low, high = CALL_TIMEOUT_RANGE
+        if not low <= int(call_timeout) <= high:
+            raise ModelError(
+                f"call timeout must be {low} to {high} seconds, not {call_timeout}")
     url = (base_url or PROVIDERS[provider] or "").strip()
     if not url:
         raise ModelError("a custom provider needs a base URL")
@@ -110,6 +132,9 @@ def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
         model["input_price_per_mtok"] = price_in
     if price_out:
         model["output_price_per_mtok"] = price_out
+    timeout = int(call_timeout) if call_timeout is not None else current.get("call_timeout")
+    if timeout is not None and _call_timeout(timeout) != DEFAULT_CALL_TIMEOUT:
+        model["call_timeout"] = _call_timeout(timeout)
     config.save_model(root, model, block=block)
     return public_model(root)
 
@@ -135,6 +160,7 @@ def resolve(root: Path, block: str = "model") -> dict:
         "api_key": key,
         "input_price_per_mtok": _price(raw.get("input_price_per_mtok")),
         "output_price_per_mtok": _price(raw.get("output_price_per_mtok")),
+        "call_timeout": _call_timeout(raw.get("call_timeout")),
     }
     if _needs_key(settings) and not key:
         raise ModelError(

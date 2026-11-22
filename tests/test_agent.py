@@ -6,6 +6,7 @@ import json
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 from pathlib import Path
 
 from ctx import agent, db, frontmatter
@@ -1024,6 +1025,27 @@ class PromptBudgetTest(BuildFixture):
 class ContextWiringTest(BuildFixture):
     """The build agent reads the context the product is built around: the
     approved spec body, repo conventions, related documents, prior builds."""
+
+    def test_build_uses_the_configured_call_timeout(self) -> None:
+        from ctx import models
+        models.set_model(self.root, provider="custom", name="local",
+                         base_url="http://127.0.0.1:1234/v1", call_timeout=900)
+        replies = [
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py",
+             "content": "import argparse\nprint('hi')\n"},
+            {"action": "finish", "summary": "Done."},
+        ]
+        timeouts = []
+
+        def fake_complete(_prompt, _settings, **kwargs):
+            timeouts.append(kwargs.get("timeout"))
+            return json.dumps(replies.pop(0))
+
+        with mock.patch("ctx.models.complete", side_effect=fake_complete):
+            result = agent.build(self.root, "contribution-me-app-issue-42")
+        self.assertTrue(result["ok"])
+        self.assertEqual(timeouts, [900, 900, 900])
 
     def test_build_prompt_includes_the_approved_spec_and_context(self) -> None:
         from ctx import spec as spec_approval, writeback
