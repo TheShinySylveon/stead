@@ -6,12 +6,21 @@
 [![License](https://img.shields.io/github/license/TheShinySylveon/stead)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](docs/getting-started.md)
 
-Stead is a local context system that people and agents share. One set of
-markdown files, two readers: agents get a scoped bundle for the job in front of
-them; people get a wiki over the same files. Each repo has a single dial for
-how far a factory may act on that context — draft a plan, open a pull request,
-or merge — and every delivered build writes a versioned record back, so the
-next run reads what actually happened.
+Notion described [a new shape for work](https://www.notion.com/nsfw): projects,
+tasks, documents, and meetings connected in one graph, instead of files
+scattered across a dozen tools. Stead takes that shape and makes it executable.
+
+Stead runs that graph locally — plain markdown you can read, diff, and own —
+with two readers over the same files. You browse it as a wiki; an agent reads a
+scoped bundle and gets to work. Each repo has one dial for how far that work may
+go (draft a plan, open a pull request, or merge), and every delivered build
+writes a versioned record back into the graph, so the next run learns from the
+last.
+
+The twist is execution, not filing. A factory doesn't stop at a draft: with a
+model configured, it plans, writes the code, runs the repo's checks, and can
+deliver under that repo's ceiling. Notion gave work a shape; Stead gives it a
+way to get done.
 
 Built for the solo open-source contributor: a dozen repos, a weekly review
 queue, and no vendor holding your notes. The same files work for a small team
@@ -39,8 +48,8 @@ project and you're in. No browser? `python -m stead welcome --title "My Project"
 
 ## What you get
 
-- **Markdown you own.** Notes, specs, tasks, repos, and cached GitHub issues are
-  flat-YAML-frontmatter markdown. Git is the audit trail.
+- **One connected graph.** Projects, tasks, documents, meetings, and repos linked
+  by relations in flat-YAML-frontmatter markdown. Git is the audit trail.
 - **Two readers.** Agents get scoped bundles; people get a Confluence-style wiki.
   No second store to drift.
 - **One dial per repo.** A factory stops at a shadow plan, opens a draft or
