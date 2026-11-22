@@ -16,6 +16,10 @@ It is built for the solo open-source contributor first: the person with a
 dozen repos, a weekly review queue, and no wish to hand a vendor their notes.
 The same files work for a small team behind one shared container.
 
+> **Current focus: the [MVP](docs/mvp.md).** One reliable issue → spec → tested
+> change → PR loop, reviewed by a human. New features and QoL are deferred until
+> that loop works.
+
 Version **0.1.0**. Licensed under Apache-2.0. Copyright 2026 Tyler Rathbone.
 See [LICENSE](LICENSE). The command is `stead`.
 
@@ -185,6 +189,7 @@ More: [docs/factories.md](docs/factories.md) and
 | | |
 |---|---|
 | [Getting started](docs/getting-started.md) | Requirements, clone, first command |
+| [MVP](docs/mvp.md) | The one loop that must work; everything else is deferred |
 | [First run](docs/first-run.md) | Welcome, and what it refuses to do |
 | [Concepts](docs/concepts.md) | Files, the index, public and private, the glossary |
 | [Trust](docs/trust.md) | Threat model, merge gates, and what leaves the machine |
