@@ -100,6 +100,88 @@ stead context bundle --task contribution-acme-api-issue-42 --budget 12000
 A bundle is selected by relevance and recency, then rendered to the model with
 source links. The bundle builder, not the model, enforces the token budget.
 
+## Two readers, one store
+
+The store is shared. The projection is not.
+
+### The human reader
+
+A person opens the cockpit or the CLI and browses freely: full text, full
+timeline, private notes included when their scope allows it. No budget, no
+ranking, no summarization unless they ask. This is the "read the record"
+experience — a clone, a search, and a decision trail.
+
+Onboarding for a person is a generated path through `.stead/`:
+
+```
+repo.md → glossary → decisions (newest first) → current spec →
+history (last two quarters) → first task
+```
+
+### The agent reader
+
+An agent worker never receives the store. It receives a **context bundle** for
+one task, assembled before the first model turn:
+
+- **Mandatory** — the task or spec, acceptance criteria, repo conventions and
+  glossary, the files and tests the task touches.
+- **Relevant** — decisions, prior related work, recent history, open questions,
+  linked issues and PRs, ranked by relevance and recency.
+- **Never** — private notes on a public repo, other actors' private scope, or
+  the whole history.
+
+Every item carries provenance: `path`, `commit`, `type`, `visibility`, and
+`why` (the retrieval reason). The model can distrust or verify a claim instead
+of treating a summary as fact. If mandatory material does not fit the budget,
+the builder fails the run rather than silently truncating it.
+
+### Just-in-time retrieval
+
+Prefetch is not enough for real work, so the agent gets scoped tools:
+
+| Tool | Returns | Scope |
+|---|---|---|
+| `search(query)` | matching files and lines | repo + visibility |
+| `read(path)` | one file | repo + visibility |
+| `timeline(since)` | events and summaries | repo + visibility |
+
+Every call is logged. The log answers "what did the agent see?" after the fact,
+which is also how bundle quality is measured and replayed.
+
+### Why this slots into an OSS repo
+
+1. The repo carries `.stead/` publicly.
+2. A contributor clones, runs `stead init`, and both readers work offline.
+3. Their local private overlay (`context/documents/`, `private/`) never leaves
+   their machine.
+4. Their agents get the same scoped bundles as the maintainer's agents, minus
+   private material.
+5. Onboarding is the same graph, projected differently: a reading path for the
+   person, a bundle for the agent.
+
+### Quality loop
+
+Retrieval is testable, not vibes:
+
+- **Golden tasks.** For a small set of real past tasks, the needed decision must
+  appear in the bundle. Measure recall, not "looks relevant."
+- **Provenance check.** Every bundle item resolves to a file and commit.
+- **Staleness.** Items older than the last change to their subject are flagged.
+- **Stream log.** A run records exactly what was streamed, so a bad output can
+  be traced to a missing or misleading input.
+- **Poisoning.** Model-written summaries are marked as derived until a person
+  approves them; instructions inside repo content are data, not commands.
+
+### Failure modes to design for
+
+| Failure | Mitigation |
+|---|---|
+| The one decision that mattered was not retrieved | mandatory links, golden-task recall, "known unknowns" section |
+| Bundle too large to fit | priority tiers, per-item budget, fail on mandatory overflow |
+| Private note leaks into an OSS bundle | allowlist, visibility filter, secret scan before publish |
+| Context is stale or contradicted | commit pinning, staleness flags, decisions supersede decisions |
+| Agent is fed an injection in a comment or doc | content is labeled data; tools are fixed; no shell from content |
+
 Why not one big file: a single markdown cannot be searched, diffed, or
 partially retrieved at scale, and a single vector store loses the human
 record. Why not one big database as truth: it stops being clonable and

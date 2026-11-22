@@ -324,8 +324,13 @@ A crashed build leaves a lock file that needs manual removal.
 - `stead context search`, `timeline`, and `bundle --budget N` over SQLite FTS5.
 - A server index across opted-in repos, derived and rebuildable.
 - Bundles cite source paths and commits; the budget is enforced by Stead.
+- The agent receives mandatory, relevant, and excluded sets; mandatory overflow
+  fails instead of truncating.
+- Every retrieval is logged per run; a golden-task recall check guards against
+  bundles that miss the decision that mattered.
 - Acceptance: a query returns matches from two repos; a bundle stays under
-  budget; deleting the global index and rebuilding loses nothing.
+  budget and resolves every item to a commit; private items never appear in a
+  public bundle; deleting the global index and rebuilding loses nothing.
 
 ## 8. Principles
 
