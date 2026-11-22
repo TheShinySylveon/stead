@@ -92,12 +92,21 @@ python -m stead account reset --name ada
 
 python -m stead status PROJECT
 python -m stead sync github [--author @me] [--limit N] [--digest]
+python -m stead sync github --repo OWNER/NAME [--repo ...] [--remember]
+python -m stead sync github --all-repos [--remember]
 python -m stead sync github --offline
 ```
 
 `sync github` is read-only. It uses `gh`. `--offline` only re-indexes files
 already on disk. `--digest` assembles the digest only when the cache changed.
 It still does not post.
+
+By default it caches your open PRs, review requests, and assigned issues from
+every repo. `--repo OWNER/NAME` (repeatable) limits one run to those repos;
+nothing outside them is written, not even a repo file. `--remember` saves that
+list as the store's scope in `stead.json`, so a plain `sync github` (and the
+scheduled job) stays inside it. `--all-repos` ignores the saved scope for one
+run, and `--all-repos --remember` clears it.
 
 `actor use` remembers who is writing on this computer. Later writes stamp
 `actor:` when that file exists. `account add` is a shared-server sign-in for

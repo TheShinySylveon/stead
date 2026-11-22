@@ -357,8 +357,25 @@ def cmd_contribution_set(root: Path, contrib_id: str, state: str | None = None,
 # --- sync github ----------------------------------------------------------------
 
 def cmd_sync_github(root: Path, author: str = "@me", limit: int = 30,
-                    offline: bool = False, *, digest: bool = False) -> int:
-    result = sync.sync_github(root, author=author, limit=limit, offline=offline)
+                    offline: bool = False, *, digest: bool = False,
+                    repos: list[str] | None = None, all_repos: bool = False,
+                    remember: bool = False) -> int:
+    from ctx import config
+    try:
+        chosen = config.check_repos(repos or [])
+        if remember:
+            if not chosen and not all_repos:
+                raise SystemExit("--remember needs --repo OWNER/NAME (to save a scope) "
+                                 "or --all-repos (to clear it)")
+            config.save_sync_repos(root, chosen)
+            print("saved sync scope: " + (", ".join(chosen) if chosen else "every repo"))
+    except config.ConfigError as exc:
+        raise SystemExit(str(exc)) from exc
+    scope = chosen if chosen else ([] if all_repos else None)
+    result = sync.sync_github(root, author=author, limit=limit, offline=offline,
+                              repos=scope)
+    if result.get("repos_scope"):
+        print("scope: " + ", ".join(result["repos_scope"]))
     if result["offline"]:
         print(f"sync github --offline: no network used; re-indexed local cache "
               f"({result['repos']} repos, {result['contributions']} contributions)")
@@ -777,6 +794,12 @@ def build_parser() -> argparse.ArgumentParser:
                     help="skip network; re-index existing contribution files")
     sg.add_argument("--digest", action="store_true",
                     help="if the cache changed, assemble the digest. Nothing is posted.")
+    sg.add_argument("--repo", action="append", metavar="OWNER/NAME",
+                    help="only this repo (repeatable). Overrides the saved scope for this run.")
+    sg.add_argument("--all-repos", action="store_true",
+                    help="ignore the saved scope for this run")
+    sg.add_argument("--remember", action="store_true",
+                    help="save --repo as this store's default scope (or clear it with --all-repos)")
 
     model = sub.add_parser("model", help="the rented model factories may draft with").add_subparsers(dest="sub", required=True)
     model.add_parser("show", help="show the configured model. Never prints the key.")
@@ -1033,7 +1056,9 @@ def main(argv: list[str] | None = None) -> int:
             print(f"{meta.get('id')}  {meta.get('kind', 'human')}  {meta.get('title')}")
         return 0
     if args.command == "sync" and args.sub == "github":
-        return cmd_sync_github(root, args.author, args.limit, args.offline, digest=args.digest)
+        return cmd_sync_github(root, args.author, args.limit, args.offline, digest=args.digest,
+                               repos=args.repo, all_repos=args.all_repos,
+                               remember=args.remember)
     if args.command == "model":
         from ctx import models
         try:
