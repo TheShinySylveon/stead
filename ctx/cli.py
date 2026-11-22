@@ -715,6 +715,13 @@ def build_parser() -> argparse.ArgumentParser:
                      help="how many failed check rounds the model may fix")
     bld.add_argument("--max-minutes", type=int, default=30,
                      help="wall-clock budget for this build (default 30)")
+    bld.add_argument("--max-tokens", type=int,
+                     help="token budget for this build. Defaults to the install default.")
+    bld.add_argument("--max-cost", type=float,
+                     help="USD budget for this build (needs model prices). "
+                          "Defaults to the install default.")
+    rev = sub.add_parser("review", help="independent reviewer pass on a build branch. Approve or reject.")
+    rev.add_argument("--contribution", required=True)
 
     sp = sub.add_parser("spec", help="approve a feature spec by its body hash").add_subparsers(dest="sub", required=True)
     spa = sp.add_parser("approve", help="approve the current body of a contribution as a build spec")
@@ -738,6 +745,13 @@ def build_parser() -> argparse.ArgumentParser:
     ms.add_argument("--base-url", help="defaults to the provider preset")
     ms.add_argument("--key", help="stored in gitignored stead.json. Prefer STEAD_MODEL_API_KEY.")
     ms.add_argument("--key-env", default="STEAD_MODEL_API_KEY")
+    ms.add_argument("--review", action="store_true",
+                    help="configure the optional independent reviewer model. "
+                         "Falls back to the builder model when unset.")
+    ms.add_argument("--input-price", type=float,
+                    help="USD per 1M input tokens, for a cost budget")
+    ms.add_argument("--output-price", type=float,
+                    help="USD per 1M output tokens, for a cost budget")
     mt = model.add_parser("test", help="one live call to prove the model works. Never prints the key.")
     mt.add_argument("--prompt", default="Reply with exactly one word: ok")
     mt.add_argument("--timeout", type=int, default=60)
@@ -813,6 +827,10 @@ def build_parser() -> argparse.ArgumentParser:
                       help="watched builds after which the scheduler stops (0 = no cap)")
     fdef.add_argument("--build-minutes", type=int,
                       help="wall-clock budget for each watched build")
+    fdef.add_argument("--max-tokens-per-build", type=int,
+                      help="token budget for each build (0 = off)")
+    fdef.add_argument("--max-cost-per-build", type=float,
+                      help="USD budget for each build, needs model prices (0 = off)")
     fr.add_parser("stop", help="create .stead-stop: builds stop between steps")
     fr.add_parser("start", help="remove .stead-stop and allow builds again")
 
@@ -984,7 +1002,14 @@ def main(argv: list[str] | None = None) -> int:
                 shown = models.set_model(
                     root, provider=args.provider, name=args.name,
                     base_url=args.base_url or "", api_key=args.key,
-                    api_key_env=args.key_env)
+                    api_key_env=args.key_env,
+                    block="reviewer" if args.review else "model",
+                    input_price=args.input_price,
+                    output_price=args.output_price)
+                if args.review:
+                    print("reviewer model saved in stead.json (gitignored). "
+                          "It falls back to the builder model when unset.")
+                    return 0
                 print("model saved in stead.json (gitignored). The key was not printed.")
             else:
                 shown = models.public_model(root)
@@ -1059,6 +1084,18 @@ def main(argv: list[str] | None = None) -> int:
         print(f"spec sha256: {approved['sha']}")
         print("any change to the body needs re-approval before a build")
         return 0
+    if args.command == "review":
+        from ctx.models import ModelError
+        from ctx.review import ReviewError, review as run_review
+        try:
+            result = run_review(root, args.contribution)
+        except (ReviewError, ModelError) as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"verdict: {result['verdict']}")
+        print(f"reason: {result['reason'] or '(none given)'}")
+        if result.get("record"):
+            print(f"record: {result['record']['path']}")
+        return 0 if result["verdict"] == "approve" else 1
     if args.command == "build":
         from ctx.agent import BuildError, build as run_build
         from ctx.models import ModelError
@@ -1068,7 +1105,8 @@ def main(argv: list[str] | None = None) -> int:
                                wait_minutes=max(1, args.wait_minutes),
                                repair_rounds=max(0, args.repair_rounds),
                                max_steps=max(1, min(args.steps, 60)),
-                               max_minutes=max(1, args.max_minutes))
+                               max_minutes=max(1, args.max_minutes),
+                               max_tokens=args.max_tokens, max_cost=args.max_cost)
         except (BuildError, ModelError) as exc:
             raise SystemExit(str(exc)) from exc
         print(f"plan: {result['plan']}")
@@ -1215,11 +1253,15 @@ def main(argv: list[str] | None = None) -> int:
         from ctx.autonomy import AutonomyError, factory_defaults, set_defaults
         try:
             if (args.trigger or args.reach or args.max_builds_per_day is not None
-                    or args.build_minutes is not None):
+                    or args.build_minutes is not None
+                    or args.max_tokens_per_build is not None
+                    or args.max_cost_per_build is not None):
                 shown = set_defaults(
                     root, trigger=args.trigger, reach=args.reach,
                     max_builds_per_day=args.max_builds_per_day,
-                    build_minutes=args.build_minutes)
+                    build_minutes=args.build_minutes,
+                    max_tokens_per_build=args.max_tokens_per_build,
+                    max_cost_per_build_usd=args.max_cost_per_build)
                 print("install default saved in stead.json (gitignored)")
             else:
                 shown = factory_defaults(root)
@@ -1229,6 +1271,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"reach: {shown['reach']}")
         print(f"max builds per day: {shown['max_builds_per_day']}")
         print(f"minutes per build: {shown['build_minutes']}")
+        print(f"tokens per build: {shown['max_tokens_per_build'] or 'off'}")
+        print(f"cost per build (USD): {shown['max_cost_per_build_usd'] or 'off'}")
         print("merge is not an install default. Set it on the repo.")
         return 0
     if args.command == "welcome":

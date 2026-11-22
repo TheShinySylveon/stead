@@ -29,7 +29,8 @@ class MergeError(PublishError):
     pass
 
 
-def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
+def merge(root: Path, contribution_ref: str, *, runner=None,
+          reviewer=None) -> dict:
     """Merge the checkout's open pull request. Raises MergeError."""
     found = objects.find(root, "contribution", contribution_ref)
     if found is None:
@@ -104,6 +105,23 @@ def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
             "the pull request head differs from the commit Stead built "
             f"({head_sha[:12]} vs {expected[:12]}). A human may have edited it; "
             "review and merge it manually.")
+    # An independent reviewer pass, in a fresh context, before anything merges.
+    # A repo can opt out explicitly with merge_without_review: true.
+    if not safety.truthy(repo_meta.get("merge_without_review")):
+        from ctx.models import ModelError
+        from ctx.review import ReviewError, review as review_pass
+        try:
+            verdict = review_pass(root, contribution_ref, responder=reviewer,
+                                  runner=runner)
+        except (ReviewError, ModelError) as exc:
+            raise MergeError(
+                f"the independent reviewer pass could not run: {exc}. Configure a "
+                "model (`stead model set`), or set `merge_without_review: true` on "
+                "the repo to accept merging without it.") from exc
+        if verdict["verdict"] != "approve":
+            raise MergeError(
+                "the independent reviewer rejected this change: "
+                + (verdict.get("reason") or "no reason given"))
     argv = ["gh", "pr", "merge", str(number), "--merge"]
     if expected:
         argv += ["--match-head-commit", expected]

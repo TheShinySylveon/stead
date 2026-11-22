@@ -841,7 +841,9 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
             from ctx.models import ModelError
             try:
                 result = build_spec(root, meta["id"], publish=publish, merge=merge,
-                                    max_minutes=int(defaults.get("build_minutes") or 30))
+                                    max_minutes=int(defaults.get("build_minutes") or 30),
+                                    max_tokens=int(defaults.get("max_tokens_per_build") or 0),
+                                    max_cost=float(defaults.get("max_cost_per_build_usd") or 0))
             except (BuildError, ModelError) as exc:
                 built += 1  # a failed build still spent the budget
                 skipped.append({"id": meta.get("id"), "reason": str(exc)})

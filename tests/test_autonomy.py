@@ -37,6 +37,19 @@ class AutonomyPolicyTest(unittest.TestCase):
         with self.assertRaises(autonomy.AutonomyError):
             autonomy.set_defaults(self.root, build_minutes=0)
 
+    def test_token_and_cost_budgets_are_saved_and_bounded(self) -> None:
+        shown = autonomy.set_defaults(self.root, max_tokens_per_build=500_000,
+                                      max_cost_per_build_usd=1.25)
+        self.assertEqual(shown["max_tokens_per_build"], 500_000)
+        self.assertEqual(shown["max_cost_per_build_usd"], 1.25)
+        kept = autonomy.factory_defaults(self.root)
+        self.assertEqual(kept["max_tokens_per_build"], 500_000)
+        self.assertEqual(kept["max_cost_per_build_usd"], 1.25)
+        with self.assertRaises(autonomy.AutonomyError):
+            autonomy.set_defaults(self.root, max_tokens_per_build=-1)
+        with self.assertRaises(autonomy.AutonomyError):
+            autonomy.set_defaults(self.root, max_cost_per_build_usd=-1)
+
     def test_merge_is_not_inherited(self) -> None:
         policy = autonomy.effective(self.root, {})
         self.assertEqual(policy["ceiling"], "shadow")

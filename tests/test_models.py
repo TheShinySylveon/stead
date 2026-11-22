@@ -104,6 +104,45 @@ class ModelTest(unittest.TestCase):
                          base_url="https://attacker.example/v1", api_key="sk-new")
         self.assertEqual(models.resolve(self.root)["api_key"], "sk-new")
 
+    def test_usage_is_read_from_the_provider(self) -> None:
+        models.set_model(self.root, provider="openai", name="gpt-test", api_key="k")
+        settings = models.resolve(self.root)
+        usage: dict = {}
+        models.complete(
+            "hello", settings, usage=usage,
+            transport=lambda _body, _s: {
+                "choices": [{"message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 7, "completion_tokens": 3}})
+        self.assertEqual(usage["prompt_tokens"], 7)
+        self.assertEqual(usage["completion_tokens"], 3)
+        self.assertFalse(usage.get("estimated", False))
+
+    def test_missing_usage_is_estimated_from_characters(self) -> None:
+        models.set_model(self.root, provider="openai", name="gpt-test", api_key="k")
+        settings = models.resolve(self.root)
+        usage: dict = {}
+        models.complete(
+            "x" * 400, settings, usage=usage,
+            transport=lambda _body, _s: {"choices": [{"message": {"content": "y" * 40}}]})
+        self.assertEqual(usage["prompt_tokens"], 100)
+        self.assertEqual(usage["completion_tokens"], 10)
+        self.assertTrue(usage["estimated"])
+
+    def test_a_reviewer_model_falls_back_to_the_builder_and_can_be_set(self) -> None:
+        models.set_model(self.root, provider="ollama", name="llama3.2")
+        self.assertEqual(models.resolve(self.root, "reviewer")["name"], "llama3.2")
+        models.set_model(self.root, provider="openai", name="gpt-review",
+                         api_key="k", block="reviewer")
+        self.assertEqual(models.resolve(self.root, "reviewer")["name"], "gpt-review")
+        self.assertEqual(models.resolve(self.root)["name"], "llama3.2")
+
+    def test_prices_are_stored_for_a_cost_budget(self) -> None:
+        models.set_model(self.root, provider="openai", name="gpt-test",
+                         api_key="k", input_price=2.5, output_price=10)
+        resolved = models.resolve(self.root)
+        self.assertEqual(resolved["input_price_per_mtok"], 2.5)
+        self.assertEqual(resolved["output_price_per_mtok"], 10.0)
+
     def test_complete_uses_the_transport_and_hides_the_key_on_failure(self) -> None:
         settings = {"name": "gpt-test", "base_url": "https://example.test/v1", "api_key": "sk-secret"}
         seen = {}

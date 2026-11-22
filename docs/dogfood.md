@@ -28,7 +28,9 @@ gets done on this repo. The full scope and definition of done are in
 
 - **Ceiling `pr`: stop just short of `merge`.** Every change opens a pull
   request; a human reviews the output and merges. Stead never auto-merges its
-  own work. Set the repo `reach: pr`; `merge` stays off.
+  own work. Set the repo `reach: pr`; `merge` stays off. (If a repo is raised to
+  `reach: merge`, `stead factory merge` also runs an independent reviewer before
+  merging, unless `merge_without_review: true`.)
 - **Monitor → spec/docs/plan → approve → fix → PR → comment.** `sync github`
   reads issues read-only; the `ghost` rung drafts spec/docs/plan; a person
   approves the spec (`spec approve`, bound to the body hash); `stead build
@@ -41,11 +43,14 @@ gets done on this repo. The full scope and definition of done are in
   proposes go to the inbox for triage, never straight into context.
 - **The metric is the ledger.** `stead metrics` reports specs built, the failure
   rate, share merged after review, how many merged after a human edit, repair
-  rounds, checks mode, time, tests touched, and characters sent to the model.
-  Every build writes a record, success or failure. Merged/closed outcomes and
-  human edits are reconciled from live PR state by `stead sync github`
-  (read-only), so a human merge under the `pr` ceiling reaches the numbers.
-  Publish those numbers here as they accumulate.
+  rounds, checks mode, time, tests touched, characters/tokens sent, cost, and
+  independent-review verdicts. Every build writes a record, success or failure.
+  Merged/closed outcomes and human edits are reconciled from live PR state by
+  `stead sync github` (read-only), so a human merge under the `pr` ceiling
+  reaches the numbers. Publish those numbers here as they accumulate.
+- **Spend is bounded.** Each build has a token budget (default 2M) and, when
+  model prices are configured, a USD budget. A watch run also has a daily build
+  count. Raise or lower them with `stead factory defaults`.
 
 Honest gaps in the contract today (MVP blockers):
 

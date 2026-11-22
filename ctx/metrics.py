@@ -16,7 +16,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from ctx import objects
-from ctx.writeback import RECORD_TAG
+from ctx.writeback import RECORD_TAG, REVIEW_TAG
 
 
 def _num(value) -> float:
@@ -51,7 +51,8 @@ def collect(root: Path, repo: str | None = None) -> dict:
     repairs = 0
     files = tests_touched = tests_deleted = 0
     human_edits = 0
-    chars_sent = 0
+    chars_sent = tokens_in = tokens_out = 0
+    cost = 0.0
     by_repo: dict[str, int] = {}
     for meta in records:
         outcome = str(meta.get("outcome") or "committed")
@@ -64,12 +65,22 @@ def collect(root: Path, repo: str | None = None) -> dict:
         tests_touched += len(_list(meta.get("tests_touched")))
         tests_deleted += len(_list(meta.get("tests_deleted")))
         chars_sent += int(_num(meta.get("chars_sent")))
+        tokens_in += int(_num(meta.get("tokens_in")))
+        tokens_out += int(_num(meta.get("tokens_out")))
+        cost += _num(meta.get("cost_usd"))
         if str(meta.get("human_edits") or "").lower() == "true":
             human_edits += 1
         for tag in (meta.get("tags") or []):
             if str(tag).lower().startswith("repo:"):
                 key = str(tag)[5:]
                 by_repo[key] = by_repo.get(key, 0) + 1
+    reviews = {"approve": 0, "reject": 0}
+    for _path, meta, _body in objects.iter_objects(root, "document"):
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if REVIEW_TAG in tags:
+            verdict = str(meta.get("verdict") or "").lower()
+            if verdict in reviews:
+                reviews[verdict] += 1
     total = len(records)
     return {
         "builds": total,
@@ -77,6 +88,7 @@ def collect(root: Path, repo: str | None = None) -> dict:
         "merged_share": round(outcomes["merged"] / total, 3) if total else 0.0,
         "failure_rate": round(outcomes["failed"] / total, 3) if total else 0.0,
         "human_edits": human_edits,
+        "reviews": reviews,
         "checks_modes": modes,
         "avg_elapsed_seconds": round(elapsed / total, 1) if total else 0.0,
         "repair_rounds": repairs,
@@ -84,6 +96,9 @@ def collect(root: Path, repo: str | None = None) -> dict:
         "tests_touched": tests_touched,
         "tests_deleted": tests_deleted,
         "chars_sent": chars_sent,
+        "tokens_in": tokens_in,
+        "tokens_out": tokens_out,
+        "cost_usd": round(cost, 4),
         "by_repo": by_repo,
         "recent": [
             {"title": m.get("title", ""), "outcome": m.get("outcome", ""),
@@ -116,6 +131,10 @@ def render(report: dict) -> str:
         f"files touched: {report['files_touched']}  "
         f"tests touched: {report['tests_touched']}  "
         f"tests deleted: {report['tests_deleted']}",
+        f"tokens: in {report['tokens_in']}  out {report['tokens_out']}  "
+        f"cost: ${report['cost_usd']:.2f}",
+        f"independent reviews: approve {report['reviews']['approve']}  "
+        f"reject {report['reviews']['reject']}",
         f"characters sent to the model: {report['chars_sent']}",
     ]
     if report["by_repo"]:

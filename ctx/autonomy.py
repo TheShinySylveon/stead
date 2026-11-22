@@ -47,17 +47,29 @@ def factory_defaults(root: Path) -> dict:
         minutes = int(raw.get("build_minutes", 30))
     except (TypeError, ValueError):
         minutes = 30
+    try:
+        tokens = int(raw.get("max_tokens_per_build", 2_000_000))
+    except (TypeError, ValueError):
+        tokens = 2_000_000
+    try:
+        cost = float(raw.get("max_cost_per_build_usd", 0))
+    except (TypeError, ValueError):
+        cost = 0.0
     return {
         "trigger": trigger,
         "reach": reach,
         "max_builds_per_day": max(0, min(builds, 100)),
         "build_minutes": max(1, min(minutes, 480)),
+        "max_tokens_per_build": max(0, tokens),
+        "max_cost_per_build_usd": max(0.0, cost),
     }
 
 
 def set_defaults(root: Path, *, trigger: str | None = None, reach: str | None = None,
                  max_builds_per_day: int | None = None,
-                 build_minutes: int | None = None) -> dict:
+                 build_minutes: int | None = None,
+                 max_tokens_per_build: int | None = None,
+                 max_cost_per_build_usd: float | None = None) -> dict:
     current = factory_defaults(root)
     if trigger is not None:
         if trigger not in TRIGGERS:
@@ -78,6 +90,14 @@ def set_defaults(root: Path, *, trigger: str | None = None, reach: str | None = 
         if build_minutes < 1:
             raise AutonomyError("build_minutes must be at least 1")
         current["build_minutes"] = build_minutes
+    if max_tokens_per_build is not None:
+        if max_tokens_per_build < 0:
+            raise AutonomyError("max_tokens_per_build cannot be negative (0 = off)")
+        current["max_tokens_per_build"] = max_tokens_per_build
+    if max_cost_per_build_usd is not None:
+        if max_cost_per_build_usd < 0:
+            raise AutonomyError("max_cost_per_build_usd cannot be negative (0 = off)")
+        current["max_cost_per_build_usd"] = max_cost_per_build_usd
     config.save_factory(root, current)
     return current
 

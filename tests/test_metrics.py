@@ -128,3 +128,19 @@ class MetricsTest(unittest.TestCase):
         meta, _body = frontmatter.parse(
             (self.root / "context/contributions/issue-1.md").read_text(encoding="utf-8"))
         self.assertEqual(meta["state"], "merged")
+
+    def test_reviews_and_token_cost_are_counted(self) -> None:
+        cid = self._contrib(1)
+        writeback.record_delivery(
+            self.root, cid,
+            self._result(tokens_in=100, tokens_out=50, cost_usd=0.25))
+        writeback.record_review(self.root, cid,
+                                {"verdict": "approve", "reason": "criteria met"})
+        report = metrics.collect(self.root)
+        self.assertEqual(report["reviews"]["approve"], 1)
+        self.assertEqual(report["tokens_in"], 100)
+        self.assertEqual(report["tokens_out"], 50)
+        self.assertEqual(report["cost_usd"], 0.25)
+        text = metrics.render(report)
+        self.assertIn("independent reviews: approve 1", text)
+        self.assertIn("cost: $0.25", text)
