@@ -245,15 +245,22 @@ class TestSyncGithubMocked(GithubTestCase):
         self.assertEqual(cli.cmd_sync_github(self.root, offline=True), 0)
 
     def test_sync_records_the_stead_build_label(self) -> None:
+        # A repo you own; the label query must be scoped to it.
+        cli.cmd_repo_add(self.root, "Cool Lib", url="https://github.com/oss-org/cool-lib",
+                         kind="own")
         labeled = [_gh_item(11, "Add export", "https://github.com/oss-org/cool-lib/issues/11",
                             "oss-org/cool-lib")]
 
         def run(args, **kwargs):
             assert args[0] == "gh"
             if args[1:3] == ["api", "user"]:
-                return mock.Mock(returncode=0, stdout="testuser\n", stderr="")
+                return mock.Mock(returncode=0, stdout="oss-org\n", stderr="")
             if args[1:3] == ["search", "issues"] and "--label" in args:
+                self.assertIn("--repo", args)
+                self.assertIn("oss-org/cool-lib", args)
                 return mock.Mock(returncode=0, stdout=json.dumps(labeled), stderr="")
+            if args[1:3] == ["issue", "view"]:
+                return mock.Mock(returncode=0, stdout="The real issue body.\n", stderr="")
             if args[1:3] == ["search", "prs"]:
                 return mock.Mock(returncode=0, stdout=json.dumps([]), stderr="")
             if args[1:3] == ["search", "issues"]:
@@ -265,10 +272,12 @@ class TestSyncGithubMocked(GithubTestCase):
         with mock.patch.object(sync.shutil, "which", return_value="/usr/bin/gh"), \
              mock.patch.object(sync.subprocess, "run", side_effect=run):
             sync.sync_github(self.root)
-        meta, _ = frontmatter.parse(
+        meta, body = frontmatter.parse(
             (self.root / "context/contributions/oss-org-cool-lib-issue-11.md").read_text(encoding="utf-8"))
         self.assertIn("stead-build", meta["tags"])
         self.assertEqual(meta["kind"], "issue")
+        self.assertEqual(body.strip(), "The real issue body.")
+        self.assertIn("body_sha", meta)
 
     def test_sync_gh_missing_message(self) -> None:
         with mock.patch.object(sync.shutil, "which", return_value=None):

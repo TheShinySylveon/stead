@@ -13,6 +13,7 @@ Design rules (locked):
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -25,6 +26,7 @@ from ctx import db, frontmatter, objects
 GH_TIMEOUT = 60  # seconds per gh call
 SEARCH_FIELDS = "number,title,url,state,repository,createdAt,updatedAt"
 BUILD_LABEL = "stead-build"  # a GitHub label that opts an issue into a build
+_CACHE_NOTE = "Cached read-only from GitHub by `stead sync github`"
 
 # gh search state values map 1:1 onto our ontology (open|closed|merged).
 _STATES = ("open", "closed", "merged")
@@ -118,15 +120,9 @@ def fetch_contributions(author: str = "@me", limit: int = 30) -> list[dict]:
         (["search", "prs", "--author", author, "--state", "open"], "pr", "author"),
         (["search", "prs", "--review-requested", author, "--state", "open"], "pr", "reviewer"),
         (["search", "issues", "--assignee", author, "--state", "open"], "issue", "assignee"),
-        # Label intake: any issue carrying `stead-build` is a monitored build
-        # target, regardless of author/assignee. The label is recorded as a tag.
-        (["search", "issues", "--label", BUILD_LABEL, "--state", "open"],
-         "issue", "author", True),
     ]
     items: dict[tuple, dict] = {}
-    for query in queries:
-        base, kind, role = query[0], query[1], query[2]
-        labeled = len(query) > 3 and query[3]
+    for base, kind, role in queries:
         results = _gh_json(base + ["--limit", str(limit), "--json", SEARCH_FIELDS]) or []
         for r in results:
             repo_full = (r.get("repository") or {}).get("nameWithOwner") or ""
@@ -135,11 +131,7 @@ def fetch_contributions(author: str = "@me", limit: int = 30) -> list[dict]:
             number = int(r.get("number", 0))
             key = (repo_full.lower(), kind, number)
             if key in items:
-                # A label-intake issue wins the `stead-build` tag even if it
-                # was already cached under another role.
-                if labeled:
-                    items[key].setdefault("tags", []).append(BUILD_LABEL)
-                continue
+                continue  # first role wins (author > reviewer > assignee)
             state = (r.get("state") or "open").lower()
             item = {
                 "repo_full": repo_full, "kind": kind, "number": number,
@@ -150,13 +142,74 @@ def fetch_contributions(author: str = "@me", limit: int = 30) -> list[dict]:
                 "role": role, "ci": "none",
                 "review": "requested" if role == "reviewer" else "none",
             }
-            if labeled:
-                item["tags"] = [BUILD_LABEL]
             if kind == "pr":
                 ci, decision = _enrich_pr(item["url"])
                 item["ci"] = ci
                 if decision != "none":
                     item["review"] = decision
+            items[key] = item
+    return list(items.values())
+
+
+def _owner_name(repo_meta: dict) -> str:
+    url = (repo_meta.get("url") or "").rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/",
+                   "git@github.com:", "github.com/"):
+        if url.startswith(prefix):
+            rest = url[len(prefix):].rstrip("/")
+            if rest.endswith(".git"):
+                rest = rest[:-4]
+            return rest
+    return ""
+
+
+def _fetch_issue_body(url: str) -> str:
+    """Best-effort read-only fetch of an issue body, so a draft has real text."""
+    try:
+        raw = _run_gh(["issue", "view", url, "--json", "body",
+                       "--jq", ".body"]).stdout or ""
+    except SystemExit:
+        return ""
+    return raw.strip()
+
+
+def fetch_labeled(root: Path, login: str | None, limit: int = 30) -> list[dict]:
+    """Fetch `stead-build`-labelled issues, scoped to repos you own or watch.
+
+    A label on a stranger's repo must not pull their issues into your store, so
+    the query runs once per repo (kind: own or trigger: watch), with --repo.
+    Each issue's body is fetched so a later draft has real text, and a hash of
+    the fetched text lets a later sync flag "changed since the draft"."""
+    items: dict[tuple, dict] = {}
+    for _path, meta, _body in objects.iter_objects(root, "repo"):
+        if meta.get("kind") != "own" and meta.get("trigger") != "watch":
+            continue
+        owner_name = _owner_name(meta)
+        if not owner_name or "/" not in owner_name:
+            continue
+        results = _gh_json(
+            ["search", "issues", "--label", BUILD_LABEL, "--state", "open",
+             "--repo", owner_name, "--limit", str(limit), "--json", SEARCH_FIELDS]) or []
+        for r in results:
+            repo_full = (r.get("repository") or {}).get("nameWithOwner") or ""
+            if not repo_full or "/" not in repo_full:
+                continue
+            number = int(r.get("number", 0))
+            key = (repo_full.lower(), "issue", number)
+            if key in items:
+                continue
+            url = r.get("url") or f"https://github.com/{repo_full}/issues/{number}"
+            state = (r.get("state") or "open").lower()
+            body = _fetch_issue_body(url)
+            item = {
+                "repo_full": repo_full, "kind": "issue", "number": number,
+                "title": r.get("title") or f"issue #{number}",
+                "url": url, "state": state if state in _STATES else "open",
+                "role": "author", "ci": "none", "review": "none",
+                "tags": [BUILD_LABEL], "body": body,
+            }
+            if body:
+                item["body_sha"] = hashlib.sha256(body.encode("utf-8")).hexdigest()
             items[key] = item
     return list(items.values())
 
@@ -194,17 +247,22 @@ def write_contribution(root: Path, item: dict, login: str | None, today: str) ->
     is_new = not path.exists()
     if is_new:
         meta = {"id": contrib_id, "type": "contribution", "created": today}
-        body = (f"# {item['title']}\n\n"
-                f"{item['kind'].upper()} #{item['number']} in {item['repo_full']} — {item['url']}\n\n"
-                f"Cached read-only from GitHub by `stead sync github` on {today}.\n"
-                f"GitHub is authoritative for live state; this file is the local,\n"
-                f"offline-capable cache. Add private strategy notes in context/documents/,\n"
-                f"not here (contribution files are public GitHub-derived data).\n")
+        body = item.get("body") or (
+            f"# {item['title']}\n\n"
+            f"{item['kind'].upper()} #{item['number']} in {item['repo_full']} — {item['url']}\n\n"
+            f"Cached read-only from GitHub by `stead sync github` on {today}.\n"
+            f"GitHub is authoritative for live state; this file is the local,\n"
+            f"offline-capable cache. Add private strategy notes in context/documents/,\n"
+            f"not here (contribution files are public GitHub-derived data).\n")
     else:
         meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
         meta.setdefault("id", contrib_id)
         meta.setdefault("type", "contribution")
         meta.setdefault("created", today)
+        # A labelled issue previously cached without a body still has the
+        # boilerplate stub; replace it with the freshly fetched text.
+        if item.get("body") and _CACHE_NOTE in body:
+            body = item["body"]
     # GitHub-derived fields (sync-owned):
     meta.update({"title": item["title"], "updated": today, "repo": repo_id,
                  "kind": item["kind"], "number": item["number"], "url": item["url"],
@@ -212,6 +270,8 @@ def write_contribution(root: Path, item: dict, login: str | None, today: str) ->
                  "visibility": "public"})
     meta.setdefault("role", item["role"])  # respect a manually set role
     meta.setdefault("method", "spec-kit")  # user-owned choice; sync never overrides it
+    if item.get("body_sha"):
+        meta["body_sha"] = item["body_sha"]
     for tag in (item.get("tags") or []):
         tags = meta.setdefault("tags", [])
         if isinstance(tags, str):
@@ -242,6 +302,21 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
             login = (_run_gh(["api", "user", "--jq", ".login"]).stdout or "").strip() or None
         except SystemExit:
             pass
+        # Label intake, scoped to repos you own or watch.
+        by_key = {(i["repo_full"].lower(), i["kind"], i["number"]): i for i in items}
+        for item in fetch_labeled(root, login, limit):
+            key = (item["repo_full"].lower(), item["kind"], item["number"])
+            if key in by_key:
+                existing = by_key[key]
+                existing["tags"] = list(dict.fromkeys(
+                    (existing.get("tags") or []) + [BUILD_LABEL]))
+                if item.get("body"):
+                    existing["body"] = item["body"]
+                if item.get("body_sha"):
+                    existing["body_sha"] = item["body_sha"]
+            else:
+                by_key[key] = item
+        items = list(by_key.values())
         n_new = n_updated = 0
         for item in items:
             _path, is_new = write_contribution(root, item, login, today)

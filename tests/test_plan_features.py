@@ -157,8 +157,27 @@ class ScheduleAndSyncTest(unittest.TestCase):
         self.assertIn("factory watch --build --publish", text)
         self.assertIn("0 * * * *", text)  # hourly cron
         self.assertNotIn("digest", text)  # the weekly digest stays weekly
+        self.assertNotIn("run-weekly.cmd", text)  # its own launcher
+        self.assertIn("run-monitor.cmd", text)
+        # the cron line is POSIX (no `cd /d`)
+        cron_line = next(l for l in text.splitlines() if l.startswith("0 * * * *"))
+        self.assertNotIn("cd /d", cron_line)
         with self.assertRaises(ScheduleError):
             monitor_show(root, interval="monthly")
+
+    def test_install_monitor_writes_its_own_launcher(self) -> None:
+        from ctx.schedule import install_monitor
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        calls = []
+        name = install_monitor(root, interval="daily", watch=True,
+                               runner=lambda argv: calls.append(argv) or "",
+                               platform="win32")
+        self.assertEqual(name, "SteadMonitor")
+        self.assertTrue((root / "private" / "run-monitor.cmd").is_file())
+        self.assertFalse((root / "private" / "run-weekly.cmd").exists())
+        self.assertIn("/SC", calls[0])
 
     def test_watch_can_build_and_publish(self) -> None:
         tmp = tempfile.TemporaryDirectory()
