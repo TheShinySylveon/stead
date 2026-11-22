@@ -201,7 +201,7 @@ land in `inbox/` for triage.
 
 Small, real, testable improvements to Stead. Each is a build target once
 authored and approved. These are Set A (tuning), filed as GitHub issues with
-the `stead-build` label: 1 is #25, 2 was built as #20, 3 is #27.
+the `stead-build` label: 1 is #25 (built as #30), 2 was built as #20, 3 is #27.
 
 ### 1. `stead context search`
 
@@ -314,6 +314,11 @@ had into the dogfood store (#22, `--repo` with `--remember`).
 Aggregate, from `stead metrics` (2026-11-22, all on `metrics --since`): 5
 builds, 1 merged, 1 correct, 1 incorrect (the LFM3 run above), 3 failed (2
 build-class, 1 infrastructure), 0 merged after a human edit.
+
+Set A spec 1 (`stead context search`, #25) was also built by Stead and merged
+as #30 on 2026-11-22 — the PR body was authored by Stead, a human merged, and
+the added test covers a match, a miss, and the repo filter. Tuning set, so not
+scored.
 
 Publish these here and link them from the README once they exist. Until then the
 honest claim is the pipeline and the gates, not a success rate.

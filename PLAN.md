@@ -324,7 +324,12 @@ A crashed build leaves a lock file that needs manual removal.
 
 ### 7.10 Context retrieval and the global index
 
-- `stead context search`, `timeline`, and `bundle --budget N` over SQLite FTS5.
+**Partially built.** `stead context search` (#25) is landed: a read-only,
+model-free, network-free scan of the local markdown objects with `--repo` and
+`--json`. It scans files directly rather than through the planned SQLite FTS5
+index. Still planned:
+
+- `timeline` and `bundle --budget N` over the local index (SQLite FTS5).
 - A server index across opted-in repos, derived and rebuildable.
 - Bundles cite source paths and commits; the budget is enforced by Stead.
 - The agent receives mandatory, relevant, and excluded sets; mandatory overflow

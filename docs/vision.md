@@ -242,7 +242,8 @@ portable. The files are the source; the index is a cache.
 1. Add the `spec` rung; make `autonomy` one ladder while keeping `trigger`.
 2. Add `.stead/` opt-in with an allowlist, `autonomy.toml`, and a dry-run
    `stead context publish` that shows exactly what would be committed.
-3. Add `stead context search` and `timeline` over the local index.
+3. Add `stead context search` (built: a read-only, model-free markdown scan with
+   `--repo` and `--json`) and `timeline` over the local index.
 4. Add an append-only event log for runs and builds.
 
 ### Middle
