@@ -91,3 +91,57 @@ class SpecApprovalTest(unittest.TestCase):
         self.assertEqual(body.strip(), drafted_body.strip())
         # The source issue body is untouched.
         self.assertEqual(self.path.read_text(encoding="utf-8"), source_before)
+
+    def _seed_repo(self) -> None:
+        (self.root / "context/repos").mkdir(parents=True, exist_ok=True)
+        repo = {"id": "repo-me-app", "type": "repo", "title": "App",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "active", "kind": "own"}
+        (self.root / "context/repos/app.md").write_text(
+            frontmatter.dumps(repo, "# App\n"), encoding="utf-8")
+
+    DRAFT = ("Draft the spec.\n\n## Acceptance criteria\n\n"
+             "- [ ] the flag works\n\n## Plan\n\nEdit app.py.\n")
+
+    def test_draft_refuses_the_sync_cache_stub(self) -> None:
+        self._seed_repo()
+        meta, _ = frontmatter.parse(self.path.read_text(encoding="utf-8"))
+        self.path.write_text(frontmatter.dumps(
+            meta, "ISSUE #1 in me/app — https://github.com/me/app/issues/1\n\n"
+                  "Cached read-only from GitHub by `stead sync github` on 2026-11-21.\n"),
+            encoding="utf-8")
+        with self.assertRaises(spec.SpecError) as caught:
+            spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                            responder=lambda _p: self.DRAFT)
+        self.assertIn("cache stub", str(caught.exception))
+
+    def test_draft_refuses_a_second_draft_and_redraft_replaces(self) -> None:
+        self._seed_repo()
+        spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                        responder=lambda _p: self.DRAFT)
+        with self.assertRaises(spec.SpecError) as caught:
+            spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                            responder=lambda _p: self.DRAFT)
+        self.assertIn("already exists", str(caught.exception))
+        # --redraft replaces the body in place and clears approval
+        replacement = self.DRAFT.replace("Edit app.py.", "Edit ctx/cli.py.")
+        result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                 responder=lambda _p: replacement, redraft=True)
+        meta, body = frontmatter.parse(
+            (self.root / result["path"]).read_text(encoding="utf-8"))
+        self.assertEqual(body.strip(), replacement.strip())
+        self.assertNotIn("spec_sha", meta)
+
+    def test_draft_requires_criteria_and_plan(self) -> None:
+        self._seed_repo()
+        with self.assertRaises(spec.SpecError):
+            spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                            responder=lambda _p: "No criteria or plan.\n")
+
+    def test_cannot_draft_from_a_draft(self) -> None:
+        self._seed_repo()
+        first = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                responder=lambda _p: self.DRAFT)
+        with self.assertRaises(spec.SpecError) as caught:
+            spec.draft_spec(self.root, first["id"], responder=lambda _p: self.DRAFT)
+        self.assertIn("draft", str(caught.exception))
