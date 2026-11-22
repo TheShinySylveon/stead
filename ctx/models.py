@@ -191,10 +191,13 @@ def reviewer_configured(root: Path) -> bool:
     return bool(raw.get("name") and raw.get("base_url"))
 
 
-def draft(root: Path, prompt: str, *, transport=None, timeout: float = 120) -> str:
+def draft(root: Path, prompt: str, *, transport=None, timeout: float | None = None) -> str:
+    """One drafting call. The timeout defaults to the model's call_timeout."""
     if not (prompt or "").strip():
         raise ModelError("there is no prompt to send")
-    return complete(prompt, resolve(root), transport=transport, timeout=timeout)
+    settings = resolve(root)
+    return complete(prompt, settings, transport=transport,
+                    timeout=_call_timeout(settings.get("call_timeout")) if timeout is None else timeout)
 
 
 def complete(prompt: str, settings: dict, *, transport=None,
@@ -304,9 +307,10 @@ def check_eval_files(root: Path, factory_name: str | None = None) -> dict:
 
 
 def judge(root: Path, factory_name: str, case_id: str, output_path: str | None,
-          *, transport=None, timeout: float = 120, prompt_version: str = "",
+          *, transport=None, timeout: float | None = None, prompt_version: str = "",
           output_text: str | None = None) -> dict:
-    """Ask the configured model whether one draft meets one case. Local file only."""
+    """Ask the configured model whether one draft meets one case. Local file only.
+    The timeout defaults to the model's call_timeout."""
     case = _load_case(root, factory_name, case_id)
     draft_text = (output_text if output_text is not None
                   else Path(output_path).read_text(encoding="utf-8"))
@@ -328,7 +332,9 @@ def judge(root: Path, factory_name: str, case_id: str, output_path: str | None,
         f"{draft_text}\n"
     )
     settings = resolve(root)
-    text = complete(prompt, settings, transport=transport, timeout=timeout, temperature=0)
+    text = complete(prompt, settings, transport=transport,
+                    timeout=_call_timeout(settings.get("call_timeout")) if timeout is None else timeout,
+                    temperature=0)
     verdict, reason = parse_verdict(text)
     result = {
         "case": case_id,

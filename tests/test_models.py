@@ -147,6 +147,32 @@ class ModelTest(unittest.TestCase):
         models.set_model(self.root, provider="ollama", name="qwen")
         self.assertEqual(models.resolve(self.root)["call_timeout"], 1200)
 
+    def test_drafting_uses_the_configured_call_timeout(self) -> None:
+        models.set_model(self.root, provider="ollama", name="llama3.2",
+                         call_timeout=900)
+        seen = []
+
+        def fake_complete(_prompt, _settings, **kwargs):
+            seen.append(kwargs.get("timeout"))
+            return "a draft"
+
+        with mock.patch("ctx.models.complete", side_effect=fake_complete):
+            models.draft(self.root, "draft this")
+            models.draft(self.root, "draft this", timeout=45)
+        self.assertEqual(seen, [900, 45])
+
+    def test_spec_draft_timeout_is_a_clean_message_not_a_traceback(self) -> None:
+        models.set_model(self.root, provider="ollama", name="llama3.2",
+                         call_timeout=600)
+        with mock.patch("ctx.spec.draft_spec", side_effect=TimeoutError("timed out")):
+            with self.assertRaises(SystemExit) as caught:
+                cli.main(["--root", str(self.root), "spec", "draft",
+                          "--contribution", "contribution-x"])
+        message = str(caught.exception.code)
+        self.assertIn("did not reply within 600s", message)
+        self.assertIn("spec draft stopped", message)
+        self.assertIn("--call-timeout", message)
+
     def test_call_timeout_out_of_range_is_refused(self) -> None:
         for bad in (5, 10_000):
             with self.assertRaises(models.ModelError):
