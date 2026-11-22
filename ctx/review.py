@@ -19,7 +19,7 @@ import json
 import re
 from pathlib import Path
 
-from ctx import objects, safety
+from ctx import factory, objects, safety
 from ctx.publish import PublishError, _run
 
 DIFF_MAX_CHARS = 60_000
@@ -104,8 +104,9 @@ def review(root: Path, contribution_ref: str, *, responder=None,
     if found is None:
         raise ReviewError(f"contribution not found: {contribution_ref}")
     _path, spec, body = found
-    if spec.get("kind") != "issue" or spec.get("role") != "author":
-        raise ReviewError("review runs from an issue you authored")
+    if spec.get("kind") != "issue" or not factory.enabled(spec):
+        raise ReviewError("review runs from an enabled issue (stead-build "
+                          "label or feature-spec tag)")
     repo = objects.find(root, "repo", spec.get("repo") or "")
     if repo is None:
         raise ReviewError(f"repo not found: {spec.get('repo')!r}")

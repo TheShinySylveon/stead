@@ -63,6 +63,14 @@ Results live in [Dogfood](dogfood.md); safety gates in [Trust](trust.md).
   latency per build, and enforces the fail-before/pass-after gate: the base
   suite must pass first, the new test must fail against the base (without the
   code change), and the branch must pass.
+- **M5 (spec draft) — done.** `stead spec draft` turns a raw issue into a
+  buildable draft spec (a new linked contribution) in one model call, without
+  touching the source issue; the plan lives inside the approved body.
+- **M3 (intake + enablement) — done.** Sync fetches issues carrying the
+  `stead-build` label and records it as a tag; the build/publish/merge/review/
+  watch gates drop the `role: author` requirement in favour of "enabled (label
+  or `feature-spec` tag) + approved hash"; and `stead schedule show --interval
+  hourly|daily` prints the shorter monitor cadence.
 
 ## In scope (state)
 

@@ -48,6 +48,42 @@ def weekly_command(root: Path, project: str | None = None, *,
     return command
 
 
+def monitor_command(root: Path, *, watch: bool = True, merge: bool = False) -> str:
+    """The shorter monitor cadence: read-only sync, then watch/build enabled
+    specs. The weekly digest and maintenance jobs stay on the weekly schedule."""
+    if merge and not watch:
+        raise ScheduleError("--merge needs --watch")
+    exe = sys.executable
+    folder = str(root)
+    command = f'cd /d "{folder}" && "{exe}" -m stead sync github --limit 30'
+    if watch:
+        command += (f' && "{exe}" -m stead factory watch --build --publish'
+                    + (" --merge" if merge else ""))
+    return command
+
+
+def monitor_show(root: Path, *, interval: str = "hourly", watch: bool = True,
+                 merge: bool = False) -> str:
+    """The command a shorter scheduler runs, printed with the cron/task line."""
+    if interval not in ("hourly", "daily"):
+        raise ScheduleError("interval must be hourly or daily")
+    command = monitor_command(root, watch=watch, merge=merge)
+    if interval == "hourly":
+        cron, schtasks = "0 * * * *", "HOURLY"
+    else:
+        cron, schtasks = "0 9 * * *", "DAILY /ST 09:00"
+    return (
+        f"Monitor ({interval}), from {root}\n"
+        f"Read-only sync, then a watched build + publish for enabled specs. "
+        f"Nothing merges unless the repo says reach: merge.\n\n"
+        f"Command:\n{command}\n\n"
+        "Windows Task Scheduler:\n"
+        f'schtasks /Create /TN SteadMonitor /SC {schtasks} '
+        f'/TR "cmd /c {launcher_path(root)}" /F\n\n'
+        f"cron:\n{cron} {command}\n"
+    )
+
+
 def launcher_path(root: Path) -> Path:
     """Short, stable path for Task Scheduler. The command itself is too long."""
     return root / "private" / "run-weekly.cmd"

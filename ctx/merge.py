@@ -12,7 +12,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from ctx import objects, safety
+from ctx import factory, objects, safety
 from ctx.autonomy import effective
 from ctx.publish import PublishError, _git, _run
 
@@ -39,8 +39,9 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
     if found is None:
         raise MergeError(f"contribution not found: {contribution_ref}")
     _path, spec, _body = found
-    if spec.get("kind") != "issue" or spec.get("role") != "author":
-        raise MergeError("merge runs from an issue you authored")
+    if spec.get("kind") != "issue" or not factory.enabled(spec):
+        raise MergeError("merge runs from an enabled issue (stead-build label "
+                         "or feature-spec tag)")
     repo = objects.find(root, "repo", spec.get("repo") or "")
     if repo is None:
         raise MergeError(f"repo not found: {spec.get('repo')!r}")

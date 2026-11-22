@@ -24,6 +24,7 @@ from ctx import db, frontmatter, objects
 
 GH_TIMEOUT = 60  # seconds per gh call
 SEARCH_FIELDS = "number,title,url,state,repository,createdAt,updatedAt"
+BUILD_LABEL = "stead-build"  # a GitHub label that opts an issue into a build
 
 # gh search state values map 1:1 onto our ontology (open|closed|merged).
 _STATES = ("open", "closed", "merged")
@@ -117,9 +118,15 @@ def fetch_contributions(author: str = "@me", limit: int = 30) -> list[dict]:
         (["search", "prs", "--author", author, "--state", "open"], "pr", "author"),
         (["search", "prs", "--review-requested", author, "--state", "open"], "pr", "reviewer"),
         (["search", "issues", "--assignee", author, "--state", "open"], "issue", "assignee"),
+        # Label intake: any issue carrying `stead-build` is a monitored build
+        # target, regardless of author/assignee. The label is recorded as a tag.
+        (["search", "issues", "--label", BUILD_LABEL, "--state", "open"],
+         "issue", "author", True),
     ]
     items: dict[tuple, dict] = {}
-    for base, kind, role in queries:
+    for query in queries:
+        base, kind, role = query[0], query[1], query[2]
+        labeled = len(query) > 3 and query[3]
         results = _gh_json(base + ["--limit", str(limit), "--json", SEARCH_FIELDS]) or []
         for r in results:
             repo_full = (r.get("repository") or {}).get("nameWithOwner") or ""
@@ -128,7 +135,11 @@ def fetch_contributions(author: str = "@me", limit: int = 30) -> list[dict]:
             number = int(r.get("number", 0))
             key = (repo_full.lower(), kind, number)
             if key in items:
-                continue  # first role wins (author > reviewer > assignee)
+                # A label-intake issue wins the `stead-build` tag even if it
+                # was already cached under another role.
+                if labeled:
+                    items[key].setdefault("tags", []).append(BUILD_LABEL)
+                continue
             state = (r.get("state") or "open").lower()
             item = {
                 "repo_full": repo_full, "kind": kind, "number": number,
@@ -139,6 +150,8 @@ def fetch_contributions(author: str = "@me", limit: int = 30) -> list[dict]:
                 "role": role, "ci": "none",
                 "review": "requested" if role == "reviewer" else "none",
             }
+            if labeled:
+                item["tags"] = [BUILD_LABEL]
             if kind == "pr":
                 ci, decision = _enrich_pr(item["url"])
                 item["ci"] = ci
@@ -199,6 +212,13 @@ def write_contribution(root: Path, item: dict, login: str | None, today: str) ->
                  "visibility": "public"})
     meta.setdefault("role", item["role"])  # respect a manually set role
     meta.setdefault("method", "spec-kit")  # user-owned choice; sync never overrides it
+    for tag in (item.get("tags") or []):
+        tags = meta.setdefault("tags", [])
+        if isinstance(tags, str):
+            tags = [tags]
+        if tag not in tags:
+            tags.append(tag)
+        meta["tags"] = tags
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
     return path, is_new

@@ -31,8 +31,9 @@ def publish(root: Path, contribution_ref: str, *, runner=None,
     if found is None:
         raise PublishError(f"contribution not found: {contribution_ref}")
     _path, spec, _body = found
-    if spec.get("kind") != "issue" or spec.get("role") != "author":
-        raise PublishError("publish runs from an issue you authored")
+    if spec.get("kind") != "issue" or not factory.enabled(spec):
+        raise PublishError("publish runs from an enabled issue (stead-build "
+                           "label or feature-spec tag)")
     repo = objects.find(root, "repo", spec.get("repo") or "")
     if repo is None:
         raise PublishError(f"repo not found: {spec.get('repo')!r}")

@@ -685,6 +685,9 @@ def build_parser() -> argparse.ArgumentParser:
     sshow.add_argument("--project", help="also assemble this project's status")
     sshow.add_argument("--watch", action="store_true", help="also build and publish watched specs")
     sshow.add_argument("--merge", action="store_true", help="with --watch, merge when reach: merge")
+    sshow.add_argument("--interval", choices=("hourly", "daily"),
+                       help="print the shorter monitor cadence (sync + watch) "
+                            "instead of the weekly digest job")
     sinst = sched.add_parser("install", help="Windows only. Current user, Friday 16:00. No remote writes.")
     sinst.add_argument("--project", help="also assemble this project's status")
     sinst.add_argument("--watch", action="store_true", help="also build and publish watched specs")
@@ -1170,9 +1173,13 @@ def main(argv: list[str] | None = None) -> int:
         print("git history keeps the old text.")
         return 0
     if args.command == "schedule":
-        from ctx.schedule import ScheduleError, install, show
+        from ctx.schedule import ScheduleError, install, monitor_show, show
         if args.sub == "show":
-            print(show(root, args.project, watch=args.watch, merge=args.merge))
+            if getattr(args, "interval", None):
+                print(monitor_show(root, interval=args.interval,
+                                   watch=args.watch, merge=args.merge))
+            else:
+                print(show(root, args.project, watch=args.watch, merge=args.merge))
             return 0
         try:
             name = install(root, project=args.project, watch=args.watch,

@@ -147,6 +147,19 @@ class ScheduleAndSyncTest(unittest.TestCase):
         with self.assertRaises(ScheduleError):
             show(root, merge=True)
 
+    def test_monitor_cadence_is_a_shorter_interval(self) -> None:
+        from ctx.schedule import ScheduleError, monitor_show
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        text = monitor_show(root, interval="hourly", watch=True)
+        self.assertIn("sync github --limit 30", text)
+        self.assertIn("factory watch --build --publish", text)
+        self.assertIn("0 * * * *", text)  # hourly cron
+        self.assertNotIn("digest", text)  # the weekly digest stays weekly
+        with self.assertRaises(ScheduleError):
+            monitor_show(root, interval="monthly")
+
     def test_watch_can_build_and_publish(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
