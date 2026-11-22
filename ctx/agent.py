@@ -767,7 +767,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
 
 
 def lock_path(code: Path) -> Path:
-    digest = hashlib.sha1(str(code).encode("utf-8")).hexdigest()[:16]
+    # Canonicalize so one checkout always maps to one lock: Windows 8.3 short
+    # names (C:\Users\RUNNER~1\...) and the long form are the same directory but
+    # hash differently as raw strings, which would let a second build slip past
+    # a held lock (and leave a "dead" lock unreclaimed).
+    key = os.path.normcase(str(Path(code).resolve()))
+    digest = hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
     return Path(tempfile.gettempdir()) / f"stead-build-{digest}.lock"
 
 
