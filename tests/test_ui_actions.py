@@ -482,36 +482,104 @@ class PipelineStageTest(unittest.TestCase):
         (self.root / "context/contributions" / f"{stem}.md").write_text(
             frontmatter.dumps(meta, body), encoding="utf-8")
 
-    def test_pipeline_collapses_a_draft_and_names_the_next_step(self):
-        source = {"id": "contribution-me-app-issue-9", "type": "contribution",
-                  "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
-                  "repo": "repo-me-app", "kind": "issue", "number": 9,
-                  "role": "author", "state": "open", "visibility": "public",
-                  "tags": ["stead-build"]}
-        self._contrib(source, "issue-9", "# Flag\n")
-        draft = {"id": "contribution-me-app-issue-9-spec", "type": "contribution",
-                 "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
-                 "repo": "repo-me-app", "kind": "issue", "number": 9,
-                 "role": "author", "state": "open", "visibility": "public",
-                 "tags": ["feature-spec"], "drafted_from": "contribution-me-app-issue-9",
-                 "spec_sha": "abc123"}
-        self._contrib(draft, "issue-9-spec", "# Flag spec\n")
+    def _row(self):
+        rows = ui._pipeline_contribs(self.root)
+        return rows[0]
 
-        rows = ui._pipeline_contribs(self.root, ui._list(self.root, "contribution"))
-        self.assertEqual([r["id"] for r in rows], ["contribution-me-app-issue-9"])
-        row = rows[0]
-        self.assertEqual(row["stage"], "approved")
-        self.assertEqual(row["next"], "build")
-        self.assertEqual(row["act_id"], "contribution-me-app-issue-9-spec")
+    def _source(self, tags=("stead-build",), state="open"):
+        meta = {"id": "contribution-me-app-issue-9", "type": "contribution",
+                "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                "repo": "repo-me-app", "kind": "issue", "number": 9,
+                "role": "author", "state": state, "visibility": "public",
+                "tags": list(tags)}
+        self._contrib(meta, "issue-9", "# Flag\n")
+        return meta
+
+    def _draft(self, body="# Flag spec\n", spec_sha=None):
+        meta = {"id": "contribution-me-app-issue-9-spec", "type": "contribution",
+                "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                "repo": "repo-me-app", "kind": "issue", "number": 9,
+                "role": "author", "state": "open", "visibility": "public",
+                "tags": ["feature-spec"], "drafted_from": "contribution-me-app-issue-9"}
+        if spec_sha is not None:
+            meta["spec_sha"] = spec_sha
+        self._contrib(meta, "issue-9-spec", body)
+        return meta
+
+    def _record(self, outcome, branch="stead/9-flag", spec_sha="", pr_url=None):
+        rec = {"id": "document-rec", "type": "document", "title": "rec",
+               "created": "2026-11-21", "updated": "2026-11-21",
+               "tags": ["build-record"],
+               "contribution": "contribution-me-app-issue-9-spec",
+               "branch": branch, "outcome": outcome, "spec_sha": spec_sha}
+        if pr_url:
+            rec["pr_url"] = pr_url
+        (self.root / "context/documents/rec.md").write_text(
+            frontmatter.dumps(rec, "# rec\n"), encoding="utf-8")
 
     def test_ready_to_draft_when_no_spec_exists(self):
-        source = {"id": "contribution-me-app-issue-9", "type": "contribution",
-                  "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
-                  "repo": "repo-me-app", "kind": "issue", "number": 9,
-                  "role": "author", "state": "open", "visibility": "public",
-                  "tags": ["stead-build"]}
-        self._contrib(source, "issue-9", "# Flag\n")
-        rows = ui._pipeline_contribs(self.root, ui._list(self.root, "contribution"))
-        self.assertEqual(rows[0]["stage"], "draft")
-        self.assertEqual(rows[0]["next"], "draft")
-        self.assertEqual(rows[0]["act_id"], "contribution-me-app-issue-9")
+        self._source()
+        row = self._row()
+        self.assertEqual(row["stage"], "draft")
+        self.assertEqual([a["key"] for a in row["actions"]], ["draft"])
+
+    def test_drafted_needs_approval(self):
+        self._source()
+        self._draft()
+        row = self._row()
+        self.assertEqual(row["stage"], "drafted")
+        self.assertEqual([a["key"] for a in row["actions"]], ["approve"])
+        self.assertEqual(row["act_id"], "contribution-me-app-issue-9-spec")
+
+    def test_approved_needs_build(self):
+        from ctx import spec
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        row = self._row()
+        self.assertEqual(row["stage"], "approved")
+        self.assertEqual([a["key"] for a in row["actions"]], ["build"])
+
+    def test_changed_body_needs_reapproval(self):
+        from ctx import spec
+        self._source()
+        self._draft(body="# Flag spec\n", spec_sha=spec.body_hash("# Old body\n"))
+        row = self._row()
+        self.assertEqual(row["stage"], "drafted")
+        self.assertEqual([a["key"] for a in row["actions"]], ["approve"])
+
+    def test_authored_spec_needs_no_drafting(self):
+        self._source(tags=("feature-spec",))
+        row = self._row()
+        self.assertEqual(row["stage"], "drafted")
+        self.assertEqual([a["key"] for a in row["actions"]], ["approve"])
+        self.assertEqual(row["act_id"], "contribution-me-app-issue-9")
+
+    def test_failed_build_is_not_built(self):
+        from ctx import spec
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("failed", spec_sha=spec.body_hash(body))
+        row = self._row()
+        self.assertEqual(row["stage"], "approved")
+        self.assertEqual([a["key"] for a in row["actions"]], ["build"])
+
+    def test_stale_record_for_an_old_hash_is_not_built(self):
+        from ctx import spec
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("committed", spec_sha=spec.body_hash("# Old body\n"))
+        row = self._row()
+        self.assertEqual(row["stage"], "approved")
+
+    def test_successful_build_offers_publish(self):
+        from ctx import spec
+        self._source()
+        body = "# Flag spec\n"
+        self._draft(body=body, spec_sha=spec.body_hash(body))
+        self._record("committed", spec_sha=spec.body_hash(body))
+        row = self._row()
+        self.assertEqual(row["stage"], "built")
+        self.assertEqual([a["key"] for a in row["actions"]], ["publish"])

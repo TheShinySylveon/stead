@@ -552,10 +552,14 @@ def reconcile_records(root: Path, view_pr) -> dict:
     return {"reconciled": len(reconciled), "ids": reconciled}
 
 
-def reconcile_pr_state(root: Path, view_pr) -> dict:
+def reconcile_pr_state(root: Path, view_pr, repos: list[str] | None = None) -> dict:
     """Reconcile cached open PR contributions against live PR state. READ-ONLY:
     view_pr(url) returns the gh pr view JSON ({state, ...}) or None. A merged or
-    closed PR stops showing as open, so the contribution list stays honest."""
+    closed PR stops showing as open, so the contribution list stays honest.
+
+    ``repos`` (OWNER/NAME, the resolved sync scope) limits which cached PRs are
+    checked; an empty/None scope means every repo."""
+    scope = {n.lower() for n in (repos or [])}
     reconciled: list[str] = []
     for path, meta, _body in objects.iter_objects(root, "contribution"):
         if str(meta.get("kind") or "") != "pr":
@@ -564,6 +568,8 @@ def reconcile_pr_state(root: Path, view_pr) -> dict:
             continue
         pr_url = str(meta.get("url") or "")
         if not pr_url:
+            continue
+        if scope and _pr_owner_name(pr_url).lower() not in scope:
             continue
         try:
             data = view_pr(pr_url)
@@ -581,6 +587,17 @@ def reconcile_pr_state(root: Path, view_pr) -> dict:
         _patch(root, "contribution", meta.get("id") or path.stem, {"state": new_state})
         reconciled.append(str(meta.get("id") or path.stem))
     return {"reconciled": len(reconciled), "ids": reconciled}
+
+
+def _pr_owner_name(url: str) -> str:
+    """OWNER/NAME from a GitHub PR/issue url, or "" when it can't be read."""
+    url = (url or "").rstrip("/")
+    for prefix in ("https://github.com/", "http://github.com/", "github.com/"):
+        if url.startswith(prefix):
+            parts = url[len(prefix):].split("/")
+            if len(parts) >= 2:
+                return f"{parts[0]}/{parts[1]}"
+    return ""
 
 
 def _patch(root: Path, otype: str, ref: str, fields: dict) -> None:

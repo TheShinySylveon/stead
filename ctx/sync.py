@@ -370,7 +370,7 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
                 return None
 
         reconciled = writeback.reconcile_records(root, view_pr)["reconciled"]
-        reconciled_prs = writeback.reconcile_pr_state(root, view_pr)["reconciled"]
+        reconciled_prs = writeback.reconcile_pr_state(root, view_pr, repos)["reconciled"]
 
     conn = db.connect(root)
     try:

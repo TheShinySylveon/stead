@@ -181,6 +181,19 @@ class ReconcilePrStateTest(unittest.TestCase):
         self.assertEqual(self._state(root, "pr-open"), "open")
         self.assertEqual(self._state(root, "issue-open"), "open")  # issues untouched
 
+    def test_scope_limits_reconciliation_to_chosen_repos(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "context/contributions").mkdir(parents=True)
+        self._write(root, "pr-a", "pr", "https://github.com/me/app/pull/1")
+        self._write(root, "pr-b", "pr", "https://github.com/you/other/pull/2")
+        result = writeback.reconcile_pr_state(
+            root, lambda _url: {"state": "MERGED"}, ["me/app"])
+        self.assertEqual(result["reconciled"], 1)
+        self.assertEqual(self._state(root, "pr-a"), "merged")
+        self.assertEqual(self._state(root, "pr-b"), "open")
+
 
 if __name__ == "__main__":
     unittest.main()
