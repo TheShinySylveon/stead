@@ -1333,24 +1333,28 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "schedule":
         from ctx.schedule import (ScheduleError, install, install_monitor,
                                   monitor_show, show)
+        interval = getattr(args, "interval", None)
+        # The monitor cadence is sync + watch by definition; --watch only adds
+        # the build to the weekly job.
+        watch = args.watch or bool(interval)
         if args.sub == "show":
-            if getattr(args, "interval", None):
-                print(monitor_show(root, interval=args.interval,
-                                   watch=args.watch, merge=args.merge))
+            if interval:
+                print(monitor_show(root, interval=interval,
+                                   watch=watch, merge=args.merge))
             else:
-                print(show(root, args.project, watch=args.watch, merge=args.merge))
+                print(show(root, args.project, watch=watch, merge=args.merge))
             return 0
         try:
-            if getattr(args, "interval", None):
-                name = install_monitor(root, interval=args.interval,
-                                       watch=args.watch, merge=args.merge)
+            if interval:
+                name = install_monitor(root, interval=interval,
+                                       watch=watch, merge=args.merge)
             else:
-                name = install(root, project=args.project, watch=args.watch,
+                name = install(root, project=args.project, watch=watch,
                                merge=args.merge)
         except ScheduleError as exc:
             raise SystemExit(str(exc)) from exc
         print(f"installed {name}")
-        if getattr(args, "interval", None):
+        if interval:
             print("Monitor cadence. Read-only sync + watched build. Nothing merges "
                   "unless the repo says reach: merge.")
         else:

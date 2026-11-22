@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The monitor cadence defaults to watch, and `inbox list` reads any encoding.**
+  `schedule show/install --interval` now implies `--watch` (the monitor cadence
+  is sync + watch by definition), matching its help text instead of producing a
+  sync-only command. `inbox list` no longer crashes on a note that is not UTF-8;
+  undecodable bytes are replaced. `docs/trust.md` records that the local cockpit
+  reaches publish/merge/comment behind a confirmation.
 - **The cockpit reaches CLI parity; remote writes are confirmation-gated.**
   `spec draft` (issue → spec), the independent `review`, the build ledger with
   `metrics mark`, `doctor`, and the build kill switch (`factory stop`/`start`)

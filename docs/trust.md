@@ -194,7 +194,10 @@ checks and record the outcome in the ledger.
 ## GitHub writes beyond opening a PR
 
 Today the remote writes are `publish` (push an isolated branch, open a PR),
-`merge`, and the gated issue **comment**. Sync is strictly read-only. The
+`merge`, and the gated issue **comment**. Sync is strictly read-only. From the
+cockpit, publish, merge, and comment are reachable behind an explicit
+confirmation and are refused on a shared server; they are otherwise the same
+gated commands. The
 [MVP](mvp.md) requires Stead to **comment on the source issue linking the PR**
 so a human can merge and close together; filing issues upstream is deferred
 (humans file issues for now). The comment is gated like publish/merge: explicit
