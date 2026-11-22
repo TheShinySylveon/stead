@@ -53,27 +53,20 @@ Results live in [Dogfood](dogfood.md); safety gates in [Trust](trust.md).
 
 ## Milestone progress
 
-- **M0 (foundations) — done.** Builds run in their own `git worktree` (the
-  user's checkout is never touched); the builder reads the whole approved spec
-  body; failures carry a `reason` code; a spec gets one automatic build attempt
-  per approved hash (`--retry` to re-run); and a killed build's started marker
-  is reclaimed as an infrastructure failure record.
-- **M1 (build correctness harness) — done.** The builder asks for structured
-  JSON output (`response_format`), logs characters sent/received and model
-  latency per build, and enforces the fail-before/pass-after gate: the base
-  suite must pass first, the new test must fail against the base (without the
-  code change), and the branch must pass.
-- **M5 (spec draft) — done.** `stead spec draft` turns a raw issue into a
-  buildable draft spec (a new linked contribution) in one model call, without
-  touching the source issue; the plan lives inside the approved body.
-- **M3 (intake + enablement) — done.** Sync fetches issues carrying the
-  `stead-build` label and records it as a tag; the build/publish/merge/review/
-  watch gates drop the `role: author` requirement in favour of "enabled (label
-  or `feature-spec` tag) + approved hash"; and `stead schedule show --interval
-  hourly|daily` prints the shorter monitor cadence.
-- **M2 (issue comment) — done.** A gated, idempotent comment links the PR on the
-  source issue (`allow_comment: true`, `kind: own` only, never from assembly);
-  auto-runs on `build --publish` when enabled, or via `stead factory comment`.
+Two states: **code landed** (the change is merged) and **acceptance met** (the
+milestone's own measurement passed). Only the second is "done".
+
+| Milestone | Code | Acceptance |
+|---|---|---|
+| M0 foundations | landed | not run |
+| M1 harness | landed | baseline + first-attempt score **not run** |
+| M5 spec draft | landed | not run |
+| M3 intake | landed | not run |
+| M2 comment | landed | not run |
+| M4, M6, M7 | procedure written | not run |
+
+The code milestones above carry the review fixes for PRs #4–#8. Acceptance needs
+real model runs and a green PR at the `pr` ceiling, per [Dogfood](dogfood.md).
 
 ## In scope (state)
 
@@ -86,7 +79,7 @@ Results live in [Dogfood](dogfood.md); safety gates in [Trust](trust.md).
 | Build correctness on a local model | **blocker** — run 1 passed checks but did not implement the spec |
 | `require_tests`, protected paths, scrubbed/container checks | working |
 | PR from isolated branch (`pr`) | working |
-| **Comment on the issue linking the PR** | **not built — MVP blocker** |
+| **Comment on the issue linking the PR** | built (gated: `allow_comment`, `kind: own`) |
 | Write-back record + `stead metrics` | working |
 | Merge gates (green + required checks, no `--admin`) | working (human merges at MVP) |
 | `stead doctor`, cockpit local read/build | working |
