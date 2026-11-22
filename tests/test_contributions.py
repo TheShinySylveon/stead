@@ -404,5 +404,80 @@ class TestDigestAssembly(GithubTestCase):
             factory.assemble_digest(self.root)
 
 
+class TestSyncRepoScope(GithubTestCase):
+    """`sync github --repo OWNER/NAME` and a saved scope keep other repos out
+    of the store (a dogfood store holds one project, not every PR you have)."""
+
+    def _sync(self, **kwargs):
+        calls: list[list[str]] = []
+
+        def run(args, **kw):
+            calls.append(list(args))
+            return fake_gh_run(args, **kw)
+
+        with mock.patch.object(sync.shutil, "which", return_value="/usr/bin/gh"),              mock.patch.object(sync.subprocess, "run", side_effect=run):
+            result = sync.sync_github(self.root, **kwargs)
+        return result, calls
+
+    def _repo_files(self) -> list[str]:
+        return sorted(p.name for p in (self.root / "context/repos").glob("*.md"))
+
+    def test_repo_scope_filters_every_search_and_its_results(self) -> None:
+        result, calls = self._sync(repos=["testuser/my-app"])
+        searches = [c for c in calls if c[1:2] == ["search"]]
+        self.assertTrue(searches)
+        for call in searches:
+            self.assertIn("--repo", call)
+            self.assertIn("testuser/my-app", call)
+        # gh returned an out-of-scope PR and issue anyway; neither is written.
+        self.assertEqual(result["fetched"], 1)
+        self.assertEqual(result["repos_scope"], ["testuser/my-app"])
+        self.assertEqual(self._repo_files(), ["testuser-my-app.md"])
+
+    def test_a_saved_scope_applies_to_a_plain_sync(self) -> None:
+        from ctx import config
+        with mock.patch.object(sync.shutil, "which", return_value="/usr/bin/gh"),              mock.patch.object(sync.subprocess, "run", side_effect=fake_gh_run):
+            self.assertEqual(cli.cmd_sync_github(self.root, repos=["testuser/my-app"],
+                                                 remember=True), 0)
+        self.assertEqual(config.sync_repos(self.root), ["testuser/my-app"])
+        for path in (self.root / "context/contributions").glob("*.md"):
+            path.unlink()
+        result, _calls = self._sync()
+        self.assertEqual(result["fetched"], 1)
+        # --all-repos ignores the saved scope for one run without clearing it.
+        result, _calls = self._sync(repos=[])
+        self.assertEqual(result["fetched"], 3)
+        self.assertEqual(config.sync_repos(self.root), ["testuser/my-app"])
+
+    def test_remember_with_all_repos_clears_the_scope(self) -> None:
+        from ctx import config
+        config.save_sync_repos(self.root, ["testuser/my-app"])
+        with mock.patch.object(sync.shutil, "which", return_value="/usr/bin/gh"),              mock.patch.object(sync.subprocess, "run", side_effect=fake_gh_run):
+            cli.cmd_sync_github(self.root, all_repos=True, remember=True)
+        self.assertEqual(config.sync_repos(self.root), [])
+        with self.assertRaises(SystemExit):
+            cli.cmd_sync_github(self.root, remember=True)
+
+    def test_label_intake_skips_owned_repos_outside_the_scope(self) -> None:
+        cli.cmd_repo_add(self.root, "Cool Lib", url="https://github.com/oss-org/cool-lib",
+                         kind="own")
+        _result, calls = self._sync(repos=["testuser/my-app"])
+        labeled = [c for c in calls if "--label" in c]
+        self.assertEqual(labeled, [])
+
+    def test_bad_repo_names_are_refused_and_urls_accepted(self) -> None:
+        from ctx import config
+        with self.assertRaises(SystemExit):
+            cli.cmd_sync_github(self.root, repos=["not a repo"])
+        self.assertEqual(config.check_repos(["https://github.com/Me/App/", "me/app"]),
+                         ["Me/App"])
+
+    def test_saving_other_settings_keeps_the_scope(self) -> None:
+        from ctx import config
+        config.save_sync_repos(self.root, ["testuser/my-app"])
+        config.save(self.root, {"deployment": "single"})
+        self.assertEqual(config.sync_repos(self.root), ["testuser/my-app"])
+
+
 if __name__ == "__main__":
     unittest.main()

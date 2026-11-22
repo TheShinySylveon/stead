@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **`sync github --repo OWNER/NAME` scopes the sync.** Each `gh search` gets
+  `--repo`, out-of-scope results are dropped, and label intake skips owned
+  repos outside the scope. `--remember` saves the scope in `stead.json` for
+  plain and scheduled runs; `--all-repos` overrides it for one run or, with
+  `--remember`, clears it. Without it, a dogfood store's first sync pulled in
+  every open PR the user had, across unrelated and work repos.
 - **Updating a Stead PR from main no longer counts as a human edit.** The
   merged head is compared with the build commit by content: commits on the
   branch line must all be clean merges of the base (same patch id before and

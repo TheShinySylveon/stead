@@ -184,6 +184,8 @@ python -m stead --root ../stead-dogfood build --contribution CONTRIBUTION_ID --p
 python -m stead --root ../stead-dogfood metrics
 
 # Reconcile merged/closed outcomes and human edits from live PR state (read-only).
+# The first run saves the scope, so the dogfood store never pulls in your other repos.
+python -m stead --root ../stead-dogfood sync github --repo TheShinySylveon/stead --remember
 python -m stead --root ../stead-dogfood sync github
 ```
 

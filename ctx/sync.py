@@ -107,9 +107,22 @@ def _enrich_pr(url: str) -> tuple[str, str]:
             _review_decision(data.get("reviewDecision")))
 
 
-def fetch_contributions(author: str = "@me", limit: int = 30) -> list[dict]:
+def _repo_args(repos: list[str] | None) -> list[str]:
+    args: list[str] = []
+    for name in repos or []:
+        args += ["--repo", name]
+    return args
+
+
+def _in_scope(repo_full: str, repos: list[str] | None) -> bool:
+    return not repos or repo_full.lower() in {name.lower() for name in repos}
+
+
+def fetch_contributions(author: str = "@me", limit: int = 30,
+                        repos: list[str] | None = None) -> list[dict]:
     """Fetch the user's open PRs (author), review-requested PRs, and assigned
-    issues across repos. READ-ONLY. Returns normalized item dicts, deduped."""
+    issues across repos, or only in ``repos`` (OWNER/NAME) when given.
+    READ-ONLY. Returns normalized item dicts, deduped."""
     login = None
     try:
         login = (_run_gh(["api", "user", "--jq", ".login"]).stdout or "").strip() or None
@@ -123,10 +136,11 @@ def fetch_contributions(author: str = "@me", limit: int = 30) -> list[dict]:
     ]
     items: dict[tuple, dict] = {}
     for base, kind, role in queries:
-        results = _gh_json(base + ["--limit", str(limit), "--json", SEARCH_FIELDS]) or []
+        results = _gh_json(base + _repo_args(repos)
+                           + ["--limit", str(limit), "--json", SEARCH_FIELDS]) or []
         for r in results:
             repo_full = (r.get("repository") or {}).get("nameWithOwner") or ""
-            if not repo_full or "/" not in repo_full:
+            if not repo_full or "/" not in repo_full or not _in_scope(repo_full, repos):
                 continue
             number = int(r.get("number", 0))
             key = (repo_full.lower(), kind, number)
@@ -173,7 +187,8 @@ def _fetch_issue_body(url: str) -> str:
     return raw.strip()
 
 
-def fetch_labeled(root: Path, login: str | None, limit: int = 30) -> list[dict]:
+def fetch_labeled(root: Path, login: str | None, limit: int = 30,
+                  repos: list[str] | None = None) -> list[dict]:
     """Fetch `stead-build`-labelled issues, scoped to repos you own or watch.
 
     A label on a stranger's repo must not pull their issues into your store, so
@@ -185,7 +200,7 @@ def fetch_labeled(root: Path, login: str | None, limit: int = 30) -> list[dict]:
         if meta.get("kind") != "own" and meta.get("trigger") != "watch":
             continue
         owner_name = _owner_name(meta)
-        if not owner_name or "/" not in owner_name:
+        if not owner_name or "/" not in owner_name or not _in_scope(owner_name, repos):
             continue
         results = _gh_json(
             ["search", "issues", "--label", BUILD_LABEL, "--state", "open",
@@ -295,9 +310,13 @@ def write_contribution(root: Path, item: dict, login: str | None, today: str) ->
 
 
 def sync_github(root: Path, author: str = "@me", limit: int = 30,
-                offline: bool = False) -> dict:
+                offline: bool = False, repos: list[str] | None = None) -> dict:
     """Explicit, read-only GitHub sync. With --offline, only re-index the
-    local markdown cache (no gh, no network)."""
+    local markdown cache (no gh, no network). ``repos`` (OWNER/NAME) limits
+    what is fetched; None uses the store's saved scope, [] means every repo."""
+    if repos is None:
+        from ctx import config
+        repos = config.sync_repos(root)
     db.require_db(root)
     today = date.today().isoformat()
     if not offline:
@@ -306,7 +325,7 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
                 "gh CLI not found on PATH. Install it (https://cli.github.com) "
                 "and run `gh auth login`, or use `stead sync github --offline` to "
                 "re-index the local cache without network.")
-        items = fetch_contributions(author=author, limit=limit)
+        items = fetch_contributions(author=author, limit=limit, repos=repos)
         login = None
         try:
             login = (_run_gh(["api", "user", "--jq", ".login"]).stdout or "").strip() or None
@@ -314,7 +333,7 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
             pass
         # Label intake, scoped to repos you own or watch.
         by_key = {(i["repo_full"].lower(), i["kind"], i["number"]): i for i in items}
-        for item in fetch_labeled(root, login, limit):
+        for item in fetch_labeled(root, login, limit, repos):
             key = (item["repo_full"].lower(), item["kind"], item["number"])
             if key in by_key:
                 existing = by_key[key]
@@ -354,5 +373,5 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
                 return None
 
         reconciled = writeback.reconcile_records(root, view_pr)["reconciled"]
-    return {"offline": offline, "fetched": len(items), "new": n_new,
+    return {"offline": offline, "repos_scope": list(repos), "fetched": len(items), "new": n_new,
             "updated": n_updated, "reconciled": reconciled, **counts}

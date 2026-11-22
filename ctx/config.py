@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import secrets
 from pathlib import Path
 
@@ -74,7 +75,7 @@ def save(root: Path, data: dict) -> None:
         "port": int(data.get("port") or 8765),
         "access_token": token,
     }
-    for key in ("model", "factory", "actor"):
+    for key in ("model", "factory", "actor", "sync"):
         value = data[key] if key in data else current.get(key)
         if isinstance(value, dict) and value:
             payload[key] = value
@@ -126,6 +127,50 @@ def save_factory(root: Path, factory: dict) -> None:
     current.setdefault("port", 8765)
     current.setdefault("access_token", "")
     config_path(root).write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+
+
+_REPO_RE = re.compile(r"^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$")
+
+
+def check_repos(repos: list[str]) -> list[str]:
+    """OWNER/NAME names, deduplicated case-insensitively, in the given order."""
+    seen: dict[str, str] = {}
+    for raw in repos:
+        name = str(raw).strip().strip("/")
+        if name.lower().startswith("https://github.com/"):
+            name = name[len("https://github.com/"):].strip("/")
+        if not _REPO_RE.match(name):
+            raise ConfigError(f"not a GitHub repo name: {raw!r}. Use OWNER/NAME.")
+        seen.setdefault(name.lower(), name)
+    return list(seen.values())
+
+
+def sync_repos(root: Path) -> list[str]:
+    """The saved `sync github` scope: [] means every repo."""
+    block = read_raw(root).get("sync")
+    repos = block.get("repos") if isinstance(block, dict) else None
+    if not isinstance(repos, list):
+        return []
+    try:
+        return check_repos(repos)
+    except ConfigError:
+        return []
+
+
+def save_sync_repos(root: Path, repos: list[str]) -> list[str]:
+    """Save (or, with [], clear) the `sync github` scope. Keeps other settings."""
+    chosen = check_repos(repos)
+    current = read_raw(root)
+    if chosen:
+        current["sync"] = {"repos": chosen}
+    else:
+        current.pop("sync", None)
+    current.setdefault("deployment", "single")
+    current.setdefault("bind", "127.0.0.1")
+    current.setdefault("port", 8765)
+    current.setdefault("access_token", "")
+    config_path(root).write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+    return chosen
 
 
 def save_model(root: Path, model: dict, block: str = "model") -> None:
