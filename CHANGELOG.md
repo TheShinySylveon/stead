@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+- **`spec draft --all` drafts every open `stead-build` issue with no draft
+  yet.** The monitor cadence runs it automatically after `sync github`, so a
+  person only approves. It never approves: each draft is still gated by
+  `spec approve`. An issue with an existing draft, a closed issue, or a draft
+  that fails (e.g. no fetched body) is skipped, not fatal.
+- **`schedule show` / `install` work for a store that is not the code folder.**
+  The generated command changed into the store (`cd /d "<store>"`) and assumed
+  the Stead code lived there, so a dogfood store (`--root C:\dev\stead-dogfood`)
+  failed with `No module named stead`. The command now changes into the Stead
+  code folder and passes `--root "<store>"` to every `stead` call, in both the
+  Windows (`cd /d`) and POSIX (`cd`) forms. A store that is the code folder
+  still works (a redundant `--root` is harmless).
 - **The tamper check ignores a person's harmless git config changes.** It
   compared `.git/config` byte for byte, so a `git push -u`, a new tracking
   branch, or setting an identity in the same repo while a build ran its checks

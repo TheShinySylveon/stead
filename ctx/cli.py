@@ -803,7 +803,10 @@ def build_parser() -> argparse.ArgumentParser:
     spa = sp.add_parser("approve", help="approve the current body of a contribution as a build spec")
     spa.add_argument("--contribution", required=True)
     spd = sp.add_parser("draft", help="draft a feature spec from a raw issue in one model call")
-    spd.add_argument("--contribution", required=True)
+    spd.add_argument("--contribution",
+                     help="the source issue id (mutually exclusive with --all)")
+    spd.add_argument("--all", action="store_true",
+                     help="draft every open stead-build issue with no draft yet. Never approves.")
     spd.add_argument("--redraft", action="store_true",
                      help="replace the body of the existing draft and clear its approval")
 
@@ -1228,7 +1231,19 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "spec" and args.sub == "draft":
         from ctx.models import ModelError
-        from ctx.spec import SpecError, draft_spec
+        from ctx.spec import SpecError, auto_draft, draft_spec
+        if args.all:
+            report = auto_draft(root)
+            for id_ in report["drafted"]:
+                print(f"drafted {id_}")
+            for skip in report["skipped"]:
+                print(f"skipped {skip['id']}: {skip['reason']}")
+            print(f"{len(report['drafted'])} drafted, {len(report['skipped'])} skipped")
+            print("never approves. Review and approve each with: "
+                  "python -m stead spec approve --contribution ID")
+            return 0
+        if not args.contribution:
+            raise SystemExit("spec draft needs --contribution ID or --all")
         try:
             drafted = draft_spec(root, args.contribution, redraft=args.redraft)
         except (SpecError, ModelError) as exc:

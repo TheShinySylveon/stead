@@ -210,7 +210,10 @@ run a factory. The hook is off until that token exists.
 `private/run-weekly.cmd` and registers that short path, because Task Scheduler
 rejects a command over 261 characters. The job runs a read-only sync, a local
 digest if the cache changed, a maintenance draft, and the status of
-`--project` when you pass one. It does not push or merge.
+`--project` when you pass one. It does not push or merge. The generated command
+changes into the Stead code folder and passes `--root "<store>"` to each
+`stead` call, so the store and the code can be different folders — as they must
+be for a dogfood run.
 
 `schedule show --interval hourly|daily` prints the shorter monitor cadence — a
 read-only sync followed by `factory watch --build --publish` for enabled specs.
@@ -223,6 +226,7 @@ before turning on an hourly task.
 
 ```bash
 python -m stead spec draft --contribution ID [--redraft]
+python -m stead spec draft --all
 python -m stead spec approve --contribution ID
 python -m stead factory publish --contribution ID
 python -m stead factory merge --contribution ID
@@ -245,6 +249,11 @@ not exist while a file of the same name does elsewhere (`stead/cli.py` →
 draft: more than 8 acceptance criteria, or a description under 25 or over 400
 words. `spec approve` refuses such a spec outright, so an approval always means
 the spec is ready to build.
+
+`spec draft --all` drafts every open `stead-build`-labelled issue with no draft
+yet, in one pass, and never approves: each draft still needs a person's
+`spec approve`. The monitor cadence (`schedule show --interval`) runs it after
+`sync github`, so the loop becomes sync → draft → approve → build.
 
 `spec approve` records a SHA-256 of the contribution body and prints the body
 being approved. A build refuses an unapproved spec, and refuses a spec whose

@@ -179,6 +179,69 @@ class ScheduleAndSyncTest(unittest.TestCase):
         self.assertFalse((root / "private" / "run-weekly.cmd").exists())
         self.assertIn("/SC", calls[0])
 
+    def test_separate_store_cds_into_code_and_passes_root(self) -> None:
+        from ctx import schedule as schedule_module
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        store = Path(tmp.name)
+        code = str(Path(schedule_module.__file__).resolve().parents[1])
+        text = show(store)
+        self.assertIn(f'cd /d "{code}"', text)
+        self.assertIn(f'--root "{store}"', text)
+        self.assertNotIn(f'cd /d "{store}"', text)
+
+    def test_monitor_command_targets_code_and_store(self) -> None:
+        from ctx import schedule as schedule_module
+        from ctx.schedule import monitor_command
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        store = Path(tmp.name)
+        code = str(Path(schedule_module.__file__).resolve().parents[1])
+        text = monitor_command(store, watch=True)
+        self.assertIn(f'cd /d "{code}"', text)
+        self.assertIn(f'--root "{store}"', text)
+        self.assertIn("factory watch --build --publish", text)
+
+    def test_posix_monitor_uses_cd_without_d_and_root(self) -> None:
+        from ctx import schedule as schedule_module
+        from ctx.schedule import _monitor_posix
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        store = Path(tmp.name)
+        code = str(Path(schedule_module.__file__).resolve().parents[1])
+        text = _monitor_posix(store, watch=True)
+        self.assertIn(f'cd "{code}"', text)
+        self.assertNotIn("cd /d", text)
+        self.assertIn(f'--root "{store}"', text)
+
+    def test_monitor_auto_drafts_new_specs_before_watch(self) -> None:
+        from ctx.schedule import monitor_command
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        text = monitor_command(Path(tmp.name), watch=True)
+        self.assertIn("spec draft --all", text)
+        self.assertLess(text.index("spec draft --all"),
+                        text.index("factory watch --build --publish"))
+
+    def test_same_folder_store_keeps_working(self) -> None:
+        from ctx import schedule as schedule_module
+        code = str(Path(schedule_module.__file__).resolve().parents[1])
+        text = show(Path(code))
+        self.assertIn(f'cd /d "{code}"', text)
+        self.assertIn(f'--root "{code}"', text)
+
+    def test_paths_with_spaces_are_quoted(self) -> None:
+        from ctx import schedule as schedule_module
+        from ctx.schedule import _monitor_posix
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        store = Path(tmp.name) / "store with space"
+        code = str(Path(schedule_module.__file__).resolve().parents[1])
+        self.assertIn(f'--root "{store}"', show(store))
+        posix = _monitor_posix(store, watch=True)
+        self.assertIn(f'--root "{store}"', posix)
+        self.assertIn(f'cd "{code}"', posix)
+
     def test_watch_can_build_and_publish(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
