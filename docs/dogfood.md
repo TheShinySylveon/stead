@@ -133,18 +133,30 @@ Make the approval gate visible to a hand editor.
 - [ ] a test covers all three cases
 ```
 
-## Results (fill from a real run)
+## Results (real runs)
 
-| Spec | Outcome | Repair rounds | Checks mode | Build time | Tests touched | Human edits before merge |
-|---|---|---|---|---|---|---|
-| _pending a model run_ | | | | | | |
+Model: LFM3-1.7B via LM Studio (local, OpenAI-compatible). Ceiling: `shadow`.
 
-Aggregate, from `stead metrics --json`:
+| # | Spec | Mechanically | Spec actually met? | Notes |
+|---|---|---|---|---|
+| 1 | `metrics --since` | committed, checks passed | **No** | Wrote a stray `stead/metrics.py` (an invented path); never edited `ctx/metrics.py` or `ctx/cli.py`; `stead metrics --since` was still unrecognized. The existing suite passed because nothing tested the new feature. |
 
-- specs built: _pending_
-- share merged without human edits: _pending_
-- repair rounds used: _pending_
-- cost and time per build: _pending_
+**Finding from run 1: green checks ≠ criteria met.** The check command ran the
+existing suite, which did not cover the new behavior, so empty work passed.
+Mitigations added afterward:
+
+- `require_tests` gate (default on): a code spec with acceptance criteria must
+  add a test that fails without the change and passes with it.
+- Firmer protocol: plan once, one action per reply, use the real paths from the
+  tree, and a progress nudge toward write → check → finish.
+- Failed builds now save a full transcript so the next failure is diagnosable.
+
+CI/CD is the independent backstop (see [Trust](trust.md#empty-work-ci-and-acceptance-checks)):
+the new test re-runs on the PR, and required CI blocks merge. An **acceptance
+check** that exercises the feature itself is still needed to catch a
+trivially-passing test.
+
+Aggregate, from `stead metrics --json`: _pending more runs_.
 
 Publish these here and link them from the README once they exist. Until then the
 honest claim is the pipeline and the gates, not a success rate.

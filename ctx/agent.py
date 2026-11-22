@@ -122,6 +122,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         deleted: list[str] = []
         edits = 0
         failures = 0
+        no_test = 0
         progress_nudged = False
         checks_mode = "none" if ghost or not checks else "host"
         for _step in range(max_steps):
@@ -293,6 +294,23 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 changed = bool(files or deleted or (resume and dirty))
                 if not changed and not ghost:
                     raise BuildError("the model finished without changing a file")
+                if criteria and not ghost and safety.truthy(repo_meta.get("require_tests", "true")):
+                    touched_tests = [p for p in list(files) + deleted
+                                     if safety.is_test_path(p)]
+                    if not touched_tests:
+                        no_test += 1
+                        if no_test > repair_rounds:
+                            raise BuildError(
+                                "the spec has acceptance criteria but no test was added. "
+                                "A build must add a test that fails without the change and "
+                                "passes with it.")
+                        transcript.append(
+                            "The spec has acceptance criteria, but you changed no test. "
+                            "Add a test under tests/ that fails without your change and "
+                            "passes with it. Edit the real files the spec names (for "
+                            "example ctx/metrics.py and ctx/cli.py), not an invented path. "
+                            "Then run check and finish again. Do not finish yet.")
+                        continue
                 if checks and not ghost:
                     ok, output, checks_mode = _run_checks(code, checks, repo_meta, deadline)
                     if not ok:

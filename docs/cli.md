@@ -153,6 +153,7 @@ daily watched-build budget (`0` means no cap) and the per-build wall clock.
 | `checks_isolation: docker` + `checks_image` | Run checks in a container with no network |
 | `trust_checks: host` | Accept host checks for merge (explicit) |
 | `allow_test_edits: true` | Let the agent write test paths |
+| `require_tests: false` | Allow a code build with criteria to finish without adding a test (default on) |
 | `allow_ci_edits: true` | Let the agent write `.github/` and CI config |
 | `protected_paths:` | Extra paths the agent may not write (comma list) |
 | `merge_without_required_checks: true` | Merge even when the default branch requires nothing |

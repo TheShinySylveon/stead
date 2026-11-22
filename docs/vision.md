@@ -352,3 +352,9 @@ factories unless `--force`) and a cockpit delete with confirmation.
 - Missing capability for the full loop: **filing GitHub issues upstream**. Sync
   is read-only and publish only opens PRs; "create" today means local
   spec/contribution objects.
+- Missing capability for semi-autonomy: **commenting on issues/PRs** (status, CI
+  results, questions). Humans file the issues; Stead needs to respond on them.
+  A gated remote write, not built yet — see [Trust](trust.md#github-writes-beyond-opening-a-pr).
+- Missing guard against empty work: an **acceptance check** that exercises the
+  feature independent of the model's tests, run in CI. `require_tests` + required
+  CI cover most of it; a trivially-passing test still slips through.

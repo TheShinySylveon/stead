@@ -35,7 +35,7 @@ class BuildFixture(unittest.TestCase):
                 "created": "2026-11-21", "updated": "2026-11-21",
                 "status": "active", "kind": "own", "default_branch": "main",
                 "code_path": str(self.code), "reach": "draft-pr",
-                "trigger": "on-demand"}
+                "trigger": "on-demand", "require_tests": "false"}
         (self.root / "context/repos/app.md").write_text(
             frontmatter.dumps(repo, "# App\n"), encoding="utf-8")
         body = ("The greeting script should accept a --name option so a caller can "
@@ -352,6 +352,33 @@ class BuildTest(BuildFixture):
                              responder=responder)
         self.assertEqual(result["files"], ["app.py"])
         self.assertEqual(result["plan"], "First plan.")
+
+    def test_a_spec_with_criteria_must_add_a_test(self) -> None:
+        self._set_repo(require_tests="true", allow_test_edits="true")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+            {"action": "write", "path": "tests/test_app.py",
+             "content": "def test_flag():\n    assert True\n"},
+            {"action": "finish", "summary": "Done with a test."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertIn("tests/test_app.py", result["tests_touched"])
+        self.assertIn("app.py", result["files"])
+
+    def test_no_test_after_repair_rounds_fails(self) -> None:
+        self._set_repo(require_tests="true")
+        responder = self._responder([
+            {"action": "plan", "summary": "Add the flag."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder, repair_rounds=0)
+        self.assertIn("no test was added", str(caught.exception))
 
     def test_runner_config_warning(self) -> None:
         from ctx import safety

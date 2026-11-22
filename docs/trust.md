@@ -106,6 +106,46 @@ The command never passes `--admin`, never pushes the default branch, and never
 merges a draft. It does not add an independent reviewer pass; that is a known
 gap, not a claim.
 
+## Empty work: CI and acceptance checks
+
+A build can pass the repo's checks and still not implement the spec. Observed in
+dogfood: the model added a stray file at an invented path, never wired the
+feature, and the existing test suite passed because nothing tested the new
+behavior. Green checks are not the same as criteria met. The mitigation is a
+stack, not one trick:
+
+1. **Force coverage locally.** `require_tests` (default on) refuses `finish` on a
+   code spec with acceptance criteria until the build adds a test. The test
+   should fail without the change and pass with it, so the suite grows to cover
+   the criterion. A repo can opt out with `require_tests: false`.
+2. **Protect the gate.** `.github/` and CI config are protected paths, so the
+   model cannot edit the workflow to make CI pass.
+3. **CI as an independent required check.** The pull request triggers the repo's
+   real CI, which re-runs the suite (including the new test) on a clean runner.
+   If the feature is not wired, the new test fails and the PR is red.
+4. **Merge gated on green required checks.** With CI as a required status check
+   on the default branch, red CI blocks merge — a human cannot merge it without
+   overriding branch protection. At the `pr` ceiling Stead opens the PR and a
+   person reviews; CI is the objective backstop.
+
+What CI cannot close: a model-written test can be trivially passing or test the
+wrong thing, and CI runs whatever test was written. So the stack needs an
+**acceptance check** that exercises the actual feature independent of the
+model's tests — a per-spec `acceptance:` command (for example, run the new CLI
+flag and assert the behavior) executed in CI, or an independent reviewer pass.
+That is the criterion→test mapping still to build. `stead build --wait` can poll
+PR checks and record the outcome in the ledger.
+
+## GitHub writes beyond opening a PR
+
+Today the only remote writes are `publish` (push an isolated branch, open a PR)
+and `merge`. Sync is strictly read-only. For semi-autonomy the dogfood contract
+needs Stead to **comment on issues and PRs** (status, CI results, questions) and
+eventually file issues. These are not built yet. When added they must be gated
+like publish/merge: explicit per-repo permission, never from assembly, never the
+default, and reviewable. Commenting is lower-risk than merging but is still a
+public remote write under the user's identity.
+
 ## Shared server: every account is an admin
 
 `stead ui --deploy` and the Docker image serve several people. Accounts are
