@@ -112,6 +112,8 @@ Scheduling is under [Capture and schedule](#capture-and-schedule).
 ```bash
 python -m stead model show
 python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME [--base-url URL] [--key KEY]
+python -m stead model test [--prompt TEXT] [--timeout N]
+python -m stead model list
 
 python -m stead factory run --factory weekly-contribution-digest [--shadow|--live] [--generate]
 python -m stead factory run --factory weekly-project-status --project P [--shadow|--live] [--generate]

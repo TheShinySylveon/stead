@@ -1441,6 +1441,19 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                 result["ok"] = True
             except ModelError as exc:
                 raise UiError(str(exc)) from exc
+        elif path == "/api/model/test":
+            from ctx.models import ModelError, test_model
+            try:
+                result = test_model(root, timeout=60)
+            except ModelError as exc:
+                raise UiError(str(exc)) from exc
+        elif path == "/api/model/list":
+            from ctx.models import ModelError, list_models
+            try:
+                result = list_models(root)
+                result["ok"] = True
+            except ModelError as exc:
+                raise UiError(str(exc)) from exc
         elif path == "/api/settings":
             from ctx.config import ConfigError, choose, rotate_token
             try:

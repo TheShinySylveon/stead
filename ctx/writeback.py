@@ -79,7 +79,20 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         "id": doc_id, "type": "document", "title": title[:200],
         "created": today, "updated": today, "status": "active",
         "tags": [RECORD_TAG, f"repo:{repo_id}"],
+        "outcome": outcome,
+        "checks_mode": str(result.get("checks_mode") or "none"),
+        "elapsed_seconds": str(result.get("elapsed_seconds") or 0),
+        "repair_rounds": str(result.get("repair_rounds") or 0),
+        "files": list(result.get("files") or []),
+        "tests_touched": list(result.get("tests_touched") or []),
+        "tests_deleted": list(result.get("tests_deleted") or []),
     }
+    if result.get("branch"):
+        meta["branch"] = result["branch"]
+    if result.get("commit"):
+        meta["commit"] = result["commit"]
+    if result.get("pr_url"):
+        meta["pr_url"] = result["pr_url"]
     if repo_meta.get("project"):
         meta["project"] = repo_meta["project"]
     if run_id is not None:

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timezone
@@ -129,6 +130,47 @@ def complete(prompt: str, settings: dict, *, transport=None,
     else:
         raw = transport(body, settings)
     return _content(raw, settings.get("provider") or "")
+
+
+def test_model(root: Path, prompt: str = "Reply with exactly one word: ok",
+               *, transport=None, timeout: float = 60) -> dict:
+    """One live call to prove the configured model works. Never prints the key."""
+    settings = resolve(root)
+    start = time.monotonic()
+    text = complete(prompt, settings, transport=transport, timeout=timeout, temperature=0)
+    return {
+        "ok": True,
+        "provider": settings.get("provider") or "",
+        "name": settings["name"],
+        "base_url": settings["base_url"],
+        "ms": round((time.monotonic() - start) * 1000),
+        "reply": text.strip()[:200],
+    }
+
+
+def list_models(root: Path, *, transport=None, timeout: float = 30) -> dict:
+    """List model ids the endpoint offers (OpenAI-compatible /models)."""
+    settings = resolve(root)
+    url = settings["base_url"] + "/models"
+    headers = {"Accept": "application/json"}
+    key = settings.get("api_key") or ""
+    if settings.get("provider") == "anthropic":
+        headers["anthropic-version"] = ANTHROPIC_VERSION
+        if key:
+            headers["x-api-key"] = key
+    elif key:
+        headers["Authorization"] = "Bearer " + key
+    if transport is None:
+        data = _get(url, headers, timeout)
+    else:
+        data = transport(url, settings)
+    items = data.get("data") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        raise ModelError("the endpoint did not return a model list")
+    ids = [str(item.get("id")) for item in items
+           if isinstance(item, dict) and item.get("id")]
+    return {"provider": settings.get("provider") or "", "base_url": settings["base_url"],
+            "models": sorted(ids)}
 
 
 def check_eval_files(root: Path, factory_name: str | None = None) -> dict:
@@ -346,6 +388,26 @@ def _request(settings: dict, prompt: str, temperature: float) -> tuple[str, dict
 def _post(url: str, body: dict, headers: dict, api_key: str, timeout: float) -> dict:
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
+    for name, value in headers.items():
+        req.add_header(name, value)
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            raw = resp.read()
+    except urllib.error.HTTPError as exc:
+        raise ModelError(f"model request failed ({exc.code})") from exc
+    except urllib.error.URLError as exc:
+        raise ModelError(f"could not reach the model: {exc.reason}") from exc
+    try:
+        parsed = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise ModelError("the model response was not JSON") from exc
+    if not isinstance(parsed, dict):
+        raise ModelError("the model response was not a JSON object")
+    return parsed
+
+
+def _get(url: str, headers: dict, timeout: float) -> dict:
+    req = urllib.request.Request(url, method="GET")
     for name, value in headers.items():
         req.add_header(name, value)
     try:

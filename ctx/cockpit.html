@@ -884,6 +884,11 @@ function renderSettings() {
         <input type="password" name="api_key" placeholder="API key, leave blank to keep" aria-label="Model API key" autocomplete="off">
         <div><button class="primary" type="submit">Save model</button></div>
       </form>
+      <div class="inline" style="margin-top:8px">
+        <button type="button" class="quiet" data-model-test>Test connection</button>
+        <button type="button" class="quiet" data-model-list>List models</button>
+      </div>
+      <div class="meta" id="model-test-result" style="margin-top:6px"></div>
     </div>
     <div class="section-title">Factory</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
@@ -1315,6 +1320,26 @@ document.body.addEventListener("click", async (event) => {
       toast("Spec approved (" + result.sha.slice(0, 12) + "…)");
       await load();
     } catch (err) { toast(err.message); }
+    return;
+  }
+  const modelTest = event.target.closest("[data-model-test]");
+  if (modelTest) {
+    const out = document.getElementById("model-test-result");
+    if (out) out.textContent = "Testing…";
+    try {
+      const r = await api("/api/model/test", {method: "POST", body: "{}"});
+      if (out) out.textContent = "ok · " + r.name + " · " + r.ms + " ms · reply: " + r.reply;
+      toast("Model works");
+    } catch (err) { if (out) out.textContent = err.message; toast(err.message); }
+    return;
+  }
+  const modelList = event.target.closest("[data-model-list]");
+  if (modelList) {
+    const out = document.getElementById("model-test-result");
+    try {
+      const r = await api("/api/model/list", {method: "POST", body: "{}"});
+      if (out) out.textContent = r.models.length ? r.models.join(", ") : "(no models)";
+    } catch (err) { if (out) out.textContent = err.message; toast(err.message); }
     return;
   }
   const evals = event.target.closest("[data-evals]");

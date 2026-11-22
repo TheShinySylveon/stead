@@ -49,6 +49,35 @@ class ModelTest(unittest.TestCase):
         self.assertIn("sk-secret", raw)
         self.assertNotIn("sk-secret", json.dumps(models.public_model(self.root)))
 
+    def test_model_test_makes_one_live_call(self) -> None:
+        models.set_model(self.root, provider="ollama", name="llama3.2")
+        calls = []
+
+        def transport(body, settings):
+            calls.append(body)
+            return {"choices": [{"message": {"content": "ok"}}]}
+
+        result = models.test_model(self.root, transport=transport)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["reply"], "ok")
+        self.assertEqual(result["name"], "llama3.2")
+        self.assertEqual(len(calls), 1)
+        self.assertNotIn("api_key", result)
+
+    def test_model_list_reads_ids(self) -> None:
+        models.set_model(self.root, provider="ollama", name="llama3.2")
+
+        def transport(url, settings):
+            self.assertTrue(url.endswith("/models"))
+            return {"data": [{"id": "qwen2.5"}, {"id": "llama3.2"}]}
+
+        result = models.list_models(self.root, transport=transport)
+        self.assertEqual(result["models"], ["llama3.2", "qwen2.5"])
+
+    def test_model_test_without_config_fails(self) -> None:
+        with self.assertRaises(models.ModelError):
+            models.test_model(self.root)
+
     def test_openai_requires_a_key_and_ollama_does_not(self) -> None:
         models.set_model(self.root, provider="openai", name="gpt-test")
         with self.assertRaises(models.ModelError):

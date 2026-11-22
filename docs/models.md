@@ -38,6 +38,31 @@ either.
 
 The same form is in the cockpit, under Settings.
 
+## Verify it works
+
+`model test` makes one live call and reports latency and the reply. It never
+prints the key. `model list` asks the endpoint which model ids it offers.
+
+```bash
+python -m stead model test
+python -m stead model list
+```
+
+Settings has **Test connection** and **List models** buttons that do the same.
+
+For local-first use, Ollama keeps every prompt on this computer and needs no
+key. If it is not installed:
+
+```bash
+winget install Ollama.Ollama      # then start Ollama
+ollama pull llama3.2              # or a smaller model, e.g. qwen2.5:3b
+python -m stead model set --provider ollama --name llama3.2
+python -m stead model test
+```
+
+A hosted provider needs a key and sends prompts to that provider; see
+[Trust](trust.md) for exactly what leaves the machine.
+
 ## Draft
 
 Assembly is still the default, and it still calls nothing.

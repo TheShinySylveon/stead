@@ -597,6 +597,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init", help="rebuild state.db from schema.sql + markdown (idempotent)")
     doc = sub.add_parser("doctor", help="lint frontmatter, ids, dates, and relations")
     doc.add_argument("--json", action="store_true", help="machine-readable report")
+    met = sub.add_parser("metrics", help="dogfood numbers from the build records")
+    met.add_argument("--repo", help="only this repo id")
+    met.add_argument("--json", action="store_true", help="machine-readable report")
 
     task = sub.add_parser("task", help="manage the task queue").add_subparsers(dest="sub", required=True)
     ta = task.add_parser("add", help="add a task (writes markdown + index)")
@@ -735,6 +738,10 @@ def build_parser() -> argparse.ArgumentParser:
     ms.add_argument("--base-url", help="defaults to the provider preset")
     ms.add_argument("--key", help="stored in gitignored stead.json. Prefer STEAD_MODEL_API_KEY.")
     ms.add_argument("--key-env", default="STEAD_MODEL_API_KEY")
+    mt = model.add_parser("test", help="one live call to prove the model works. Never prints the key.")
+    mt.add_argument("--prompt", default="Reply with exactly one word: ok")
+    mt.add_argument("--timeout", type=int, default=60)
+    model.add_parser("list", help="list model ids the endpoint offers")
 
     ev = sub.add_parser("eval", help="factory eval cases").add_subparsers(dest="sub", required=True)
     er = ev.add_parser("run", help="check eval files. No model, no network.")
@@ -866,6 +873,15 @@ def main(argv: list[str] | None = None) -> int:
         else:
             print(doctor.render(report))
         return 1 if report["errors"] else 0
+    if args.command == "metrics":
+        from ctx import metrics
+        report = metrics.collect(root, repo=args.repo)
+        if args.json:
+            import json as _json
+            print(_json.dumps(report, indent=2))
+        else:
+            print(metrics.render(report))
+        return 0
     if args.command == "task":
         if args.sub == "add":
             return cmd_task_add(root, args.title, args.project, args.status)
@@ -949,6 +965,21 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "model":
         from ctx import models
         try:
+            if args.sub == "test":
+                result = models.test_model(root, prompt=args.prompt,
+                                           timeout=max(1, args.timeout))
+                print(f"ok: {result['provider']} {result['name']} @ {result['base_url']}")
+                print(f"latency: {result['ms']} ms")
+                print(f"reply: {result['reply']}")
+                return 0
+            if args.sub == "list":
+                result = models.list_models(root)
+                print(f"{result['provider']} @ {result['base_url']}")
+                for mid in result["models"]:
+                    print(f"  {mid}")
+                if not result["models"]:
+                    print("  (none)")
+                return 0
             if args.sub == "set":
                 shown = models.set_model(
                     root, provider=args.provider, name=args.name,
