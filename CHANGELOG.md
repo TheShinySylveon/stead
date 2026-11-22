@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Free review tooling.** CI adds a `ruff` lint job (`ruff.toml`, starting
+  with syntax errors and undefined names) and a CodeQL workflow (security and
+  quality queries, weekly and on PRs). Dependabot keeps the GitHub Actions
+  current. `.coderabbit.yaml` and `.gemini/` hold review rules for the free
+  CodeRabbit and Gemini Code Assist apps; none of these are required checks.
 - **The monitor cadence defaults to watch, and `inbox list` reads any encoding.**
   `schedule show/install --interval` now implies `--watch` (the monitor cadence
   is sync + watch by definition), matching its help text instead of producing a
