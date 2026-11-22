@@ -343,3 +343,12 @@ factories unless `--force`) and a cockpit delete with confirmation.
 - Add one end-to-end story (issue → spec → PR → merge) with real time and cost,
   and a "why not X" comparison against coding agents and context tools. The
   adjacent-tools table above is a start, not the comparison.
+
+**Dogfood contract** (decided; see [Dogfood](dogfood.md))
+
+- Stead manages Stead going forward: read the issue queue, create specs, fix
+  via the factory, open PRs at ceiling `pr`, human reviews and merges. The
+  ledger (`stead metrics`) is the published dogfood metric.
+- Missing capability for the full loop: **filing GitHub issues upstream**. Sync
+  is read-only and publish only opens PRs; "create" today means local
+  spec/contribution objects.

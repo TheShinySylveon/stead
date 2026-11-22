@@ -192,6 +192,7 @@ More: [docs/factories.md](docs/factories.md) and
 | [Cockpit](docs/cockpit.md) | The browser UI |
 | [CLI](docs/cli.md) | Every command |
 | [Models](docs/models.md) | The optional endpoint a factory drafts with |
+| [Dogfood](docs/dogfood.md) | Stead manages Stead: the `pr`-ceiling contract and the ledger metrics |
 | [Deploy](docs/deploy.md) | Docker, the image, and sign-in |
 | [Several writers](docs/multi-actor.md) | Actors, git, and why SQLite stays |
 | [Roadmap](PLAN.md) | Design history and the §7 roadmap |

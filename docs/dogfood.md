@@ -13,8 +13,38 @@ run, then committed.
 > python -m stead model set --provider ollama --name llama3.2
 > ```
 >
-> Any OpenAI-compatible endpoint works. The key lives in gitignored
-> `stead.json` or `STEAD_MODEL_API_KEY`, never in context.
+> Any OpenAI-compatible endpoint works — a local LM Studio or Ollama server
+> keeps every prompt on this computer and needs no key. The key for a hosted
+> provider lives in gitignored `stead.json` or `STEAD_MODEL_API_KEY`, never in
+> context. Verify with `stead model test`.
+
+## Operating policy (the dogfood contract)
+
+Once Stead is usable, **Stead manages Stead**: it reads the issue queue, creates
+specs, and fixes them through the factory. This is the dogfood metric — not a
+demo, but the actual way work gets done on this repo.
+
+- **Ceiling `pr`: stop just short of `merge`.** Every change opens a pull
+  request; a human reviews the output and merges. Stead never auto-merges its
+  own work. Set the repo `reach: pr`; `merge` stays off.
+- **Read → approve → fix.** `sync github` reads issues read-only; a person
+  approves a spec (`spec approve`, bound to the body hash); `stead build
+  --publish` plans, edits, runs checks, and opens the PR. Write-back records the
+  outcome and feeds the next bundle.
+- **Human gate on interpretation.** Decisions and glossary terms the model
+  proposes go to the inbox for triage, never straight into context.
+- **The metric is the ledger.** `stead metrics` reports specs built, share
+  merged after review, repair rounds, checks mode, time, and tests touched.
+  Publish those numbers here as they accumulate.
+
+Honest gaps in the contract today:
+
+- **Creating GitHub issues is not built.** Sync is read-only and publish only
+  opens PRs. "Create" currently means local spec/contribution objects; filing
+  issues upstream is a capability still needed for the full loop.
+- **The build loop is not yet reliable on a small model.** We are stabilizing at
+  `shadow` (local, hand-reviewed) until a build consistently reaches a green PR.
+  The `pr` ceiling applies once it does.
 
 ## Why a separate checkout
 
