@@ -57,7 +57,7 @@ def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
         raise MergeError("set the repo code_path to a local checkout before merging")
     if code.resolve() == root.resolve():
         raise MergeError("code_path must be the project checkout, not this Stead repo")
-    run = runner or _run
+    run = safety.safe_runner(runner or _run)
     default = (repo_meta.get("default_branch") or "main").strip()
     branch = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
     if not branch or branch in {default, "HEAD"}:
@@ -65,7 +65,7 @@ def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
             f"refusing to merge from {branch or 'an unknown branch'}. Stay off {default}.")
     raw = run([
         "gh", "pr", "view", "--json",
-        "number,url,state,isDraft,baseRefName,headRefName,statusCheckRollup",
+        "number,url,state,isDraft,baseRefName,headRefName,headRefOid,statusCheckRollup",
     ], code)
     try:
         view = json.loads(raw)
@@ -88,7 +88,32 @@ def merge(root: Path, contribution_ref: str, *, runner=None) -> dict:
     number = view.get("number")
     if not isinstance(number, int):
         raise MergeError("the pull request has no number")
-    run(["gh", "pr", "merge", str(number), "--merge"], code)
+    # Pin the merge to the commit Stead built and recorded. If the PR head has
+    # moved (a human pushed edits), refuse rather than merge unreviewed code;
+    # --match-head-commit also guards the head moving between view and merge.
+    expected = ""
+    from ctx import writeback
+    record = writeback.record_for_branch(root, str(repo_meta.get("id") or ""), branch)
+    if record is not None:
+        expected = str(record.get("commit") or "")
+    if not expected:
+        expected = _git(run, code, ["rev-parse", "HEAD"]).strip()
+    head_sha = (view.get("headRefOid") or "").strip()
+    if expected and head_sha and head_sha != expected:
+        raise MergeError(
+            "the pull request head differs from the commit Stead built "
+            f"({head_sha[:12]} vs {expected[:12]}). A human may have edited it; "
+            "review and merge it manually.")
+    argv = ["gh", "pr", "merge", str(number), "--merge"]
+    if expected:
+        argv += ["--match-head-commit", expected]
+    run(argv, code)
+    try:
+        writeback.mark_merged(root, contribution_ref,
+                              url=(view.get("url") or "").strip(),
+                              head_sha=head_sha or expected)
+    except Exception:
+        pass
     return {
         "merged": True,
         "number": number,
@@ -104,7 +129,9 @@ def _require_protected_default(run, code: Path, default: str, repo_meta: dict) -
 
     Otherwise "branch protection is not bypassed" protects nothing: a repo with
     no required checks merges straight away. A repo can acknowledge that with
-    `merge_without_required_checks: true`.
+    `merge_without_required_checks: true`. Branch protection needs admin rights
+    to read and does not see rulesets, so fall back to the branch rules API
+    before refusing — otherwise valid repos drive people to the override.
     """
     if safety.truthy(repo_meta.get("merge_without_required_checks")):
         return
@@ -117,25 +144,44 @@ def _require_protected_default(run, code: Path, default: str, repo_meta: dict) -
             "confirmed. Refusing to merge.") from exc
     if "/" not in name:
         raise MergeError("could not read the repository name. Refusing to merge.")
+    if _protection_has_required_checks(run, code, name, default):
+        return
+    if _rulesets_have_required_checks(run, code, name, default):
+        return
+    raise MergeError(
+        f"{default} has no required status checks (branch protection or rulesets). "
+        "Enable required checks on the default branch, or set "
+        "`merge_without_required_checks: true` on the repo to accept that.")
+
+
+def _protection_has_required_checks(run, code: Path, name: str, default: str) -> bool:
     try:
         raw = run(["gh", "api", f"repos/{name}/branches/{default}/protection"], code)
         protection = json.loads(raw)
-    except (PublishError, json.JSONDecodeError) as exc:
-        raise MergeError(
-            f"{default} has no required status checks, or the protection rule is "
-            "not readable. Enable branch protection with required checks, or set "
-            "`merge_without_required_checks: true` on the repo to accept that."
-        ) from exc
+    except (PublishError, json.JSONDecodeError):
+        return False
     required = protection.get("required_status_checks") if isinstance(protection, dict) else None
     if not isinstance(required, dict):
-        raise MergeError(
-            f"{default} has no required status checks. Enable branch protection "
-            "with required checks, or set `merge_without_required_checks: true`.")
+        return False
     contexts = required.get("contexts") or required.get("checks") or []
-    if not contexts:
-        raise MergeError(
-            f"{default} has no required status checks. Enable branch protection "
-            "with required checks, or set `merge_without_required_checks: true`.")
+    return bool(contexts)
+
+
+def _rulesets_have_required_checks(run, code: Path, name: str, default: str) -> bool:
+    try:
+        raw = run(["gh", "api", f"repos/{name}/rules/branches/{default}"], code)
+        rules = json.loads(raw)
+    except (PublishError, json.JSONDecodeError):
+        return False
+    if not isinstance(rules, list):
+        return False
+    for rule in rules:
+        if not isinstance(rule, dict) or rule.get("type") != "required_status_checks":
+            continue
+        params = rule.get("parameters") or {}
+        if params.get("required_status_checks"):
+            return True
+    return False
 
 
 def _require_green(rollup) -> None:

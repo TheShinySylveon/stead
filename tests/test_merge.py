@@ -10,6 +10,7 @@ from pathlib import Path
 from ctx import autonomy
 from ctx.merge import MergeError, merge
 from ctx.publish import PublishError, publish
+from tests import strip_git_hygiene
 from tests.test_feature_builder import SPEC_ID, FeatureBuilderTestCase
 
 
@@ -21,6 +22,7 @@ def _view(**overrides) -> str:
         "isDraft": False,
         "baseRefName": "main",
         "headRefName": "feature/json",
+        "headRefOid": "builtsha",
         "statusCheckRollup": [
             {"name": "tests", "status": "COMPLETED", "conclusion": "SUCCESS"},
         ],
@@ -57,6 +59,7 @@ class MergeTest(FeatureBuilderTestCase):
         calls = []
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
@@ -76,13 +79,18 @@ class MergeTest(FeatureBuilderTestCase):
         calls = []
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
+            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+                return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
             if argv[:4] == ["gh", "pr", "merge", "9"]:
-                self.assertEqual(argv, ["gh", "pr", "merge", "9", "--merge"])
+                self.assertEqual(argv[:5], ["gh", "pr", "merge", "9", "--merge"])
+                self.assertIn("--match-head-commit", argv)
+                self.assertIn("builtsha", argv)
                 self.assertNotIn("--admin", argv)
                 return ""
             raise AssertionError(argv)
@@ -91,6 +99,26 @@ class MergeTest(FeatureBuilderTestCase):
         self.assertTrue(opened["merged"])
         self.assertFalse(opened["bypassed"])
         self.assertFalse(any(argv[1] == "push" for argv in calls if len(argv) > 1))
+
+    def test_merge_refuses_a_head_that_differs_from_the_built_commit(self) -> None:
+        self._allow()
+        calls = []
+
+        def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
+            calls.append(argv)
+            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+                return "feature/json\n"
+            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+                return "builtsha\n"
+            if argv[:3] == ["gh", "pr", "view"]:
+                return _view(headRefOid="human-edited-sha")
+            raise AssertionError(argv)
+
+        with self.assertRaises(MergeError) as caught:
+            merge(self.root, SPEC_ID, runner=runner)
+        self.assertIn("differs from the commit Stead built", str(caught.exception))
+        self.assertFalse(any(argv[1:3] == ["pr", "merge"] for argv in calls if len(argv) > 2))
 
     def test_host_checks_are_not_merged_without_an_ack(self) -> None:
         autonomy.set_repo(self.root, "repo-testuser-my-app", reach="merge",
@@ -107,6 +135,7 @@ class MergeTest(FeatureBuilderTestCase):
         self._allow(merge_without_required_checks=False)
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
             if argv[:3] == ["gh", "pr", "view"]:
@@ -115,19 +144,51 @@ class MergeTest(FeatureBuilderTestCase):
                 return "testuser/my-app\n"
             if argv[:3] == ["gh", "api", "repos/testuser/my-app/branches/main/protection"]:
                 raise PublishError("HTTP 404: Branch not protected")
+            if argv[:3] == ["gh", "api", "repos/testuser/my-app/rules/branches/main"]:
+                return "[]"
             raise AssertionError(argv)
 
         with self.assertRaises(MergeError) as caught:
             merge(self.root, SPEC_ID, runner=runner)
         self.assertIn("required status checks", str(caught.exception))
 
+    def test_rulesets_satisfy_the_required_checks_gate(self) -> None:
+        self._allow(trust_checks=None, checks_isolation="docker",
+                    merge_without_required_checks=False)
+
+        def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
+            if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
+                return "feature/json\n"
+            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+                return "builtsha\n"
+            if argv[:3] == ["gh", "pr", "view"]:
+                return _view()
+            if argv[:4] == ["gh", "repo", "view", "--json"]:
+                return "testuser/my-app\n"
+            if argv[:3] == ["gh", "api", "repos/testuser/my-app/branches/main/protection"]:
+                raise PublishError("HTTP 404: Branch not protected")
+            if argv[:3] == ["gh", "api", "repos/testuser/my-app/rules/branches/main"]:
+                return json.dumps([{"type": "required_status_checks",
+                                    "parameters": {"required_status_checks":
+                                                   [{"context": "tests"}]}}])
+            if argv[:4] == ["gh", "pr", "merge", "9"]:
+                return ""
+            raise AssertionError(argv)
+
+        opened = merge(self.root, SPEC_ID, runner=runner)
+        self.assertTrue(opened["merged"])
+
     def test_protected_default_and_docker_checks_merge(self) -> None:
         self._allow(trust_checks=None, checks_isolation="docker",
                     merge_without_required_checks=False)
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"
+            if argv[:3] == ["git", "rev-parse", "HEAD"]:
+                return "builtsha\n"
             if argv[:3] == ["gh", "pr", "view"]:
                 return _view()
             if argv[:4] == ["gh", "repo", "view", "--json"]:
@@ -146,6 +207,7 @@ class MergeTest(FeatureBuilderTestCase):
         calls = []
 
         def runner(argv, _cwd):
+            argv = strip_git_hygiene(argv)
             calls.append(argv)
             if argv[:3] == ["git", "rev-parse", "--abbrev-ref"]:
                 return "feature/json\n"

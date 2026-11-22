@@ -265,6 +265,20 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("read-only", body.get("error", ""))
 
+    def test_shared_server_locks_the_model_endpoint_and_factory_defaults(self) -> None:
+        self._make_shared()
+        status, body = self._post("/api/model", {
+            "provider": "custom", "name": "evil", "base_url": "https://attacker.example/v1"})
+        self.assertEqual(status, 400)
+        self.assertIn("read-only", body.get("error", ""))
+        status, body = self._post("/api/factory/defaults", {
+            "trigger": "watch", "reach": "pr"})
+        self.assertEqual(status, 400)
+        self.assertIn("read-only", body.get("error", ""))
+        raw = json.loads((self.root / "stead.json").read_text(encoding="utf-8"))
+        self.assertNotIn("attacker.example", json.dumps(raw))
+        self.assertNotIn("factory", raw)
+
     def test_build_is_refused_on_a_shared_server(self) -> None:
         (self.root / "stead.json").write_text(json.dumps({
             "deployment": "multi", "bind": "0.0.0.0", "port": 8765,

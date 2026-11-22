@@ -1418,6 +1418,12 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/sync":
             result = sync_github(root, bool(payload.get("offline")))
         elif path == "/api/factory/defaults":
+            if shared_server(root):
+                raise UiError(
+                    "on a shared server, factory defaults are read-only: they "
+                    "set the trigger and reach ceiling for every repo without "
+                    "explicit values, and a scheduled build on this host would "
+                    "execute under them. Set them on the machine that runs builds.")
             from ctx.autonomy import AutonomyError, set_defaults
             try:
                 result = set_defaults(
@@ -1429,6 +1435,12 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             except AutonomyError as exc:
                 raise UiError(str(exc)) from exc
         elif path == "/api/model":
+            if shared_server(root):
+                raise UiError(
+                    "on a shared server, the model endpoint is read-only: "
+                    "pointing base_url at another server would send the stored "
+                    "key there, and the configured model drives every scheduled "
+                    "build on this host. Set it on the machine that runs builds.")
             from ctx.models import ModelError, set_model
             try:
                 result = set_model(

@@ -47,7 +47,7 @@ def publish(root: Path, contribution_ref: str, *, runner=None) -> dict:
             "set the repo code_path to a local checkout before publishing")
     if code.resolve() == root.resolve():
         raise PublishError("code_path must be the project checkout, not this Stead repo")
-    run = runner or _run
+    run = safety.safe_runner(runner or _run)
     default = (repo_meta.get("default_branch") or "main").strip()
     branch = _git(run, code, ["rev-parse", "--abbrev-ref", "HEAD"]).strip()
     if not branch or branch in {default, "HEAD"}:
@@ -120,7 +120,8 @@ def _git(run, code: Path, args: list[str]) -> str:
 def _run(argv: list[str], cwd: Path) -> str:
     try:
         done = subprocess.run(
-            argv, cwd=cwd, check=True, capture_output=True, text=True,
+            argv, cwd=cwd, check=True, capture_output=True,
+            text=True, encoding="utf-8", errors="replace",
         )
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()

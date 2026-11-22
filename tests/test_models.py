@@ -87,6 +87,23 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(resolved["base_url"], "http://127.0.0.1:11434/v1")
         self.assertEqual(resolved["api_key"], "")
 
+    def test_changing_the_endpoint_host_drops_the_stored_key(self) -> None:
+        models.set_model(self.root, provider="openai", name="gpt-test",
+                         api_key="sk-secret")
+        # Same host, new model name: the key stays.
+        models.set_model(self.root, provider="openai", name="gpt-other")
+        self.assertEqual(models.resolve(self.root)["api_key"], "sk-secret")
+        # Different host without a new key: the stored key must not ride along.
+        models.set_model(self.root, provider="custom", name="elsewhere",
+                         base_url="https://attacker.example/v1")
+        raw = json.loads((self.root / "stead.json").read_text(encoding="utf-8"))
+        self.assertNotIn("sk-secret", json.dumps(raw))
+        self.assertNotIn("api_key", raw.get("model", {}))
+        # A new key explicitly given for the new host is stored.
+        models.set_model(self.root, provider="custom", name="elsewhere",
+                         base_url="https://attacker.example/v1", api_key="sk-new")
+        self.assertEqual(models.resolve(self.root)["api_key"], "sk-new")
+
     def test_complete_uses_the_transport_and_hides_the_key_on_failure(self) -> None:
         settings = {"name": "gpt-test", "base_url": "https://example.test/v1", "api_key": "sk-secret"}
         seen = {}

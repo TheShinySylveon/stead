@@ -46,20 +46,8 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
     merged = bool(result.get("merged"))
     today = date.today().isoformat()
     updated: list[str] = []
-
-    if merged and contrib.get("state") != "merged":
-        _patch(root, "contribution", contribution_ref, {"state": "merged"})
-        updated.append(contribution_ref)
-
     if merged:
-        for path, meta, _body in objects.iter_objects(root, "task"):
-            related = meta.get("related") or []
-            if isinstance(related, str):
-                related = [related]
-            if contribution_ref in related or contrib.get("id") in related:
-                if meta.get("status") != "done":
-                    _patch(root, "task", meta.get("id") or path.stem, {"status": "done"})
-                    updated.append(str(meta.get("id") or path.stem))
+        updated = _apply_merged(root, contribution_ref)
 
     stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     slug = re.sub(r"[^a-z0-9]+", "-",
@@ -80,10 +68,14 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         "created": today, "updated": today, "status": "active",
         "tags": [RECORD_TAG, f"repo:{repo_id}"],
         "outcome": outcome,
+        "contribution": str(contrib.get("id") or contribution_ref),
         "checks_mode": str(result.get("checks_mode") or "none"),
         "elapsed_seconds": str(result.get("elapsed_seconds") or 0),
         "repair_rounds": str(result.get("repair_rounds") or 0),
+        "chars_sent": str(result.get("chars_sent") or 0),
+        "chars_received": str(result.get("chars_received") or 0),
         "files": list(result.get("files") or []),
+        "leftovers": list(result.get("leftovers") or []),
         "tests_touched": list(result.get("tests_touched") or []),
         "tests_deleted": list(result.get("tests_deleted") or []),
     }
@@ -122,6 +114,9 @@ def _record_body(contrib: dict, result: dict, outcome: str) -> str:
         lines.append("- files: " + ", ".join(f"`{p}`" for p in result["files"]))
     if result.get("deleted"):
         lines.append("- deleted: " + ", ".join(f"`{p}`" for p in result["deleted"]))
+    if result.get("leftovers"):
+        lines.append("- removed untracked leftovers: "
+                     + ", ".join(f"`{p}`" for p in result["leftovers"]))
     if result.get("tests_touched"):
         lines.append("- tests touched: " + ", ".join(f"`{p}`" for p in result["tests_touched"]))
     if result.get("tests_deleted"):
@@ -131,6 +126,168 @@ def _record_body(contrib: dict, result: dict, outcome: str) -> str:
     lines += ["", "Factual record written by Stead on delivery. Interpretive notes "
               "(decisions, glossary) are proposed to the inbox for a person to triage.", ""]
     return "\n".join(lines)
+
+
+def record_failure(root: Path, contribution_ref: str, error, *,
+                   branch: str = "", elapsed: float = 0.0,
+                   checks_mode: str = "none", reason: str = "build") -> dict:
+    """A failed build writes a record too, so metrics has a failure rate and
+    the watch loop can tell a delivered branch from a failed one."""
+    contrib, repo_meta = _repo_of(root, contribution_ref)
+    repo_id = str(repo_meta.get("id") or contrib.get("repo") or "repo")
+    today = date.today().isoformat()
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    slug = re.sub(r"[^a-z0-9]+", "-",
+                  (contrib.get("title") or contribution_ref).lower()).strip("-") or "build"
+    folder = root / "context" / "documents"
+    folder.mkdir(parents=True, exist_ok=True)
+    name = f"build-{slug[:40]}-{stamp}"
+    path = folder / f"{name}.md"
+    n = 2
+    while path.exists():
+        path = folder / f"{name}-{n}.md"
+        n += 1
+    doc_id = f"document-{path.stem}"
+    title = f"Build: {contrib.get('title') or contribution_ref} (failed)"
+    meta = {
+        "id": doc_id, "type": "document", "title": title[:200],
+        "created": today, "updated": today, "status": "active",
+        "tags": [RECORD_TAG, f"repo:{repo_id}"],
+        "outcome": "failed",
+        "contribution": str(contrib.get("id") or contribution_ref),
+        "error_class": type(error).__name__,
+        "reason": reason,
+        "checks_mode": str(checks_mode or "none"),
+        "elapsed_seconds": str(elapsed or 0),
+    }
+    if branch:
+        meta["branch"] = branch
+    if repo_meta.get("project"):
+        meta["project"] = repo_meta["project"]
+    from ctx.actors import stamp as actor_stamp
+    actor_stamp(root, meta)
+    body = (f"# Build record: {contrib.get('title') or contrib.get('id')}\n\n"
+            f"Outcome: **failed** ({reason}).\n\n"
+            f"```\n{str(error)[:2000]}\n```\n\n"
+            "The model's work in progress, if any, was committed to the build "
+            "branch and the checkout returned to the default branch. The full "
+            "transcript is in the run directory under factories/feature-builder/runs/.\n")
+    path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+    return {"id": doc_id, "path": path.relative_to(root).as_posix(),
+            "outcome": "failed"}
+
+
+def record_for_branch(root: Path, repo_id: str, branch: str) -> dict | None:
+    """The build record for one branch, preferring a delivered one over a
+    failed one. Lets the watch loop tell 'already built' from 'failed here'."""
+    fallback = None
+    for _path, meta, _body in objects.iter_objects(root, "document"):
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if RECORD_TAG not in tags or f"repo:{repo_id}".lower() not in tags:
+            continue
+        if meta.get("branch") != branch:
+            continue
+        if str(meta.get("outcome") or "") != "failed":
+            return meta
+        fallback = meta
+    return fallback
+
+
+def _apply_merged(root: Path, contribution_ref: str) -> list[str]:
+    """Mark the contribution merged and close linked tasks. Returns what changed."""
+    found = objects.find(root, "contribution", contribution_ref)
+    if found is None:
+        return []
+    _path, contrib, _body = found
+    updated: list[str] = []
+    if contrib.get("state") != "merged":
+        _patch(root, "contribution", contribution_ref, {"state": "merged"})
+        updated.append(contribution_ref)
+    for path, meta, _body in objects.iter_objects(root, "task"):
+        related = meta.get("related") or []
+        if isinstance(related, str):
+            related = [related]
+        if contribution_ref in related or contrib.get("id") in related:
+            if meta.get("status") != "done":
+                _patch(root, "task", meta.get("id") or path.stem, {"status": "done"})
+                updated.append(str(meta.get("id") or path.stem))
+    return updated
+
+
+def _latest_record(root: Path, contribution_ref: str):
+    """The newest build record for one contribution (any outcome)."""
+    found = []
+    for path, meta, body in objects.iter_objects(root, "document"):
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if RECORD_TAG not in tags:
+            continue
+        if str(meta.get("contribution") or "") != contribution_ref:
+            continue
+        found.append((path, meta, body))
+    found.sort(key=lambda item: str(item[1].get("created") or ""), reverse=True)
+    return found[0] if found else None
+
+
+def mark_merged(root: Path, contribution_ref: str, *, url: str = "",
+                head_sha: str = "") -> dict:
+    """`stead factory merge` updates the existing build record to merged (it
+    does not write a second one) and applies the linked statuses. A human
+    merge is reconciled later by sync, not here."""
+    updated = _apply_merged(root, contribution_ref)
+    latest = _latest_record(root, contribution_ref)
+    if latest is not None:
+        path, meta, _body = latest
+        fields = {"outcome": "merged"}
+        if url:
+            fields["merged_url"] = url
+        recorded = str(meta.get("commit") or "")
+        if head_sha and recorded:
+            fields["human_edits"] = "true" if head_sha != recorded else "false"
+        _patch(root, "document", meta.get("id") or path.stem, fields)
+    return {"outcome": "merged", "updated": updated}
+
+
+def reconcile_records(root: Path, view_pr) -> dict:
+    """Reconcile build records against live PR state. READ-ONLY: view_pr(url)
+    returns the gh pr view JSON ({state, headRefOid, ...}) or None. A merged PR
+    updates the record's outcome and flags human edits (head SHA differs from
+    the recorded commit); a closed-unmerged PR becomes 'closed'. This is how a
+    human merge under the pr ceiling reaches the ledger."""
+    reconciled: list[str] = []
+    for path, meta, _body in objects.iter_objects(root, "document"):
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if RECORD_TAG not in tags:
+            continue
+        pr_url = meta.get("pr_url")
+        if not pr_url:
+            continue
+        if str(meta.get("outcome") or "") in ("merged", "closed", "failed"):
+            continue
+        try:
+            data = view_pr(pr_url)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        state = str(data.get("state") or "").upper()
+        fields: dict = {}
+        if state == "MERGED":
+            fields["outcome"] = "merged"
+            head = str(data.get("headRefOid") or "")
+            recorded = str(meta.get("commit") or "")
+            fields["human_edits"] = "true" if (head and recorded and head != recorded) else "false"
+            if data.get("mergedAt"):
+                fields["merged_at"] = str(data.get("mergedAt"))
+            contrib_ref = str(meta.get("contribution") or "")
+            if contrib_ref:
+                _apply_merged(root, contrib_ref)
+        elif state == "CLOSED":
+            fields["outcome"] = "closed"
+        else:
+            continue  # still open; nothing to reconcile yet
+        _patch(root, "document", meta.get("id") or path.stem, fields)
+        reconciled.append(str(meta.get("id") or path.stem))
+    return {"reconciled": len(reconciled), "ids": reconciled}
 
 
 def _patch(root: Path, otype: str, ref: str, fields: dict) -> None:
@@ -146,11 +303,15 @@ def _patch(root: Path, otype: str, ref: str, fields: dict) -> None:
 
 
 def prior_records(root: Path, repo_id: str, limit: int = 5) -> list[tuple[Path, dict, str]]:
-    """Recent build records for one repo, newest first. Used by the bundle."""
+    """Recent *delivered* build records for one repo, newest first. Failed
+    records are excluded: their raw error and check output must not become
+    trusted-looking context for the next build."""
     found = []
     for path, meta, body in objects.iter_objects(root, "document"):
         tags = {str(t).lower() for t in (meta.get("tags") or [])}
         if RECORD_TAG not in tags or f"repo:{repo_id}".lower() not in tags:
+            continue
+        if str(meta.get("outcome") or "") == "failed":
             continue
         found.append((path, meta, body))
     found.sort(key=lambda item: str(item[1].get("created") or ""), reverse=True)
