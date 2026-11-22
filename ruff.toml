@@ -1,0 +1,8 @@
+# Lint config for `ruff check` (CI runs it; locally: pip install ruff, then
+# `ruff check .`). Starts with the rules working code should never break:
+# syntax errors, invalid comparisons, misplaced statements, undefined names.
+# Widen `select` in its own PR once the codebase is clean for the new rules.
+target-version = "py311"
+
+[lint]
+select = ["E9", "F63", "F7", "F82"]

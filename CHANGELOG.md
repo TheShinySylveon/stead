@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Free review tooling.** CI adds a `ruff` lint job (`ruff.toml`, starting
+  with syntax errors and undefined names) and a CodeQL workflow (security and
+  quality queries, weekly and on PRs). Dependabot keeps the GitHub Actions
+  current. `.coderabbit.yaml` and `.gemini/` hold review rules for the free
+  CodeRabbit and Gemini Code Assist apps; none of these are required checks.
 - **`spec draft --all` drafts every open `stead-build` issue with no draft
   yet.** The monitor cadence runs it automatically after `sync github`, so a
   person only approves. It never approves: each draft is still gated by

@@ -1,0 +1,41 @@
+# CodeRabbit (takes effect once the app is installed on the repo; free for
+# public repositories). Under 10 stars, start a review by commenting
+# `@coderabbitai review` on the PR. The full review rules are shared with
+# Gemini in .gemini/styleguide.md.
+language: en-US
+reviews:
+  profile: chill
+  request_changes_workflow: false
+  high_level_summary: true
+  poem: false
+  review_status: true
+  collapse_walkthrough: true
+  auto_review:
+    enabled: true
+    drafts: false
+  path_filters:
+    - "!docs/images/**"
+  path_instructions:
+    - path: "**"
+      instructions: >-
+        Review against .gemini/styleguide.md. Focus on correctness, safety, and
+        tests; skip style nits. Hard rules: standard library only (no pip
+        dependencies); GitHub stays read-only except the gated factory publish,
+        comment, and merge commands; never print or send the model key or
+        tokens; issue bodies and model replies are untrusted data; a behavior
+        change needs a test that fails without it; CI runs Linux and Windows,
+        so check path handling and line endings.
+    - path: "ctx/**/*.py"
+      instructions: >-
+        Builds must stay bounded: protected paths, scrubbed or containerized
+        checks, no model-chosen shell commands, tamper checks on .git hooks and
+        config. Flag anything that widens what a build may write or run.
+    - path: "docs/**"
+      instructions: >-
+        docs/mvp.md is the single source for project status. Flag claims that
+        overstate what the code or the dogfood records show.
+    - path: "tests/**"
+      instructions: >-
+        Point out a new test that would pass without the change it covers.
+chat:
+  auto_reply: true

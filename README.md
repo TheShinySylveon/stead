@@ -100,8 +100,11 @@ there too.
 python -m unittest discover -s tests -b
 ```
 
-CI runs the suite on Python 3.11 and 3.12, Linux and Windows. Merging to
-`main` publishes `ghcr.io/theshinysylveon/stead`.
+CI runs the suite on Python 3.11 and 3.12, Linux and Windows, plus `ruff`
+(config in `ruff.toml`) and CodeQL. Merging to `main` publishes
+`ghcr.io/theshinysylveon/stead`. AI review is optional and advisory: the
+repo carries configs for CodeRabbit (`.coderabbit.yaml`) and Gemini Code
+Assist (`.gemini/`), both free for public repositories once installed.
 
 ## License
 

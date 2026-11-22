@@ -1,0 +1,11 @@
+# Stead has no pip dependencies ("No pip packages"), so the only thing to keep
+# current is the GitHub Actions the workflows use.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: "/"
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns: ["*"]
