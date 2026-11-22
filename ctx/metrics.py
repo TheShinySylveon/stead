@@ -17,7 +17,7 @@ from datetime import date, datetime
 from pathlib import Path
 
 from ctx import objects
-from ctx.writeback import RECORD_TAG, REVIEW_TAG
+from ctx.writeback import RECORD_TAG, REVIEW_TAG, _record_order
 
 
 def _num(value) -> float:
@@ -47,23 +47,26 @@ def collect(root: Path, repo: str | None = None, since: str | None = None) -> di
     since_date = None
     if since is not None:
         since_date = _parse_date(since)
-    records = []
-    for _path, meta, _body in objects.iter_objects(root, "document"):
+    found = []
+    for path, meta, _body in objects.iter_objects(root, "document"):
         tags = {str(t).lower() for t in (meta.get("tags") or [])}
         if RECORD_TAG not in tags:
             continue
         if repo and f"repo:{repo}".lower() not in tags:
             continue
         if since_date is not None:
-            created = str(meta.get("created") or "")
             try:
-                created_date = datetime.strptime(created, "%Y-%m-%d").date()
-            except (TypeError, ValueError):
+                created_date = _parse_date(str(meta.get("created") or ""))
+            except ValueError:
                 continue
             if created_date < since_date:
                 continue
-        records.append(meta)
-    records.sort(key=lambda m: str(m.get("created") or ""), reverse=True)
+        found.append((path, meta))
+    # Newest first. `created` is only a date, so same-day records are ordered
+    # by the UTC stamp in their file name.
+    found.sort(key=lambda item: (str(item[1].get("created") or ""),
+                                 _record_order(item[0])), reverse=True)
+    records = [meta for _path, meta in found]
 
     outcomes = {"merged": 0, "published": 0, "committed": 0, "failed": 0, "closed": 0}
     # "committed" is mechanical; these three are the hand-checked rubric verdict.
