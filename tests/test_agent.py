@@ -298,6 +298,28 @@ class BuildTest(unittest.TestCase):
             self.code, command, {"checks_env": "MY_FLAG=yes"})
         self.assertTrue(ok, output)
 
+    def test_secret_files_are_not_sent_to_the_model(self) -> None:
+        (self.code / ".env").write_text("API_TOKEN=SECRET-VALUE\n", encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "local env")
+        prompts: list[str] = []
+        queue = [
+            {"action": "plan", "summary": "Look around."},
+            {"action": "read", "path": ".env"},
+            {"action": "search", "query": "SECRET-VALUE"},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ]
+
+        def responder(prompt: str) -> str:
+            prompts.append(prompt)
+            return json.dumps(queue.pop(0))
+
+        agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        for prompt in prompts:
+            self.assertNotIn("API_TOKEN=SECRET-VALUE", prompt)
+            self.assertNotIn("\nSECRET-VALUE\n", prompt)
+
     def test_docker_isolation_needs_an_image(self) -> None:
         from ctx import safety
         with self.assertRaises(safety.SafetyError) as caught:

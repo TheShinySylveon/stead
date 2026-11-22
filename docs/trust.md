@@ -14,7 +14,9 @@ Everything the model produces is treated as untrusted input:
   `.git` are refused.
 - It must plan before it writes.
 - Its writes to tests, CI config, and paths the repo marks protected are
-  refused (see below).
+  refused (see below). Files that look like secrets (`.env`, `*.pem`, `*.key`,
+  `id_rsa`, `credentials.json`) are hidden from the tree, search, and read, and
+  cannot be written or deleted.
 - Merge is a separate command that re-reads the pull request from GitHub. A
   model cannot ask `stead build` to merge past the repo ceiling.
 
@@ -41,7 +43,7 @@ code execution with the permissions of your user account.
 
 | Control | Default | What it stops |
 |---|---|---|
-| Scrubbed environment | On | Checks cannot read `STEAD_MODEL_API_KEY`, `GH_TOKEN`, cloud keys, or the deployment token from the environment. Only `PATH`, home, temp, locale, and `checks_env:` are passed. |
+| Scrubbed environment | On | Checks cannot read `STEAD_MODEL_API_KEY`, `GH_TOKEN`, cloud keys, or the deployment token from the environment. Only `PATH`, home, temp, locale, Windows system variables, and `checks_env:` are passed. |
 | Container isolation | Opt-in: `checks_isolation: docker` + `checks_image` | Checks get no network, dropped capabilities, a PID limit, and a memory/CPU cap. The checkout is mounted at `/src` so the checks can read and write it. |
 | Wall-clock budget | 30 minutes per build | A repair loop cannot run forever. `--max-minutes` changes it; watched builds use `build_minutes`. |
 | Step and edit caps | 30 steps, 1 MB written | A model cannot loop or dump unbounded output. |

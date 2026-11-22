@@ -134,6 +134,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if not target.is_file() or _ignored(target, code):
                     transcript.append(f"read: no readable file at {rel}")
                     continue
+                if safety.secret_by(rel):
+                    transcript.append(f"read: {rel} looks like a secret; refused")
+                    continue
                 text = target.read_text(encoding="utf-8", errors="replace")
                 actions.append({"action": "read", "path": rel})
                 transcript.append(f"read {rel}:\n{text[:MAX_READ_CHARS]}")
@@ -163,12 +166,14 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 if not isinstance(text, str):
                     transcript.append("write: content must be a string")
                     continue
-                reason = safety.protected_by(rel, repo_meta)
-                if reason:
+                protected = safety.protected_by(rel, repo_meta)
+                if protected:
                     raise BuildError(
-                        f"refusing to write protected path {rel} ({reason}). "
+                        f"refusing to write protected path {rel} ({protected}). "
                         "The repo can allow it with allow_test_edits, "
                         "allow_ci_edits, or protected_paths.")
+                if safety.secret_by(rel):
+                    raise BuildError(f"refusing to write {rel}: it looks like a secret file")
                 data = text.encode("utf-8")
                 if len(data) > MAX_FILE_BYTES:
                     transcript.append(f"write: {rel} is over {MAX_FILE_BYTES} bytes")
@@ -199,6 +204,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         f"refusing to delete protected path {rel} ({reason}). "
                         "The repo can allow it with allow_test_edits, "
                         "allow_ci_edits, or protected_paths.")
+                if safety.secret_by(rel):
+                    raise BuildError(f"refusing to delete {rel}: it looks like a secret file")
                 target.unlink()
                 files.pop(rel, None)
                 deleted.append(rel)
@@ -398,6 +405,8 @@ def _search(code: Path, query: str) -> list[str]:
             break
         if not path.is_file() or _ignored(path, code):
             continue
+        if safety.secret_by(path.relative_to(code).as_posix()):
+            continue
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
                 continue
@@ -482,7 +491,8 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         "are protected, and an attempt fails the build. "
         "Match the repo's existing style and tests. Finish when the spec is met.\n\n"
         f"Feature: {spec.get('title')}\n"
-        "Acceptance criteria:\n" + "\n".join(f"- {item}" for item in criteria) + "\n\n"
+        "Acceptance criteria:\n"
+        + "\n".join(f"- {text}" for _done, text in criteria) + "\n\n"
         "Repository tree (depth 2):\n" + tree
     )
 
@@ -538,6 +548,8 @@ def _tree(code: Path) -> str:
         except ValueError:
             continue
         if any(part in IGNORE_DIRS or part == LOCK_NAME for part in relative.parts):
+            continue
+        if safety.secret_by(relative.as_posix()):
             continue
         depth = len(relative.parts)
         if depth > 2:

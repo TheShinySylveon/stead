@@ -49,6 +49,17 @@ TEST_GLOBS = (
     "**/*.spec.ts",
 )
 
+# A model that reads a key can send it to a provider. Hide the usual secrets
+# unless the name is clearly a template.
+SECRET_GLOBS = (
+    ".env", "**/.env", ".env.*", "**/.env.*",
+    "*.pem", "**/*.pem", "*.key", "**/*.key",
+    "id_rsa", "**/id_rsa", "id_ed25519", "**/id_ed25519",
+    "**/credentials.json", "**/.npmrc", "**/.pypirc",
+)
+SECRET_NAMES = {".env.example", ".env.sample", ".env.template",
+                "example.env", "sample.env"}
+
 # Enough to run a compiler or interpreter. Everything else is dropped so a
 # model-written test cannot read the model key, GH_TOKEN, cloud credentials, or
 # the Stead deployment token out of the environment.
@@ -131,6 +142,19 @@ def is_test_path(path: str) -> bool:
 def is_ci_path(path: str) -> bool:
     rel = _clean(path)
     return any(fnmatch.fnmatch(rel, pattern) for pattern in CI_GLOBS)
+
+
+def secret_by(path: str) -> str | None:
+    """Return the pattern when a path looks like a secret, or None."""
+    rel = _clean(path)
+    name = rel.rsplit("/", 1)[-1]
+    if name.lower() in SECRET_NAMES or name.lower().endswith(
+            (".example", ".sample", ".template")):
+        return None
+    for pattern in SECRET_GLOBS:
+        if fnmatch.fnmatch(rel, pattern):
+            return pattern
+    return None
 
 
 def checks_trusted(repo_meta: dict) -> bool:
