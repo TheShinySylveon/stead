@@ -744,6 +744,9 @@ def build_parser() -> argparse.ArgumentParser:
     inbox = sub.add_parser("inbox", help="unsorted capture").add_subparsers(dest="sub", required=True)
     imported = inbox.add_parser("import", help="copy a local .eml, .ics, .md, or .txt file into inbox/")
     imported.add_argument("path")
+    listed = inbox.add_parser("list", help="list inbox notes. Read-only.")
+    listed.add_argument("--kind", choices=("decision", "glossary", "note"),
+                        help="limit output to one kind")
     sched = sub.add_parser("schedule", help="the weekly local jobs").add_subparsers(dest="sub", required=True)
     sshow = sched.add_parser("show", help="print the Friday command. Does not install it.")
     sshow.add_argument("--project", help="also assemble this project's status")
@@ -1186,6 +1189,23 @@ def main(argv: list[str] | None = None) -> int:
         for item in written:
             print(f"inbox {item['name']}")
         print("triage into context/. Nothing was posted.")
+        return 0
+    if args.command == "inbox" and args.sub == "list":
+        from ctx.inbox_import import list_notes
+        status, rows = list_notes(root)
+        if status == "missing":
+            print("inbox not found")
+            return 0
+        if status == "empty":
+            print("inbox is empty")
+            return 0
+        if args.kind:
+            rows = [r for r in rows if r["kind"] == args.kind]
+        if not rows:
+            print(f"no {args.kind} notes")
+            return 0
+        for row in rows:
+            print(f"{row['name']}  {row['kind']}  {row['title']}")
         return 0
     if args.command == "spec" and args.sub == "approve":
         from ctx.spec import SpecError, approve, source_changed_note
