@@ -143,6 +143,23 @@ class ModelTest(unittest.TestCase):
         self.assertEqual(resolved["input_price_per_mtok"], 2.5)
         self.assertEqual(resolved["output_price_per_mtok"], 10.0)
 
+    def test_changing_the_endpoint_port_or_scheme_drops_the_stored_key(self) -> None:
+        def stored_key() -> str:
+            raw = json.loads((self.root / "stead.json").read_text(encoding="utf-8"))
+            return raw.get("model", {}).get("api_key", "")
+
+        models.set_model(self.root, provider="custom", name="m",
+                         base_url="https://api.example.com/v1", api_key="sk-secret")
+        self.assertEqual(stored_key(), "sk-secret")
+        models.set_model(self.root, provider="custom", name="m",
+                         base_url="https://api.example.com:8443/v1")
+        self.assertEqual(stored_key(), "")
+        models.set_model(self.root, provider="custom", name="m",
+                         base_url="https://api.example.com/v1", api_key="sk-secret")
+        models.set_model(self.root, provider="custom", name="m",
+                         base_url="http://api.example.com/v1")
+        self.assertEqual(stored_key(), "")
+
     def test_complete_uses_the_transport_and_hides_the_key_on_failure(self) -> None:
         settings = {"name": "gpt-test", "base_url": "https://example.test/v1", "api_key": "sk-secret"}
         seen = {}

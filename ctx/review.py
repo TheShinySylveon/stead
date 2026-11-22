@@ -93,8 +93,13 @@ def _parse(text: str) -> tuple[str, str]:
 
 
 def review(root: Path, contribution_ref: str, *, responder=None,
-           runner=None) -> dict:
-    """Run the independent reviewer on the branch's diff. Raises ReviewError."""
+           runner=None, commit: str | None = None) -> dict:
+    """Run the independent reviewer on one commit's diff. Raises ReviewError.
+
+    `commit` pins the review to the commit about to be merged; without it the
+    checkout's HEAD is used. A diff over the review limit is rejected, never
+    truncated and approved.
+    """
     found = objects.find(root, "contribution", contribution_ref)
     if found is None:
         raise ReviewError(f"contribution not found: {contribution_ref}")
@@ -116,22 +121,37 @@ def review(root: Path, contribution_ref: str, *, responder=None,
     default = (repo_meta.get("default_branch") or "main").strip()
     from ctx.factory import split_spec
     description, criteria = split_spec(body)
+    target = (commit or "HEAD").strip()
     run = safety.safe_runner(runner or _run)
     try:
-        diff = run(["git", "diff", f"{default}...HEAD"], code)
+        diff = run(["git", "diff", f"{default}...{target}"], code)
     except PublishError as exc:
         raise ReviewError(f"could not read the diff: {exc}") from exc
     if not diff.strip():
-        raise ReviewError("the branch has no diff against the default branch")
-    diff = diff[:DIFF_MAX_CHARS]
-    prompt = build_prompt(description, criteria, diff)
-    if responder is None:
-        from ctx import models
-        settings = models.resolve(root, "reviewer")
-        responder = lambda p: models.complete(p, settings, timeout=300, temperature=0)
-    text = responder(prompt)
-    verdict, reason = _parse(text)
-    result = {"verdict": verdict, "reason": reason, "diff_chars": len(diff)}
+        raise ReviewError(f"the branch has no diff against {default}")
+    result: dict = {"diff_chars": len(diff)}
+    if len(diff) > DIFF_MAX_CHARS:
+        # A reviewer that cannot see the whole diff must not approve it.
+        result.update({
+            "verdict": "reject",
+            "truncated": True,
+            "reason": (f"the diff is {len(diff)} characters, over the "
+                       f"{DIFF_MAX_CHARS}-character review limit. Split the change."),
+        })
+    else:
+        prompt = build_prompt(description, criteria, diff)
+        independent = False
+        model_name = ""
+        if responder is None:
+            from ctx import models
+            settings = models.resolve(root, "reviewer")
+            independent = models.reviewer_configured(root)
+            model_name = settings.get("name") or ""
+            responder = lambda p: models.complete(p, settings, timeout=300, temperature=0)
+        text = responder(prompt)
+        verdict, reason = _parse(text)
+        result.update({"verdict": verdict, "reason": reason,
+                       "model": model_name, "independent": independent})
     from ctx import writeback
     try:
         result["record"] = writeback.record_review(root, contribution_ref, result)

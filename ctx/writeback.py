@@ -207,16 +207,24 @@ def record_review(root: Path, contribution_ref: str, result: dict) -> dict:
         "verdict": verdict,
         "contribution": str(contrib.get("id") or contribution_ref),
         "reason": str(result.get("reason") or "")[:500],
+        "reviewer_model": str(result.get("model") or ""),
+        "reviewer_independent": "true" if result.get("independent") else "false",
+        "truncated": "true" if result.get("truncated") else "false",
     }
     if repo_meta.get("project"):
         meta["project"] = repo_meta["project"]
     from ctx.actors import stamp as actor_stamp
     actor_stamp(root, meta)
+    note = ("A separate model invocation reviewed the approved spec against the\n"
+            "branch diff. It is an independent pass, not a guarantee.\n")
+    if not result.get("independent"):
+        note = ("The review ran on the builder's model: no separate reviewer\n"
+                "endpoint is configured (`stead model set --review`). It is a\n"
+                "fresh context, not an independent model.\n")
     body = (f"# Independent review: {contrib.get('title') or contrib.get('id')}\n\n"
             f"Verdict: **{verdict}**.\n\n"
             f"{str(result.get('reason') or '').strip()}\n\n"
-            "A separate model invocation reviewed the approved spec against the\n"
-            "branch diff. It is an independent pass, not a guarantee.\n")
+            + note)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
     return {"id": doc_id, "path": path.relative_to(root).as_posix(),
             "verdict": verdict}

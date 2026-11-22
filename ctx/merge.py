@@ -112,7 +112,7 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
         from ctx.review import ReviewError, review as review_pass
         try:
             verdict = review_pass(root, contribution_ref, responder=reviewer,
-                                  runner=runner)
+                                  runner=runner, commit=expected)
         except (ReviewError, ModelError) as exc:
             raise MergeError(
                 f"the independent reviewer pass could not run: {exc}. Configure a "

@@ -98,12 +98,17 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
     code = code.resolve()
     policy = effective(root, repo_meta)
     defaults = factory_defaults(root)
-    token_budget = (max_tokens if max_tokens is not None
-                    else int(repo_meta.get("max_tokens")
-                             or defaults["max_tokens_per_build"]))
-    cost_budget = (max_cost if max_cost is not None
-                   else float(repo_meta.get("max_cost_usd")
-                              or defaults["max_cost_per_build_usd"]))
+    try:
+        token_budget = (max_tokens if max_tokens is not None
+                        else int(repo_meta.get("max_tokens")
+                                 or defaults["max_tokens_per_build"]))
+        cost_budget = (max_cost if max_cost is not None
+                       else float(repo_meta.get("max_cost_usd")
+                                  or defaults["max_cost_per_build_usd"]))
+    except (TypeError, ValueError) as exc:
+        raise BuildError(
+            "max_tokens and max_cost_usd must be numbers (repo frontmatter)",
+            reason="precondition") from exc
     try:
         reach = permit(policy, None)
     except AutonomyError as exc:
@@ -176,8 +181,13 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         custom_responder = responder is not None
         usage = {"prompt_tokens": 0, "completion_tokens": 0,
                  "estimated": custom_responder}
-        prices = (float(repo_meta.get("input_price_per_mtok") or 0),
-                  float(repo_meta.get("output_price_per_mtok") or 0))
+        try:
+            prices = (float(repo_meta.get("input_price_per_mtok") or 0),
+                      float(repo_meta.get("output_price_per_mtok") or 0))
+        except (TypeError, ValueError) as exc:
+            raise BuildError(
+                "input_price_per_mtok and output_price_per_mtok must be numbers "
+                "(repo frontmatter)", reason="precondition") from exc
         if responder is None:
             from ctx import models
             settings = models.resolve(root)
