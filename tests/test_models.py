@@ -219,6 +219,20 @@ class ModelTest(unittest.TestCase):
                 models.complete("draft this", anthropic)
         self.assertNotIn("sk-ant", str(caught.exception))
 
+    def test_structured_output_uses_the_json_schema_form(self) -> None:
+        from ctx.agent import _ACTION_RESPONSE_FORMAT
+        settings = {"provider": "custom", "name": "lfm3-1.7b",
+                    "base_url": "http://localhost:1234/v1", "api_key": ""}
+        url, headers, body = models._request(
+            settings, "hi", 0.2, response_format=_ACTION_RESPONSE_FORMAT)
+        # LM Studio enforces `json_schema`/`text`, not `json_object`.
+        self.assertEqual(body["response_format"]["type"], "json_schema")
+        self.assertIn("json_schema", body["response_format"])
+        # Anthropic gets no response_format (it uses a different API).
+        anth = {"provider": "anthropic", "name": "c", "base_url": "https://api.anthropic.com/v1", "api_key": "k"}
+        _, _, abody = models._request(anth, "hi", 0.2, response_format=_ACTION_RESPONSE_FORMAT)
+        self.assertNotIn("response_format", abody)
+
     def test_custom_url_must_be_http(self) -> None:
         with self.assertRaises(models.ModelError):
             models.set_model(self.root, provider="custom", name="local", base_url="file:///tmp/model")

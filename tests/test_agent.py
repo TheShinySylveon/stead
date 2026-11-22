@@ -600,8 +600,30 @@ class FailBeforeTest(BuildFixture):
         ])
         with self.assertRaises(agent.BuildError) as caught:
             agent.build(self.root, "contribution-me-app-issue-42",
-                        responder=responder)
+                        responder=responder, repair_rounds=0)
         self.assertIn("passes without the code change", str(caught.exception))
+
+    def test_a_trivial_test_can_be_fixed_within_repair_rounds(self) -> None:
+        # checks fail only when app.py lacks FEATURE and the test asserts it
+        self._set_repo(require_tests="true", allow_test_edits="true", checks=(
+            "python -c \"import pathlib,sys,os; tp='tests/test_flag.py'; "
+            "t=pathlib.Path(tp).read_text() if os.path.exists(tp) else ''; "
+            "a=pathlib.Path('app.py').read_text(); "
+            "sys.exit(0 if ('FEATURE' in a) == ('FEATURE' in t) else 1)\""))
+        responder = self._responder([
+            {"action": "plan", "summary": "Add flag + test."},
+            {"action": "write", "path": "app.py", "content": "# FEATURE\nprint('ok')\n"},
+            {"action": "write", "path": "tests/test_flag.py",
+             "content": "def test_flag():\n    assert True\n"},  # trivial first
+            {"action": "finish", "summary": "First try."},
+            {"action": "write", "path": "tests/test_flag.py",
+             "content": "# FEATURE\ndef test_flag():\n    assert True\n"},  # now fails before
+            {"action": "finish", "summary": "Fixed the test."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder, repair_rounds=1)
+        self.assertTrue(result["ok"])
+        self.assertIn("tests/test_flag.py", result["tests_touched"])
 
     def test_a_test_that_fails_before_and_passes_after_builds(self) -> None:
         # checks pass only when app.py and the test agree on 'FEATURE': the

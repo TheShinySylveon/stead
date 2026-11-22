@@ -474,7 +474,12 @@ def _post(url: str, body: dict, headers: dict, api_key: str, timeout: float) -> 
         with urllib.request.urlopen(req, timeout=timeout) as resp:
             raw = resp.read()
     except urllib.error.HTTPError as exc:
-        raise ModelError(f"model request failed ({exc.code})") from exc
+        detail = ""
+        try:
+            detail = exc.read().decode("utf-8", errors="replace")[:500]
+        except Exception:
+            pass
+        raise ModelError(f"model request failed ({exc.code}) {detail}") from exc
     except urllib.error.URLError as exc:
         raise ModelError(f"could not reach the model: {exc.reason}") from exc
     try:
