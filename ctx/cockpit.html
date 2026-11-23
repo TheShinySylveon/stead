@@ -14,24 +14,26 @@
   /* Hallmark · dropped encodeURIComponent · before.json stored a split script line as a field and the fetch is unchanged */
   /* Hallmark · answered F7 · Console cuts panels and fields from one hairline surface, so a shared radius is the material */
   :root {
-    color-scheme: dark;
+    color-scheme: light;
     --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
     --text-xs: 0.75rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.2rem; --text-xl: 1.44rem; --text-2xl: 1.728rem;
-    --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+    --ease-out: cubic-bezier(0.3, 0, 0.2, 1);
     --dur-micro: 150ms; --dur-short: 250ms;
-    --color-paper: oklch(17% 0.008 250); --color-paper-2: oklch(21% 0.009 250); --color-paper-3: oklch(13.5% 0.007 250);
-    --color-ink: oklch(95% 0.005 250); --color-ink-2: oklch(83% 0.008 250); --color-muted: oklch(71% 0.01 250);
-    --color-rule: oklch(31% 0.01 250); --color-rule-2: oklch(42% 0.012 250);
-    --color-accent: oklch(82% 0.15 80); --color-accent-ink: oklch(18% 0.04 75); --color-accent-soft: oklch(29% 0.05 80); --color-focus: oklch(82% 0.15 80);
-    --color-cool: oklch(77% 0.12 245); --color-cool-soft: oklch(29% 0.05 245);
-    --color-ok: oklch(76% 0.15 150); --color-ok-soft: oklch(24.5% 0.03 150); --color-bad: oklch(70% 0.17 25); --color-bad-soft: oklch(24.5% 0.035 25);
-    --color-nav: oklch(14.5% 0.008 250);
-    --font-display: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
-    --font-body: system-ui, -apple-system, "Segoe UI", "IBM Plex Sans", Roboto, "Helvetica Neue", Arial, sans-serif;
-    --font-outlier: var(--font-display);
-    --radius-card: 10px; --radius-control: 6px; --rule-hair: 1px;
-    --tracking-display: 0; --display-weight: 500;
-    --rail: 220px;
+    /* Modern SaaS light theme — white cards, hairline borders, one indigo accent */
+    --color-paper: #F7F8FB; --color-paper-2: #FFFFFF; --color-paper-3: #F1F5F9;
+    --color-ink: #0F172A; --color-ink-2: #334155; --color-muted: #64748B;
+    --color-rule: #E2E8F0; --color-rule-2: #CBD5E1;
+    --color-accent: #4F46E5; --color-accent-ink: #FFFFFF; --color-accent-soft: #EEF2FF; --color-focus: #4F46E5;
+    --color-cool: #0369A1; --color-cool-soft: #E0F2FE;
+    --color-ok: #15803D; --color-ok-soft: #DCFCE7; --color-bad: #B91C1C; --color-bad-soft: #FEE2E2;
+    --color-nav: #FFFFFF;
+    --font-display: system-ui, -apple-system, "Segoe UI", Inter, Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-body: var(--font-display);
+    --font-outlier: ui-monospace, "SF Mono", "Cascadia Code", Menlo, Consolas, monospace;
+    --radius-card: 12px; --radius-control: 8px; --rule-hair: 1px;
+    --tracking-display: -0.02em; --display-weight: 600;
+    --rail: 232px;
+    --shadow-card: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
   }
   *, *::before, *::after { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; overflow-x: clip; }
@@ -64,9 +66,7 @@
   .brand { display: flex; gap: var(--space-xs); align-items: center; }
   .mark {
     width: 16px; height: 16px; border-radius: var(--space-2xs);
-    border: var(--rule-hair) solid var(--color-accent);
     background: var(--color-accent);
-    box-shadow: 0 0 10px color-mix(in oklab, var(--color-accent) 45%, transparent);
     flex: none;
   }
   .brand h1 { font-size: var(--text-lg); line-height: 1.1; }
@@ -80,9 +80,9 @@
     display: flex; justify-content: space-between; align-items: center; gap: var(--space-xs);
     transition: background-color var(--dur-micro) var(--ease-out), color var(--dur-micro) var(--ease-out);
   }
-  nav button:hover { background: var(--color-paper-2); color: var(--color-ink); }
+  nav button:hover { background: var(--color-paper-3); color: var(--color-ink); }
   nav button:active { background: var(--color-paper-3); }
-  nav button[aria-current="page"] { background: transparent; color: var(--color-accent); box-shadow: inset 2px 0 0 var(--color-accent); }
+  nav button[aria-current="page"] { background: var(--color-accent-soft); color: var(--color-accent); box-shadow: none; }
   nav button:disabled { opacity: 0.45; cursor: not-allowed; }
   .badge {
     min-width: 1.4em; padding: 0 var(--space-2xs); border-radius: var(--radius-control);
@@ -135,12 +135,12 @@
   button.primary, button.primary[type="submit"] {
     background: var(--color-accent); color: var(--color-accent-ink); border: var(--rule-hair) solid var(--color-accent);
   }
-  button.primary:hover { background: var(--color-ink); color: var(--color-paper); border-color: var(--color-ink); }
-  button.primary:active { background: var(--color-ink-2); }
+  button.primary:hover { background: #4338CA; color: var(--color-accent-ink); border-color: #4338CA; }
+  button.primary:active { background: #3730A3; }
   button.quiet {
     background: var(--color-paper-2); border: var(--rule-hair) solid var(--color-rule-2); color: var(--color-ink);
   }
-  button.quiet:hover { border-color: var(--color-ink-2); }
+  button.quiet:hover { border-color: var(--color-ink-2); background: var(--color-paper-3); }
   button.quiet:active { background: var(--color-paper-3); }
   button:disabled, select:disabled, input:disabled, textarea:disabled { opacity: 0.45; cursor: not-allowed; }
   :focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
@@ -158,8 +158,9 @@
     color: var(--color-ink);
     border: var(--rule-hair) solid var(--color-rule);
     border-radius: var(--radius-card);
+    box-shadow: var(--shadow-card);
   }
-  .stat { padding: var(--space-md); border: 0; border-radius: 0; }
+  .stat { padding: var(--space-md); border: 0; border-radius: 0; box-shadow: none; }
   .stat b {
     display: block; font: 400 var(--text-2xl)/1 var(--font-outlier);
     font-variant-numeric: tabular-nums slashed-zero; color: var(--color-ink);

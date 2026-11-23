@@ -27,9 +27,10 @@
   no separate overlay or tab hops. Builds, drafts, and reviews stream their
   progress into an inline log, so a run never looks stalled. Controls are
   streamlined: the spec editor and build options collapse behind small toggles,
-  and "Review" only appears once a branch exists. Headings and figures use a
-  monospace display face (system fonts — still offline), with sans body text and
-  the graphite/amber palette kept. Views are deep-linkable via `#hash` routes.
+  and "Review" only appears once a branch exists. The look is a modern SaaS
+  light theme: a near-white canvas, white cards with hairline borders and soft
+  shadows, and a single indigo accent (system fonts — still offline). Views are
+  deep-linkable via `#hash` routes.
 - **The contribution list is a pipeline, not a CRUD grid.** Each build target is
   one card with a stage (`ready to draft → drafted → approved → built → PR
   opened → merged/closed`) and a single "next step" button, so you only see the
