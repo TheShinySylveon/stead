@@ -1354,6 +1354,36 @@ def build_task(root: Path, contribution: str, max_minutes: int | None,
     return {"ok": True, "task": tasks.start("build", contribution, run)}
 
 
+def _contribution_checkout(root: Path, contribution: str) -> Path:
+    """Resolve the local checkout a contribution builds in, for lock ops."""
+    found = objects.find(root, "contribution", contribution)
+    if found is None:
+        raise UiError(f"contribution not found: {contribution}")
+    _path, spec, _body = found
+    repo = objects.find(root, "repo", spec.get("repo") or "")
+    if repo is None:
+        raise UiError(f"repo not found: {spec.get('repo')!r}")
+    _repo_path, repo_meta, _repo_body = repo
+    code = Path(repo_meta.get("code_path") or "")
+    if not repo_meta.get("code_path") or not code.is_dir():
+        raise UiError("set the repo code_path to a local checkout first")
+    return code.resolve()
+
+
+def build_lock(root: Path, contribution: str) -> dict:
+    from ctx.agent import lock_info
+    return {"ok": True, **lock_info(_contribution_checkout(root, contribution))}
+
+
+def clear_build_lock(root: Path, contribution: str, force: bool = False) -> dict:
+    from ctx.agent import BuildError, clear_lock
+    try:
+        return {"ok": True, **clear_lock(
+            _contribution_checkout(root, contribution), force=force)}
+    except BuildError as exc:
+        raise UiError(str(exc)) from exc
+
+
 def draft_spec_task(root: Path, contribution: str, redraft: bool,
                     tasks: TaskRunner) -> dict:
     """Draft a spec off the request; poll /api/task. Never approves."""
@@ -1736,6 +1766,9 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         if method == "GET" and path == "/api/search":
             return 200, _json(search_objects(root, query.get("q", ""), query.get("repo", ""))), \
                 "application/json; charset=utf-8"
+        if method == "GET" and path == "/api/build/lock":
+            return 200, _json(build_lock(root, query.get("contribution", ""))), \
+                "application/json; charset=utf-8"
         if method == "GET" and path == "/favicon.ico":
             return 204, b"", "image/x-icon"
         if method != "POST":
@@ -1933,6 +1966,9 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                                 _opt_int(payload, "max_minutes"),
                                 _opt_int(payload, "max_tokens"),
                                 _opt_float(payload, "max_cost"), tasks)
+        elif path == "/api/build/lock/remove":
+            result = clear_build_lock(root, payload.get("contribution") or "",
+                                      force=bool(payload.get("force")))
         elif path == "/api/eval/judge":
             result = judge_eval(root, payload.get("factory") or "",
                                 payload.get("case") or "", payload.get("version") or "")

@@ -375,6 +375,40 @@ class BuildTest(BuildFixture):
         self.assertTrue(result["ok"])
         self.assertFalse(path.exists())
 
+    def test_lock_info_reports_none_when_absent(self) -> None:
+        info = agent.lock_info(self.code)
+        self.assertFalse(info["exists"])
+        self.assertEqual(info["path"], str(agent.lock_path(self.code)))
+
+    def test_clear_lock_removes_a_stale_lock(self) -> None:
+        import socket
+        path = agent.lock_path(self.code)
+        path.write_text(json.dumps({
+            "pid": 999999,
+            "host": socket.gethostname(),
+            "started": "2026-01-01T00:00:00Z",
+        }), encoding="utf-8")
+        info = agent.clear_lock(self.code)
+        self.assertTrue(info["removed"])
+        self.assertFalse(path.exists())
+
+    def test_clear_lock_refuses_a_live_lock_without_force(self) -> None:
+        import os
+        import socket
+        path = agent.lock_path(self.code)
+        path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "started": "2026-01-01T00:00:00Z",
+        }), encoding="utf-8")
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.clear_lock(self.code)
+        self.assertIn("appears to be running", str(caught.exception))
+        self.assertTrue(path.exists())
+        info = agent.clear_lock(self.code, force=True)
+        self.assertTrue(info["removed"])
+        self.assertFalse(path.exists())
+
     def test_checks_get_a_scrubbed_environment(self) -> None:
         import os
         import unittest.mock as mock

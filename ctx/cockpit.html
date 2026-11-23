@@ -1163,6 +1163,7 @@ async function openReader(type, id) {
           <button type="button" class="quiet" data-assemble="${esc(flow.act_id || data.id || id)}">Assemble shadow</button>
         </div>
         <p class="meta" style="margin-top:6px">Minutes/tokens/USD bound the build. Reach caps the shadow preview; the repo ceiling still governs publish and merge.</p>
+        <div data-build-lock="${esc(flow.act_id || data.id || id)}" style="margin-top:8px"></div>
       </details>` : "";
     const specEditor = type === "contribution" ? `
       <form id="save-spec" data-id="${esc(data.id || id)}" style="margin-top:16px">
@@ -1207,6 +1208,13 @@ async function openReader(type, id) {
       ${danger}`;
     const close = panel.querySelector("#close-reader");
     if (close) close.focus();
+    const lockCtl = panel.querySelector("[data-build-lock]");
+    if (lockCtl) {
+      const cid = lockCtl.dataset.buildLock;
+      api("/api/build/lock?contribution=" + encodeURIComponent(cid))
+        .then(info => renderBuildLock(lockCtl, cid, info))
+        .catch(() => {});
+    }
   } catch (err) {
     panel.innerHTML = `<button type="button" class="quiet" id="close-reader">Close</button><p>${esc(err.message)}</p>`;
   }
@@ -1220,6 +1228,21 @@ function closeReader() {
   panel.removeAttribute("role");
   panel.removeAttribute("aria-modal");
   if (state.opener && state.opener.focus) state.opener.focus();
+}
+function renderBuildLock(el, cid, info) {
+  if (!info || !info.exists) {
+    el.innerHTML = `<span class="meta">Build lock: none</span>`;
+    return;
+  }
+  const live = info.reclaimable === false;
+  const parts = [];
+  if (info.pid != null) parts.push("pid " + info.pid);
+  if (info.host) parts.push(info.host);
+  if (info.age_seconds != null) parts.push(Math.round(info.age_seconds) + "s old");
+  const who = parts.length ? ": " + parts.join(" · ") : "";
+  el.innerHTML = `
+    <span class="meta" style="color:var(--color-bad)">Build lock held${esc(who)} — ${live ? "a build may be running" : "looks stale"}.</span>
+    <button type="button" class="quiet" data-lock-remove="${esc(cid)}" data-live="${live ? "1" : "0"}">Remove lock</button>`;
 }
 document.addEventListener("input", (event) => {
   if (event.target.closest("#reader") && event.target.tagName === "TEXTAREA") state.dirty = true;
@@ -1272,6 +1295,24 @@ document.addEventListener("keydown", (event) => {
 });
 
 document.body.addEventListener("click", async (event) => {
+  const lockRemove = event.target.closest("[data-lock-remove]");
+  if (lockRemove) {
+    const cid = lockRemove.dataset.lockRemove;
+    const live = lockRemove.dataset.live === "1";
+    if (!confirm(live
+      ? "A build process may still be running (the lock's pid is alive). Remove the lock anyway? Only do this if you are sure no build is running."
+      : "Remove the build lock? Only do this if no build is running.")) return;
+    try {
+      lockRemove.disabled = true;
+      await api("/api/build/lock/remove", {method: "POST", body: JSON.stringify({contribution: cid, force: live})});
+      toast("Build lock removed");
+      const holder = lockRemove.closest("[data-build-lock]");
+      const info = await api("/api/build/lock?contribution=" + encodeURIComponent(cid));
+      if (holder) renderBuildLock(holder, cid, info);
+    } catch (err) { toast(err.message); }
+    finally { lockRemove.disabled = false; }
+    return;
+  }
   const verdict = event.target.closest("[data-verdict]");
   if (verdict) {
     try {
@@ -1438,7 +1479,17 @@ document.body.addEventListener("click", async (event) => {
       }
       await load();
       closeReader();
-    } catch (err) { toast(err.message); }
+    } catch (err) {
+      toast(err.message);
+      if (act === "build" && /holds the lock/i.test(String(err.message || ""))) {
+        if (confirm("Another build holds the lock for this checkout. Remove it? Only do this if no build is running.")) {
+          try {
+            await api("/api/build/lock/remove", {method: "POST", body: JSON.stringify({contribution: id, force: true})});
+            toast("Build lock removed — try Build again.");
+          } catch (e2) { toast(e2.message); }
+        }
+      }
+    }
     finally { actionBtn.disabled = false; }
     return;
   }

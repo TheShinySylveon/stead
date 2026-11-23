@@ -899,6 +899,50 @@ def _unlock(path: Path) -> None:
         pass
 
 
+def lock_info(code: Path) -> dict:
+    """Describe the per-checkout build lock, if any, without touching it."""
+    path = lock_path(code)
+    info = {"exists": False, "path": str(path)}
+    if not path.exists():
+        return info
+    info["exists"] = True
+    info["reclaimable"] = _reclaimable(path)
+    try:
+        info["age_seconds"] = round(time.time() - path.stat().st_mtime, 1)
+    except OSError:
+        info["age_seconds"] = None
+    try:
+        raw = path.read_text(encoding="utf-8").strip()
+        data = json.loads(raw)
+    except (OSError, json.JSONDecodeError):
+        data = None
+    if isinstance(data, dict):
+        info["pid"] = data.get("pid")
+        info["host"] = data.get("host")
+        info["started"] = data.get("started")
+    return info
+
+
+def clear_lock(code: Path, *, force: bool = False) -> dict:
+    """Remove the per-checkout build lock.
+
+    Refuses without ``force`` when the lock looks like a live build on this
+    host, so a person must confirm no build is running before clearing it."""
+    path = lock_path(code)
+    info = lock_info(code)
+    if not info["exists"]:
+        info["removed"] = False
+        return info
+    if not force and not info["reclaimable"]:
+        raise BuildError(
+            f"a build appears to be running on this checkout (pid "
+            f"{info.get('pid')}, host {info.get('host')}). If no build is "
+            "running, remove the lock anyway.")
+    _unlock(path)
+    info["removed"] = True
+    return info
+
+
 def _stamp() -> str:
     return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 

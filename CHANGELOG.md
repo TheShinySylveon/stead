@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **A stale build lock is now resolvable from the cockpit.** When a build fails
+  with "another build holds the lock", or a lock is left behind after a crash,
+  the contribution reader's Build options show the lock (pid, host, age, and
+  whether it looks live) with a **Remove lock** button. Removing a live-looking
+  lock asks for a stronger confirmation, and a failed Build offers to clear the
+  lock inline. The CLI-equivalent recovery no longer requires hunting for the
+  lock file under the temp directory.
 - **The contribution list is a pipeline, not a CRUD grid.** Each build target is
   one card with a stage (`ready to draft → drafted → approved → built → PR
   opened → merged/closed`) and a single "next step" button, so you only see the
