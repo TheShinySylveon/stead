@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The default token budget is now 100k (was 2M).** For a local model whose
+  context window is 100k tokens, the 2M default was unreachable. `stead factory
+  defaults` (and the `--max-tokens` / cockpit Tokens field) now default to
+  100k tokens per build.
 - **The build step cap is now 300 (was 30).** `stead build` defaults to 300
   model steps, and the CLI's `--steps N` no longer clamps to 60. The cockpit's
   Build options gain a **Steps** field so GUI builds can set their own cap, and

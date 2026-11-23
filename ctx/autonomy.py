@@ -48,9 +48,9 @@ def factory_defaults(root: Path) -> dict:
     except (TypeError, ValueError):
         minutes = 30
     try:
-        tokens = int(raw.get("max_tokens_per_build", 2_000_000))
+        tokens = int(raw.get("max_tokens_per_build", 100_000))
     except (TypeError, ValueError):
-        tokens = 2_000_000
+        tokens = 100_000
     try:
         cost = float(raw.get("max_cost_per_build_usd", 0))
     except (TypeError, ValueError):
