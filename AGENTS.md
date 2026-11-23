@@ -142,7 +142,7 @@ python -m stead inbox import PATH             # local .eml .ics .md .txt into in
 python -m stead inbox list [--kind KIND]      # read-only: what is waiting in inbox/
 python -m stead hook set                      # webhook token, printed once
 python -m stead factory publish --contribution ID  # isolated branch + pull request. Never merges.
-python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] [--max-tokens N] [--max-cost USD]  # model plans, edits, checks, commits
+python -m stead build --contribution ID [--publish] [--merge] [--resume] [--wait] [--steps N] [--max-tokens N] [--max-cost USD]  # model plans, edits, checks, commits
 python -m stead review --contribution ID        # independent reviewer pass: approve or reject the branch diff
 python -m stead spec draft --contribution ID [--all] [--redraft]  # issue -> spec (model); --all drafts every open stead-build issue
 python -m stead spec approve --contribution ID  # bind approval to the spec body hash

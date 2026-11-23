@@ -1332,7 +1332,7 @@ def _refuse_shared_remote(root: Path) -> None:
 
 def build_task(root: Path, contribution: str, max_minutes: int | None,
                max_tokens: int | None, max_cost: float | None,
-               tasks: TaskRunner) -> dict:
+               max_steps: int | None, tasks: TaskRunner) -> dict:
     """Build off the request; poll /api/task. Publishing and merging stay
     separate, explicit steps."""
     require_local_execution(root)
@@ -1347,6 +1347,8 @@ def build_task(root: Path, contribution: str, max_minutes: int | None,
             kwargs["max_tokens"] = max_tokens
         if max_cost is not None:
             kwargs["max_cost"] = max_cost
+        if max_steps:
+            kwargs["max_steps"] = max_steps
         try:
             return build(root, contribution, **kwargs)
         except (BuildError, ModelError, TimeoutError) as exc:
@@ -1964,7 +1966,8 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = build_task(root, payload.get("contribution") or "",
                                 _opt_int(payload, "max_minutes"),
                                 _opt_int(payload, "max_tokens"),
-                                _opt_float(payload, "max_cost"), tasks)
+                                _opt_float(payload, "max_cost"),
+                                _opt_int(payload, "max_steps"), tasks)
         elif path == "/api/build/lock/remove":
             result = clear_build_lock(root, payload.get("contribution") or "",
                                       force=bool(payload.get("force")))

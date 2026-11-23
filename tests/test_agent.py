@@ -1663,9 +1663,9 @@ class ProgressLogTest(BuildFixture):
         self.assertTrue(all(live[1:]), "the log exists while the build runs")
         text = "\n".join(lines)
         self.assertIn("worktree ready on stead/42-add-a-name-flag", text)
-        self.assertIn("step 1/30  plan", text)
-        self.assertIn("step 2/30  read app.py lines 1-1", text)
-        self.assertIn("step 3/30  write app.py", text)
+        self.assertIn("step 1/300  plan", text)
+        self.assertIn("step 2/300  read app.py lines 1-1", text)
+        self.assertIn("step 3/300  write app.py", text)
         self.assertIn("committed ", text)
         self.assertIn("done: committed", text)
         self.assertNotIn("import argparse", text)  # never file contents
