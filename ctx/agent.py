@@ -927,7 +927,9 @@ def clear_lock(code: Path, *, force: bool = False) -> dict:
     """Remove the per-checkout build lock.
 
     Refuses without ``force`` when the lock looks like a live build on this
-    host, so a person must confirm no build is running before clearing it."""
+    host, so a person must confirm no build is running before clearing it.
+    Reports a failed removal instead of pretending it succeeded: only an
+    already-missing lock file is harmless."""
     path = lock_path(code)
     info = lock_info(code)
     if not info["exists"]:
@@ -938,9 +940,46 @@ def clear_lock(code: Path, *, force: bool = False) -> dict:
             f"a build appears to be running on this checkout (pid "
             f"{info.get('pid')}, host {info.get('host')}). If no build is "
             "running, remove the lock anyway.")
-    _unlock(path)
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        pass  # already gone — harmless
+    except OSError as exc:
+        raise BuildError(
+            f"could not remove the build lock ({path}): {exc}",
+            reason="infrastructure") from exc
     info["removed"] = True
     return info
+
+
+def recover_checkout(root: Path, contribution_ref: str, *,
+                     force: bool = False, runner=None) -> dict:
+    """Clear a stale per-checkout lock and reclaim what a killed build of the
+    same contribution left behind (the started marker and its worktree).
+
+    ``force`` confirms no build is running, so a live-looking PID — possibly
+    reused by an unrelated process after the build was killed — does not block
+    recovery. Returns the lock's post-recovery description."""
+    found = objects.find(root, "contribution", contribution_ref)
+    if found is None:
+        raise BuildError(f"contribution not found: {contribution_ref}",
+                         reason="precondition")
+    _path, spec, body = found
+    repo = objects.find(root, "repo", spec.get("repo") or "")
+    if repo is None:
+        raise BuildError(f"repo not found: {spec.get('repo')!r}",
+                         reason="precondition")
+    _repo_path, repo_meta, _repo_body = repo
+    code = Path(repo_meta.get("code_path") or "")
+    if not repo_meta.get("code_path") or not code.is_dir():
+        raise BuildError("set the repo code_path to a local checkout before "
+                         "building", reason="precondition")
+    anchor = code.resolve()
+    base_run = runner or _git_run
+    result = clear_lock(anchor, force=force)
+    _reclaim_stale_started(safety.safe_runner(base_run), anchor, root, spec,
+                           body, force=force)
+    return result
 
 
 def _stamp() -> str:
@@ -1052,14 +1091,15 @@ def _clear_started(root: Path, body: str) -> None:
 
 
 def _reclaim_stale_started(run, anchor: Path, root: Path, spec: dict,
-                           body: str) -> None:
+                           body: str, *, force: bool = False) -> None:
     """Turn a stale started marker into an infrastructure failure record.
 
     Only a hard kill leaves the marker (normal failure and success both clear
     it). The dead process may also have left its worktree registered with the
     branch checked out — remove it so the spec is not stuck. If the recorded
     PID is still alive, a build of this spec is genuinely in progress and the
-    marker is left alone."""
+    marker is left alone, unless ``force`` (a person has confirmed no build is
+    running, so an alive PID is a reused one)."""
     path = _marker_path(root, body)
     if not path.is_file():
         return
@@ -1069,7 +1109,7 @@ def _reclaim_stale_started(run, anchor: Path, root: Path, spec: dict,
     except (OSError, json.JSONDecodeError, ValueError):
         _clear_started(root, body)
         return
-    if _pid_alive(pid):
+    if not force and _pid_alive(pid):
         return
     wt = data.get("worktree")
     if wt:

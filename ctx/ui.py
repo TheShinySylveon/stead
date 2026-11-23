@@ -1376,10 +1376,9 @@ def build_lock(root: Path, contribution: str) -> dict:
 
 
 def clear_build_lock(root: Path, contribution: str, force: bool = False) -> dict:
-    from ctx.agent import BuildError, clear_lock
+    from ctx.agent import BuildError, recover_checkout
     try:
-        return {"ok": True, **clear_lock(
-            _contribution_checkout(root, contribution), force=force)}
+        return {"ok": True, **recover_checkout(root, contribution, force=force)}
     except BuildError as exc:
         raise UiError(str(exc)) from exc
 

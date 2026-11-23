@@ -7,8 +7,11 @@
   the contribution reader's Build options show the lock (pid, host, age, and
   whether it looks live) with a **Remove lock** button. Removing a live-looking
   lock asks for a stronger confirmation, and a failed Build offers to clear the
-  lock inline. The CLI-equivalent recovery no longer requires hunting for the
-  lock file under the temp directory.
+  lock inline. Removing the lock also reclaims the killed build's leftover
+  started marker and worktree (so the branch is not stuck even when the OS
+  reused the pid), and a removal that actually fails is reported as a failure
+  rather than a silent success. The CLI-equivalent recovery no longer requires
+  hunting for the lock file under the temp directory.
 - **The contribution list is a pipeline, not a CRUD grid.** Each build target is
   one card with a stage (`ready to draft → drafted → approved → built → PR
   opened → merged/closed`) and a single "next step" button, so you only see the
