@@ -5,9 +5,11 @@
 - **`spec draft` now writes narrow, verifiable specs.** The drafting prompt
   pushes for ONE concrete change (picking the smallest slice of a broad issue
   rather than scoping the whole ambition), aims for 1-3 acceptance criteria
-  that each name a test or a before/after behavior, and forbids vague criteria
-  like "improve correctness" or "score Set B". A broad spec is what let the
-  build agent loop; a narrow one gives it an unambiguous finish line.
+  that each name a test or a before/after behavior, forbids vague criteria
+  like "improve correctness" or "score Set B", and refuses to plan training or
+  research tasks or edits to protected paths (CI config, existing tests, the
+  checks definition) — which a build refuses anyway. A broad spec is what let
+  the build agent loop; a narrow one gives it an unambiguous finish line.
 - **The build loop pushes back on models that loop.** A model that plans but
   never edits now gets escalating reminders at steps 5, 15, and 30 (not one
   ignored nudge); re-reading or re-searching the same target 3+ times, or
