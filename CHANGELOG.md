@@ -9,6 +9,12 @@
   one card, the GitHub-synced dropdowns are gone (CI/review stay as read-only
   chips), and the reader shows only the next step instead of every action at
   once.
+- **The whole build lifecycle lives on one tab.** Draft → Approve → Build →
+  Publish run from the Repos tab's pipeline cards and the contribution reader,
+  which now also carries the build options (minutes / tokens / USD / reach), an
+  "Assemble shadow" preview, "Review", and a plain-language hint for each stage.
+  The Factories tab's `feature-builder` panel no longer duplicates the build — it
+  points to the Repos pipeline — so there is one place to take an issue to a PR.
 - **`sync github` reconciles merged PRs, and the cockpit splits open from done.**
   Cached open PR contributions now get their live state checked during sync, so
   a merged or closed PR stops showing as open (before, sync only fetched open
