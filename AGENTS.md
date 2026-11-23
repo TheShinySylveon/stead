@@ -310,7 +310,7 @@ default branch must have required status checks (or an explicit
 `merge_without_required_checks: true`). Merge also runs an independent reviewer
 pass unless the repo sets `merge_without_review: true`. A build has a wall-clock
 budget (`--max-minutes`, watched builds use `build_minutes`), a token budget
-(default 2M, `--max-tokens`) and an optional USD budget, a step cap, and a stop
+(default 100k, `--max-tokens`) and an optional USD budget, a step cap, and a stop
 file (`stead factory stop` / `.stead-stop`). Watched builds stop at
 `max_builds_per_day` and the token/cost budgets. `stead doctor` lints the store;
 `docs/trust.md` is the threat model and egress table.

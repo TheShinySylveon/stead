@@ -303,7 +303,7 @@ issue comments are reachable behind a human confirmation, and long model steps
   must approve the diff against the spec, unless `merge_without_review: true`.
   Remaining: a stronger, model-agnostic reviewer and a recorded per-spec
   acceptance check (see [Trust](trust.md)).
-- Token and USD budgets are **built** (`--max-tokens`, `--max-cost`, default 2M
+- Token and USD budgets are **built** (`--max-tokens`, `--max-cost`, default 100k
   tokens). Remaining: a provider-usage-funded spend cap and provider-side quota
   enforcement.
 

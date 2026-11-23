@@ -60,7 +60,7 @@ code execution with the permissions of your user account.
 | Commit boundary | On | `finish` requires HEAD to still be where Stead left it, stages only the model's own writes (`git add -A -- <paths>`), and refuses a tracked change the checks made; protected or secret paths fail hardest. Untracked leftovers are removed, not staged. The ledger (`tests_touched`, `ci_touched`, the file list) comes from the committed range `base..HEAD`, and a branch whose HEAD moved is reset. |
 | Wall-clock budget | 30 minutes per build | A repair loop cannot run forever. `--max-minutes` changes it; watched builds use `build_minutes`. |
 | Step, edit, and prompt caps | 300 steps, 1 MB written, 120k prompt chars | A model cannot loop, dump unbounded output, or grow the resent transcript without bound; older read outputs are trimmed first. |
-| Token and cost budget | 2M tokens per build; USD off until prices are set | Each build accumulates token usage (provider-reported, else estimated from characters) and aborts past the budget. Set prices with `stead model set --input-price/--output-price`; override per build with `--max-tokens`/`--max-cost`. |
+| Token and cost budget | 100k tokens per build; USD off until prices are set | Each build accumulates token usage (provider-reported, else estimated from characters) and aborts past the budget. Set prices with `stead model set --input-price/--output-price`; override per build with `--max-tokens`/`--max-cost`. |
 | Stop file | `.stead-stop` | A build and a watched run stop between steps. `stead factory stop` creates it. |
 | Worktree build | On | Every build runs in its own `git worktree`; the user's checkout is never touched and Stead never runs `git clean`. A failed build commits its WIP to the build branch (kept, never pushed) and drops the worktree. A "started" marker is reclaimed as an infrastructure failure record if a build was killed (Task Scheduler/Task Manager). |
 | One attempt per hash | On | A build-class failure blocks a re-run of the same approved content until re-approval (a new hash) or `--retry`. Infrastructure failures and precondition failures write no record and don't consume the attempt or the daily budget; real failures carry a `reason` code. |
@@ -289,7 +289,7 @@ residual risks of the design, not the project status.
   is still to build.
 - No token or dollar budget is enforced by the provider itself. Stead counts
   usage (provider-reported, else estimated from characters) and aborts past
-  `max_tokens_per_build` (default 2M) or `max_cost_per_build_usd` (off until
+  `max_tokens_per_build` (default 100k) or `max_cost_per_build_usd` (off until
   prices are set). A provider-side quota is still worth setting for defense in
   depth.
 - No per-object permissions or roles on the shared server.
