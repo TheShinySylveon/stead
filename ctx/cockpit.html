@@ -1404,8 +1404,9 @@ document.body.addEventListener("click", async (event) => {
             return el && el.value !== "" ? Number(el.value) : undefined;
           };
           const mm = opt("max_minutes"); if (mm) payload.max_minutes = mm;
-          const mt = opt("max_tokens"); if (mt) payload.max_tokens = mt;
-          const mc = opt("max_cost"); if (mc) payload.max_cost = mc;
+          // 0 means "off" for tokens/cost and must reach the server; only an empty field is omitted.
+          const mt = opt("max_tokens"); if (mt !== undefined) payload.max_tokens = mt;
+          const mc = opt("max_cost"); if (mc !== undefined) payload.max_cost = mc;
         }
         const result = await awaitTask("/api/build", payload, "Build");
         toast(result && result.branch ? "Built on " + result.branch : "Build finished");
