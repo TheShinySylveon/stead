@@ -18,6 +18,9 @@ On this computer the server refuses any address except loopback
 
 The page has no external fonts or scripts. It works offline.
 
+Each section has a `#hash` route (for example `#repos`, `#tasks`), so the back
+button, browser history, and shared URLs land on the right view.
+
 Writes go through the same rules as the CLI. Markdown stays the source of
 truth. The page calls a model only when you check **Draft with model** or
 press **Build** on an approved spec. A cockpit build runs in the background
@@ -38,7 +41,7 @@ See [First run](first-run.md).
 | Tasks | Add a task, move its status. The title opens the note. |
 | Projects | Onboard a later project (repo + constitution, optional Spec Kit). Or add a project with no repo. Change a project's status. |
 | Library | Add and edit documents and meetings. Rename them. The id does not change. |
-| Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. The build pipeline lives here: each issue/spec is a card with one next step (Draft → Approve → Build → Publish); Details opens the spec with build options, Assemble shadow, and Review. On a shared server, trigger, reach, code_path, and the checks/protected-path fields are read-only. |
+| Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. The build pipeline lives here: each issue/spec is a card; expand it to read the spec and take the next step (Draft → Approve → Build → Publish), set build options, preview the bundle, or review — all inline. On a shared server, trigger, reach, code_path, and the checks/protected-path fields are read-only. |
 | Wiki | A Confluence-style space per repo: home, page tree, child pages, labels, metadata, on-page table of contents. Arrange reorders and pins; Request a change files a request document instead of editing generated pages. |
 | Inbox | Drop a note, or import a local `.eml`, `.ics`, `.md`, or `.txt` file. File it as a document, meeting, or task, or delete it. |
 | Factories | What a factory is and what each one reads, in plain language. Assemble a shadow run; check Draft with model to write `output.md`. Watch now assembles; Watch and build plans, edits, checks, and commits locally. Guided New factory (a custom factory reads a project). Delete a factory (shipped factories and run logs need force). Per-case eval results, Judge, Promote prompt. feature-builder's Draft → Approve → Build → Publish lives on Repos. A shared server refuses any build. |
@@ -57,15 +60,16 @@ contribution also removes the spec drafted from it.
 "Needs you" lists one row per object. An object with two reasons shows two
 chips, and counts once.
 
-A contribution opens as a **public spec**. The banner is there because that
-file can be shared. Private notes belong in Library. The reader shows the
-current stage and the single next step — Draft, Approve, Build, or Publish —
-with a plain-language hint. **Approve** records a hash of the current body; any
+A contribution expands inline as a **public spec**. The file can be shared;
+private notes belong in Library. Expanding a card on the Repos tab shows the
+spec, the current stage, and the next action — Draft, Approve, Build, or
+Publish — all in one pane. **Approve** records a hash of the current body; any
 later edit needs re-approval. **Build options** (minutes / tokens / USD / reach)
-bound the build; an explicit `0` turns the token or cost limit off. **Assemble
-shadow** previews the feature-builder bundle without building, and **Review**
-runs the independent reviewer. On a shared server, approval, the author role,
-and authoring a spec with acceptance criteria are read-only.
+bound the build; an explicit `0` turns the token or cost limit off. **Preview
+bundle** assembles the feature-builder bundle without building, and **Review**
+runs the independent reviewer (once a branch exists). Builds, drafts, and
+reviews stream their progress into an inline log. On a shared server, approval,
+the author role, and authoring a spec with acceptance criteria are read-only.
 
 ## GitHub sync
 
@@ -80,10 +84,11 @@ issues stay visible and can be deleted from their reader.
 
 ## Factory runs
 
-Assemble shadow writes `bundle.md`, `prompt.md`, and `run.json` under
-`factories/<name>/runs/`. Those directories are gitignored. Hand `prompt.md`
-to any agent. Come back and approve or reject the run on Home. **Open run**
-shows the draft, the prompt, and the bundle. Home lists the newest runs, with
+Preview bundle (assemble shadow) writes `bundle.md`, `prompt.md`, and `run.json`
+under `factories/<name>/runs/`. Those directories are gitignored. Hand
+`prompt.md` to any agent. Come back and approve or reject the run on Home.
+**Open run** shows the draft, the prompt, and the bundle. Home lists the newest
+runs, with
 a control to show the full history.
 
 **Publish** opens a pull request from an isolated branch, and **Merge** merges
