@@ -377,6 +377,7 @@ const state = { snap: null, view: "home", q: "", onboardResult: null,
 const VALID_VIEWS = new Set(VIEWS.map(([id]) => id));
 function viewFromHash() {
   const h = (location.hash || "").replace(/^#\/?/, "");
+  if (!h) return "home";
   return VALID_VIEWS.has(h) ? h : "";
 }
 async function go(view) {
@@ -385,12 +386,12 @@ async function go(view) {
   state.view = view;
   state.settingsToken = "";
   closeReader();
+  if (changed && location.hash !== "#" + view) location.hash = view;
   if (view === "wiki" && state.wikiRepo) {
     await openWiki(state.wikiRepo);
   } else {
     render();
   }
-  if (changed && location.hash !== "#" + view) location.hash = view;
 }
 
 function when(value) {
@@ -2117,6 +2118,7 @@ window.addEventListener("hashchange", () => {
   const v = viewFromHash();
   if (v && v !== state.view) go(v);
 });
+if (!location.hash) history.replaceState(null, "", "#home");
 load().catch(err => {
   document.getElementById("main").innerHTML = `<div class="empty">${esc(err.message)}</div>`;
 });
