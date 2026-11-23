@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+- **A stale build lock is now resolvable from the cockpit.** When a build fails
+  with "another build holds the lock", or a lock is left behind after a crash,
+  the contribution reader's Build options show the lock (pid, host, age, and
+  whether it looks live) with a **Remove lock** button. Removing a live-looking
+  lock asks for a stronger confirmation, and a failed Build offers to clear the
+  lock inline. Removing the lock also reclaims the killed build's leftover
+  started marker and worktree (so the branch is not stuck even when the OS
+  reused the pid), and a removal that actually fails is reported as a failure
+  rather than a silent success. The CLI-equivalent recovery no longer requires
+  hunting for the lock file under the temp directory.
 - **Cockpit UI/UX overhaul (ui-ux-pro-max design system).** The whole build
   flow now lives on one pane: each build target on the Repos tab expands inline
   to show its spec, stage, and the next action (Draft → Approve → Build →

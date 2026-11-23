@@ -375,6 +375,100 @@ class BuildTest(BuildFixture):
         self.assertTrue(result["ok"])
         self.assertFalse(path.exists())
 
+    def test_lock_info_reports_none_when_absent(self) -> None:
+        info = agent.lock_info(self.code)
+        self.assertFalse(info["exists"])
+        self.assertEqual(info["path"], str(agent.lock_path(self.code)))
+
+    def test_clear_lock_removes_a_stale_lock(self) -> None:
+        import socket
+        path = agent.lock_path(self.code)
+        path.write_text(json.dumps({
+            "pid": 999999,
+            "host": socket.gethostname(),
+            "started": "2026-01-01T00:00:00Z",
+        }), encoding="utf-8")
+        info = agent.clear_lock(self.code)
+        self.assertTrue(info["removed"])
+        self.assertFalse(path.exists())
+
+    def test_clear_lock_refuses_a_live_lock_without_force(self) -> None:
+        import os
+        import socket
+        path = agent.lock_path(self.code)
+        path.write_text(json.dumps({
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "started": "2026-01-01T00:00:00Z",
+        }), encoding="utf-8")
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.clear_lock(self.code)
+        self.assertIn("appears to be running", str(caught.exception))
+        self.assertTrue(path.exists())
+        info = agent.clear_lock(self.code, force=True)
+        self.assertTrue(info["removed"])
+        self.assertFalse(path.exists())
+
+    def test_clear_lock_reports_a_removal_failure(self) -> None:
+        import socket
+        path = agent.lock_path(self.code)
+        path.write_text(json.dumps({
+            "pid": 999999,
+            "host": socket.gethostname(),
+            "started": "2026-01-01T00:00:00Z",
+        }), encoding="utf-8")
+        with mock.patch("pathlib.Path.unlink", side_effect=PermissionError("denied")):
+            with self.assertRaises(agent.BuildError) as caught:
+                agent.clear_lock(self.code)
+        self.assertIn("could not remove", str(caught.exception))
+        self.assertTrue(path.exists())
+
+    def test_force_recovery_reclaims_a_reused_pid_lock_and_marker(self) -> None:
+        import os
+        import socket
+        from ctx import objects
+        _p, _spec, body = objects.find(self.root, "contribution",
+                                       "contribution-me-app-issue-42")
+        # A killed build left a checkout lock AND a started marker; the OS then
+        # reused its pid, so both look "live" to Stead.
+        lock = agent.lock_path(self.code)
+        marker = agent._marker_path(self.root, body)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "started": "2026-01-01T00:00:00Z",
+        }
+        lock.write_text(json.dumps(payload), encoding="utf-8")
+        marker.write_text(json.dumps({
+            **payload,
+            "contribution": "contribution-me-app-issue-42",
+            "worktree": str(self.code / "dead-worktree"),
+        }), encoding="utf-8")
+        info = agent.recover_checkout(self.root, "contribution-me-app-issue-42",
+                                      force=True)
+        self.assertTrue(info["removed"])
+        self.assertFalse(lock.exists())
+        self.assertFalse(marker.exists())
+
+    def test_recovery_without_force_leaves_a_live_pid_marker(self) -> None:
+        import os
+        import socket
+        from ctx import objects
+        _p, _spec, body = objects.find(self.root, "contribution",
+                                       "contribution-me-app-issue-42")
+        marker = agent._marker_path(self.root, body)
+        marker.parent.mkdir(parents=True, exist_ok=True)
+        marker.write_text(json.dumps({
+            "pid": os.getpid(),
+            "host": socket.gethostname(),
+            "started": "2026-01-01T00:00:00Z",
+            "contribution": "contribution-me-app-issue-42",
+            "worktree": str(self.code / "dead-worktree"),
+        }), encoding="utf-8")
+        agent.recover_checkout(self.root, "contribution-me-app-issue-42")
+        self.assertTrue(marker.exists())
+
     def test_checks_get_a_scrubbed_environment(self) -> None:
         import os
         import unittest.mock as mock
