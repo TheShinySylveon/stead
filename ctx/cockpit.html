@@ -276,6 +276,22 @@
     font-size: var(--text-sm); z-index: 6;
   }
   #toast[hidden] { display: none; }
+  .contrib-slot { margin-top: var(--space-sm); padding-top: var(--space-sm); border-top: var(--rule-hair) solid var(--color-rule); }
+  .contrib-slot[hidden] { display: none; }
+  .build-log {
+    font: var(--text-xs)/1.5 var(--font-outlier);
+    color: var(--color-ink-2);
+    background: var(--color-paper-3);
+    border: var(--rule-hair) solid var(--color-rule);
+    border-radius: var(--radius-control);
+    padding: var(--space-sm);
+    margin-top: var(--space-sm);
+    max-height: 320px;
+    overflow: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .build-log[hidden] { display: none; }
   a { color: var(--color-accent); text-underline-offset: 0.16em; }
   ::selection { background: color-mix(in oklab, var(--color-accent) 25%, transparent); }
   @media (max-width: 68rem) {
@@ -356,7 +372,7 @@ const state = { snap: null, view: "home", q: "", onboardResult: null,
   scheduleText: "", scheduleProject: "", hookToken: "",
   showAllRuns: false, evals: {}, opener: null, dirty: false,
   wikiRepo: "", wiki: null, wikiPath: "", wikiPageData: null,
-  wikiArrange: false, wikiRequestForm: false };
+  wikiArrange: false, wikiRequestForm: false, detailId: null, detail: null };
 
 const VALID_VIEWS = new Set(VIEWS.map(([id]) => id));
 function viewFromHash() {
@@ -421,20 +437,29 @@ async function api(path, opts) {
   if (!res.ok) throw new Error(data.error || res.statusText);
   return data;
 }
-async function awaitTask(path, payload, verb) {
+function logFor(el) {
+  const detail = el && el.closest ? el.closest(".contrib-detail") : null;
+  return detail ? detail.querySelector("[data-log]") : null;
+}
+async function awaitTask(path, payload, verb, logEl) {
   const started = await api(path, {method: "POST", body: JSON.stringify(payload)});
   const taskId = started.task;
   if (!taskId) throw new Error(verb + " did not start");
-  toast(verb + " started…");
-  let last = "";
+  const write = (text) => {
+    if (logEl) { logEl.hidden = false; logEl.textContent += text + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+  };
+  write(verb + " started…");
+  let seen = 0;
   for (let i = 0; i < 2400; i++) {
-    await new Promise(r => setTimeout(r, 1500));
+    await new Promise(r => setTimeout(r, 1200));
     const snap = await api("/api/task?id=" + encodeURIComponent(taskId));
-    if (snap.status === "done") return snap.result;
-    if (snap.status === "failed") throw new Error(snap.error || (verb + " failed"));
-    const line = snap.progress[snap.progress.length - 1];
-    if (line && line !== last) { last = line; toast(line); }
+    if (snap.status === "done") { write("✓ " + verb + " finished."); return snap.result; }
+    if (snap.status === "failed") { write("✗ " + (snap.error || (verb + " failed"))); throw new Error(snap.error || (verb + " failed")); }
+    const lines = snap.progress || [];
+    for (let j = seen; j < lines.length; j++) write(lines[j]);
+    seen = lines.length;
   }
+  write("⚠ " + verb + " is taking too long; watch it in the terminal");
   throw new Error(verb + " is taking too long; watch it in the terminal");
 }
 async function load() {
@@ -446,6 +471,7 @@ async function load() {
   const version = document.getElementById("version");
   if (version) version.textContent = "v" + state.snap.version;
   window.scrollTo(0, y);
+  if (state.detailId) toggleContrib(state.detailId);
 }
 function projectName(id) {
   const p = (state.snap.projects || []).find(x => x.id === id);
@@ -625,18 +651,18 @@ function renderRepos() {
       `<button type="button" class="${a.tone}" data-action="${a.key}" data-id="${esc(c.act_id)}" data-title="${esc(c.title)}">${esc(a.label)}</button>`).join("");
     return `
     <div class="card" style="display:block">
-      <div style="display:flex;justify-content:space-between;gap:8px;align-items:start">
-        <div style="min-width:0">
+      <button type="button" class="linkish" data-toggle-contrib="${esc(c.act_id)}" style="display:flex;justify-content:space-between;gap:8px;align-items:start;width:100%">
+        <span style="min-width:0">
           <strong>${esc(c.title)}</strong>
-          <div class="meta">${esc(c.kind)} #${esc(c.number)} · ${esc(c.repo)}</div>
-        </div>
-        <div class="chips">${chip(c.stage_label || c.state, done ? "done" : "doing")}${c.ci && c.ci !== "none" ? chip("ci " + c.ci, c.ci) : ""}${c.review && c.review !== "none" ? chip(c.review, "review") : ""}</div>
-      </div>
+          <span class="meta" style="display:block">${esc(c.kind)} #${esc(c.number)} · ${esc(c.repo)}</span>
+        </span>
+        <span class="chips">${chip(c.stage_label || c.state, done ? "done" : "doing")}${c.ci && c.ci !== "none" ? chip("ci " + c.ci, c.ci) : ""}${c.review && c.review !== "none" ? chip(c.review, "review") : ""}</span>
+      </button>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         ${buttons}
-        <button type="button" class="quiet" data-open data-type="contribution" data-id="${esc(c.act_id)}">Details</button>
         ${String(c.url || "").startsWith("https://") ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">GitHub</a>` : ""}
       </div>
+      <div class="contrib-slot" data-slot="${esc(c.act_id)}" hidden></div>
     </div>`;
   };
   const open = contribs.filter(c => c.state !== "merged" && c.state !== "closed");
@@ -1131,6 +1157,78 @@ async function openWikiPage(path) {
     toast(err.message);
   }
 }
+function contributionDetail(data, title, id) {
+  const flow = data.flow || {};
+  const done = flow.stage === "merged" || flow.stage === "closed";
+  const actId = flow.act_id || data.id || id;
+  const stage = flow.stage || "";
+  const primary = (flow.actions || []).map(a =>
+    `<button type="button" class="${a.tone}" data-action="${a.key}" data-id="${esc(actId)}" data-title="${esc(title)}">${esc(a.label)}</button>`).join("");
+  const review = ["built", "published"].includes(stage)
+    ? `<button type="button" class="quiet" data-review="${esc(actId)}">Review</button>` : "";
+  const buildOptions = ["drafted", "approved", "built", "published"].includes(stage) ? `
+    <details data-build-options style="margin-top:10px">
+      <summary class="meta">Build options</summary>
+      <div class="inline" style="margin-top:8px">
+        <input type="number" name="max_minutes" min="1" max="480" placeholder="Minutes" aria-label="Build minutes" style="width:6.5em">
+        <input type="number" name="max_tokens" min="0" placeholder="Tokens" aria-label="Max tokens" style="width:6.5em">
+        <input type="number" name="max_cost" min="0" step="0.01" placeholder="USD" aria-label="Max cost" style="width:6em">
+        <select name="reach" aria-label="Reach">${(state.snap.choices.factory_reach || []).map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("")}</select>
+        <button type="button" class="quiet" data-assemble="${esc(actId)}">Preview bundle</button>
+      </div>
+    </details>` : "";
+  let body = data.body || "";
+  const dup = body.match(/^#\s+(.+)\n+/);
+  if (dup && dup[1].trim() === String(title).trim()) body = body.slice(dup[0].length);
+  return `
+    <div class="contrib-detail">
+      <div class="reader-body">${renderMarkdown(body)}</div>
+      <div class="panel" style="padding:12px 14px;margin-top:12px">
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+          ${chip(flow.stage_label || "Ready to draft", done ? "done" : "doing")}
+          ${primary}
+          ${review}
+        </div>
+        ${buildOptions}
+        <details style="margin-top:10px">
+          <summary class="meta">Edit spec</summary>
+          <form id="save-spec" data-id="${esc(data.id || id)}" style="margin-top:8px">
+            <textarea name="body" aria-label="Public spec body">${esc(data.body || "")}</textarea>
+            <div><button class="primary" type="submit">Save</button></div>
+          </form>
+          <p class="meta" style="margin-top:6px">Public file. Private strategy belongs in a document, not here.</p>
+        </details>
+      </div>
+      <pre class="build-log" data-log hidden></pre>
+    </div>`;
+}
+
+function slotFor(id) {
+  const nodes = document.querySelectorAll("[data-slot]");
+  for (const n of nodes) if (n.dataset.slot === id) return n;
+  return null;
+}
+async function toggleContrib(id) {
+  const slot = slotFor(id);
+  if (!slot) return;
+  if (state.detailId === id && !slot.hidden) { state.detailId = null; slot.hidden = true; return; }
+  if (state.detailId && state.detailId !== id) {
+    const prev = slotFor(state.detailId);
+    if (prev) prev.hidden = true;
+  }
+  state.detailId = id;
+  slot.hidden = false;
+  if (slot.dataset.loaded === "1") return;
+  slot.innerHTML = `<p class="meta">Loading…</p>`;
+  try {
+    const data = await api("/api/object?type=contribution&id=" + encodeURIComponent(id));
+    slot.innerHTML = contributionDetail(data, data.title || id, id);
+    slot.dataset.loaded = "1";
+  } catch (err) {
+    slot.innerHTML = `<p class="meta">${esc(err.message)}</p>`;
+  }
+}
+
 async function openReader(type, id) {
   const panel = document.getElementById("reader");
   state.opener = document.activeElement;
@@ -1148,8 +1246,6 @@ async function openReader(type, id) {
     let body = data.body || "";
     const dup = body.match(/^#\s+(.+)\n+/);
     if (dup && dup[1].trim() === String(title).trim()) body = body.slice(dup[0].length);
-    const banner = type === "contribution"
-      ? `<div class="banner">Public GitHub cache. Private strategy belongs in a document, not here.</div>` : "";
     const editable = ["project", "task", "document", "meeting"].includes(type);
     const editor = editable ? `
       <form id="save-title" data-type="${esc(type)}" data-id="${esc(data.id || id)}" class="inline" style="margin-top:12px">
@@ -1161,46 +1257,7 @@ async function openReader(type, id) {
         <textarea name="body" aria-label="Note body">${esc(data.body || "")}</textarea>
         <div><button class="primary" type="submit">Save note</button></div>
       </form>` : "";
-    const flow = data.flow || {};
-    const done = flow.stage === "merged" || flow.stage === "closed";
-    const flowButtons = (flow.actions || []).map(a =>
-      `<button type="button" class="${a.tone}" data-action="${a.key}" data-id="${esc(flow.act_id || data.id || id)}" data-title="${esc(title)}">${esc(a.label)}</button>`).join("");
-    const stageHint = {
-      draft: "No spec yet. Draft turns this issue into a spec with acceptance criteria and a plan.",
-      drafted: "Spec drafted, not approved. Read it above, then Approve to lock its exact text.",
-      approved: "Approved. Build runs the model: plan → edit → check → commit on an isolated branch.",
-      built: "Built on a branch. Publish opens a pull request.",
-      published: "PR open. Review it, then merge (if the repo allows).",
-      merged: "Merged. Done.",
-      closed: "Closed.",
-    }[flow.stage] || "Only the next step is shown. Save edits first, then the stage follows it.";
-    const buildOptions = type === "contribution" && ["drafted", "approved", "built", "published"].includes(flow.stage) ? `
-      <details data-build-options style="margin-top:10px">
-        <summary class="meta">Build options</summary>
-        <div class="inline" style="margin-top:8px">
-          <input type="number" name="max_minutes" min="1" max="480" placeholder="Minutes" aria-label="Build minutes" style="width:6.5em">
-          <input type="number" name="max_tokens" min="0" placeholder="Tokens" aria-label="Max tokens" style="width:6.5em">
-          <input type="number" name="max_cost" min="0" step="0.01" placeholder="USD" aria-label="Max cost" style="width:6em">
-          <select name="reach" aria-label="Reach">${(state.snap.choices.factory_reach || []).map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("")}</select>
-          <button type="button" class="quiet" data-assemble="${esc(flow.act_id || data.id || id)}">Assemble shadow</button>
-        </div>
-        <p class="meta" style="margin-top:6px">Minutes/tokens/USD bound the build. Reach caps the shadow preview; the repo ceiling still governs publish and merge.</p>
-      </details>` : "";
-    const specEditor = type === "contribution" ? `
-      <form id="save-spec" data-id="${esc(data.id || id)}" style="margin-top:16px">
-        <div class="section-title">Public spec</div>
-        <textarea name="body" aria-label="Public spec body">${esc(data.body || "")}</textarea>
-        <div><button class="primary" type="submit">Save public spec</button></div>
-      </form>
-      <div class="panel" style="padding:12px 14px;margin-top:12px">
-        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
-          ${chip(flow.stage_label || "Ready to draft", done ? "done" : "doing")}
-          ${flowButtons}
-          ${["approved", "built", "published"].includes(flow.stage) ? `<button type="button" class="quiet" data-review="${esc(flow.act_id || data.id || id)}">Review</button>` : ""}
-        </div>
-        <p class="meta" style="margin-top:8px">${stageHint}</p>
-        ${buildOptions}
-      </div>` : "";
+    const contrib = type === "contribution" ? contributionDetail(data, title, id) : "";
     const path = data.path ? `<div class="meta">${esc(data.path)}</div>` : "";
     const roll = data.rollup ? `
       <div class="panel" style="padding:12px 14px;margin-top:12px">
@@ -1222,10 +1279,9 @@ async function openReader(type, id) {
       <button type="button" class="quiet" id="close-reader">Close</button>
       ${path}
       <h3>${esc(title)}</h3>
-      ${banner}
-      <div class="reader-body">${renderMarkdown(body)}</div>
+      ${contrib ? contrib : `<div class="reader-body">${renderMarkdown(body)}</div>`}
       ${roll}
-      ${editor}${specEditor}
+      ${editor}
       ${danger}`;
     const close = panel.querySelector("#close-reader");
     if (close) close.focus();
@@ -1422,7 +1478,7 @@ document.body.addEventListener("click", async (event) => {
     try {
       actionBtn.disabled = true;
       if (act === "draft") {
-        await awaitTask("/api/spec/draft", {contribution: id}, "Draft spec");
+        await awaitTask("/api/spec/draft", {contribution: id}, "Draft spec", logFor(actionBtn));
         toast("Drafted. Now approve it.");
       } else if (act === "approve") {
         if (!confirm("Approve this spec body for building? Any later edit needs re-approval.")) return;
@@ -1431,10 +1487,10 @@ document.body.addEventListener("click", async (event) => {
       } else if (act === "build") {
         if (!confirm("Build " + title + " with the model? It plans, runs checks, and commits locally.")) return;
         const payload = {contribution: id};
-        if (actionBtn.closest("#reader")) {
-          const reader = document.getElementById("reader");
+        const detail = actionBtn.closest(".contrib-detail");
+        if (detail) {
           const opt = (name) => {
-            const el = reader && reader.querySelector('[data-build-options] [name="' + name + '"]');
+            const el = detail.querySelector('[data-build-options] [name="' + name + '"]');
             return el && el.value !== "" ? Number(el.value) : undefined;
           };
           const mm = opt("max_minutes"); if (mm) payload.max_minutes = mm;
@@ -1442,7 +1498,7 @@ document.body.addEventListener("click", async (event) => {
           const mt = opt("max_tokens"); if (mt !== undefined) payload.max_tokens = mt;
           const mc = opt("max_cost"); if (mc !== undefined) payload.max_cost = mc;
         }
-        const result = await awaitTask("/api/build", payload, "Build");
+        const result = await awaitTask("/api/build", payload, "Build", logFor(actionBtn));
         toast(result && result.branch ? "Built on " + result.branch : "Build finished");
       } else if (act === "publish") {
         if (!confirm("Publish a pull request for this spec? This pushes a branch and opens a PR on GitHub.")) return;
@@ -1469,7 +1525,7 @@ document.body.addEventListener("click", async (event) => {
     try {
       draftSpec.disabled = true;
       const result = await awaitTask("/api/spec/draft",
-        {contribution: draftSpec.dataset.draftSpec}, "Draft spec");
+        {contribution: draftSpec.dataset.draftSpec}, "Draft spec", logFor(draftSpec));
       toast("Drafted " + (result && result.id) + ". Review and approve it.");
       closeReader();
       await load();
@@ -1482,7 +1538,7 @@ document.body.addEventListener("click", async (event) => {
     try {
       reviewBtn.disabled = true;
       const result = await awaitTask("/api/review",
-        {contribution: reviewBtn.dataset.review}, "Review");
+        {contribution: reviewBtn.dataset.review}, "Review", logFor(reviewBtn));
       toast((result && result.verdict ? result.verdict + ": " : "") +
             ((result && result.reason) || "Review finished"));
     } catch (err) { toast(err.message); }
@@ -1493,8 +1549,8 @@ document.body.addEventListener("click", async (event) => {
   if (assembleBtn) {
     try {
       assembleBtn.disabled = true;
-      const reader = document.getElementById("reader");
-      const reachEl = reader && reader.querySelector('[data-build-options] [name="reach"]');
+      const detail = assembleBtn.closest(".contrib-detail");
+      const reachEl = detail && detail.querySelector('[data-build-options] [name="reach"]');
       const payload = {factory: "feature-builder", contribution: assembleBtn.dataset.assemble};
       if (reachEl && reachEl.value) payload.reach = reachEl.value;
       const result = await api("/api/factory/run", {method: "POST", body: JSON.stringify(payload)});
@@ -1827,6 +1883,8 @@ document.body.addEventListener("click", async (event) => {
   }
   if (event.target.id === "welcome-continue") { await load(); return; }
   if (event.target.id === "close-reader") { closeReader(); return; }
+  const toggle = event.target.closest("[data-toggle-contrib]");
+  if (toggle) { toggleContrib(toggle.dataset.toggleContrib); return; }
   const open = event.target.closest("[data-open]");
   if (open && !event.target.closest("select")) openReader(open.dataset.type, open.dataset.id);
 });
