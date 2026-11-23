@@ -694,9 +694,12 @@ def _project_rollup(root: Path, project_id: str) -> dict:
     return {"counts": counts, "documents": docs, "meetings": meetings, "runs": runs}
 
 
-def delete_object(root: Path, otype: str, ref: str, force: bool = False) -> dict:
+def delete_object(root: Path, otype: str, ref: str, force: bool = False,
+                  tasks: TaskRunner | None = None) -> dict:
     """Remove one object file. Git history is the audit trail. A contribution
-    can be deleted; its drafted spec (if any) is removed with it."""
+    can be deleted; its drafted spec (if any) is removed with it. When ``tasks``
+    is given (the cockpit), deletion refuses a contribution a background build
+    or draft is still working on."""
     if otype not in objects.TYPE_DIRS:
         raise UiError("unknown object type", 404)
     found = objects.find(root, otype, ref)
@@ -726,6 +729,12 @@ def delete_object(root: Path, otype: str, ref: str, force: bool = False) -> dict
         for dpath, dmeta, _dbody in objects.iter_objects(root, "contribution"):
             if str(dmeta.get("drafted_from") or "") == object_id:
                 removed.append((dpath, str(dmeta.get("id") or dpath.stem)))
+    if tasks is not None:
+        active = tasks.active_targets()
+        if active & {rid for _rpath, rid in removed}:
+            raise UiError(
+                "a build or draft is still running on this contribution; "
+                "wait for it to finish before deleting it")
     for rpath, _rid in removed:
         rpath.unlink(missing_ok=True)
     if db.db_path(root).exists():
@@ -1929,7 +1938,8 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                                 payload.get("case") or "", payload.get("version") or "")
         elif path == "/api/object/delete":
             result = delete_object(root, payload.get("type") or "",
-                                   payload.get("id") or "", bool(payload.get("force")))
+                                   payload.get("id") or "", bool(payload.get("force")),
+                                   tasks=tasks)
         elif path == "/api/prompt/promote":
             result = promote_prompt(root, payload.get("factory") or "",
                                     payload.get("version") or "")

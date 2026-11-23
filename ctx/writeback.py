@@ -652,8 +652,9 @@ def reconcile_issue_state(root: Path, view_issue, repos: list[str] | None = None
     for path, meta, _body in objects.iter_objects(root, "contribution"):
         if str(meta.get("kind") or "") != "issue":
             continue
-        if meta.get("drafted_from"):
-            continue  # a locally drafted spec, not a cached GitHub issue
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if meta.get("drafted_from") or "feature-spec" in tags:
+            continue  # a local spec (authored or drafted), not a cached GitHub issue
         if str(meta.get("state") or "") != "open":
             continue
         url = str(meta.get("url") or "")

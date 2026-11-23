@@ -209,6 +209,13 @@ class ReconcilePrStateTest(unittest.TestCase):
                  "tags": ["feature-spec"], "drafted_from": "contribution-me-app-issue-keep"}
         (root / "context/contributions/issue-keep-spec.md").write_text(
             frontmatter.dumps(draft, "# Spec\n"), encoding="utf-8")
+        authored = {"id": "contribution-me-app-issue-authored", "type": "contribution",
+                    "title": "Authored", "created": "2026-11-21", "updated": "2026-11-21",
+                    "repo": "repo-me-app", "kind": "issue", "number": 4, "role": "author",
+                    "state": "open", "visibility": "public", "url": "https://github.com/me/app/issues/4",
+                    "tags": ["feature-spec"]}
+        (root / "context/contributions/issue-authored.md").write_text(
+            frontmatter.dumps(authored, "# Authored\n"), encoding="utf-8")
 
         def view_issue(url):
             return {"state": "CLOSED"} if "issues/3" not in url else {"state": "OPEN"}
@@ -220,6 +227,7 @@ class ReconcilePrStateTest(unittest.TestCase):
         self.assertEqual(self._state(root, "issue-keep"), "closed")
         self.assertEqual(self._state(root, "issue-open"), "open")
         self.assertEqual(self._state(root, "issue-keep-spec"), "open")  # local draft untouched
+        self.assertEqual(self._state(root, "issue-authored"), "open")  # authored spec untouched
 
 
 if __name__ == "__main__":

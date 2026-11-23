@@ -236,8 +236,9 @@ page has no external assets, so it works offline.
   (`title`, `url`, `state`, `ci`, `review`, `updated`); your edits to `role`,
   `method`, `tags`, `related`, `created`, and the body are preserved across
   syncs. A missing `method` is filled with `spec-kit`; sync never overrides it.
-- **READ-ONLY:** only `gh search` / `gh pr view` / `gh api user` (GET). No remote
-  writes, ever. `--offline` skips the network and re-indexes cached files.
+- **READ-ONLY:** only `gh search` / `gh pr view` / `gh issue view` / `gh api user`
+  (GET). No remote writes, ever. `--offline` skips the network and re-indexes
+  cached files.
 - `gh` missing or not authenticated -> clear message; use `--offline`. Sample
   data marked `EXAMPLE` lives in `examples/context/`, not in a fresh `context/`.
 

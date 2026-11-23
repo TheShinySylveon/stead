@@ -75,13 +75,11 @@ python -m stead delete TYPE ID [--force]
 `method` chooses tooling for feature-builder. It does not turn planning off.
 Omitted, it is `spec-kit`.
 
-`delete` covers projects, tasks, documents, meetings, repos, actors, and
-contributions. Deleting a contribution also removes the spec drafted from it.
-
-`delete` removes one project, task, document, meeting, repo, or actor file and
-its index row. Git history keeps the old text. A project with linked objects,
-or a repo with cached contributions, is refused unless `--force`. Cached
-contributions are not deletable; refresh the cache instead.
+`delete` removes one object file and its index row. Git history keeps the old
+text. It covers projects, tasks, documents, meetings, repos, actors, and
+contributions — deleting a contribution also removes the spec drafted from it.
+A project with linked objects, or a repo with cached contributions, is refused
+unless `--force`.
 
 ## Search
 
