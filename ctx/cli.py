@@ -910,6 +910,10 @@ def build_parser() -> argparse.ArgumentParser:
     fnew = fr.add_parser("new", help="scaffold a factory folder. Does not call a model.")
     fnew.add_argument("--name", required=True)
     fnew.add_argument("--title", required=True)
+    fdel = fr.add_parser("delete", help="remove a factory folder. Refuses shipped factories and run logs without --force.")
+    fdel.add_argument("--name", required=True)
+    fdel.add_argument("--force", action="store_true",
+                      help="also delete a shipped factory or its run logs (audit trail)")
     fpub = fr.add_parser("publish", help="push an isolated branch and open a pull request. Never merges.")
     fpub.add_argument("--contribution", required=True)
     fmerge = fr.add_parser("merge", help="merge a green pull request. Repo must say reach: merge. Never bypasses protection.")
@@ -1378,8 +1382,17 @@ def main(argv: list[str] | None = None) -> int:
             folder = scaffold(root, args.name, args.title)
         except ScaffoldError as exc:
             raise SystemExit(str(exc)) from exc
-        print(f"scaffolded {folder.relative_to(root).as_posix()}")
-        print("run python -m stead init to index the prompt")
+        db.index_new_factory(root, folder.name)
+        print(f"scaffolded {folder.relative_to(root).as_posix()} (index updated)")
+        return 0
+    if args.command == "factory" and args.sub == "delete":
+        from ctx.scaffold import ScaffoldError, delete_factory
+        try:
+            removed = delete_factory(root, args.name, force=args.force)
+        except ScaffoldError as exc:
+            raise SystemExit(str(exc)) from exc
+        db.forget_factory(root, removed["name"])
+        print(f"deleted factory {removed['name']} (index updated)")
         return 0
     if args.command == "factory" and args.sub == "publish":
         from ctx.publish import PublishError, publish

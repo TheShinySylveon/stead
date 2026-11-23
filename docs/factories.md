@@ -84,7 +84,7 @@ decomposition instead of being built. `method` on the spec is `spec-kit` or
 `builtin`. Both plan before code. Only the tooling changes. See
 [Spec Kit](spec-kit-workflow.md).
 
-**Build with model** (or `stead build --contribution ID`) goes one step
+**Build** (on the Repos spec, or `stead build --contribution ID`) goes one step
 further. With a model configured it asks for a plan first, lets the model
 list, read, search, edit, write, and delete files inside the repo's `code_path`
 (a long file is read in line ranges and changed by exact replacement),
@@ -135,7 +135,16 @@ edit those files.
 ```bash
 python -m stead factory run --factory context-maintenance --shadow
 python -m stead factory new --name NAME --title "What it drafts"
+python -m stead factory delete --name NAME [--force]
 ```
+
+`factory new` scaffolds a custom factory that reads a project (its tasks,
+documents, and meetings); the cockpit's guided form does the same and shows the
+result and next step. `factory delete` removes a factory folder. It refuses the
+four shipped factories and any factory with run logs (the audit trail) unless
+`--force`. Creating or deleting a factory updates only that factory's index
+rows — it does not rebuild the database, so the runs ledger and other factories'
+production prompts are preserved.
 
 `stead factory watch` assembles open enabled `feature-spec`/`stead-build` issues
 on repos set to watch, and skips flagged specs. With `--build` it also runs the

@@ -148,3 +148,52 @@ def init_db(root: Path) -> dict[str, int]:
                 "repos": gh_counts["repos"], "contributions": gh_counts["contributions"]}
     finally:
         conn.close()
+
+
+def index_new_factory(root: Path, name: str) -> None:
+    """Index one newly scaffolded factory's prompts + evals without rebuilding the
+    database. A full init_db drops the runs ledger and resets every factory's
+    production prompt; this touches only the new factory's rows."""
+    if not db_path(root).exists():
+        init_db(root)
+        return
+    conn = connect(root)
+    try:
+        fdir = root / "factories" / name
+        today = date.today().isoformat()
+        pdir = fdir / "prompts"
+        paths = sorted(pdir.glob("v*.md")) if pdir.is_dir() else []
+        if paths:
+            latest = max(paths, key=lambda p: int(p.stem[1:]))
+            for prompt_path in paths:
+                status = "production" if prompt_path == latest else "retired"
+                conn.execute(
+                    "INSERT OR REPLACE INTO prompt_versions (factory, version, status, path, created) "
+                    "VALUES (?, ?, ?, ?, ?)",
+                    (name, prompt_path.stem, status,
+                     prompt_path.relative_to(root).as_posix(), today))
+        for eval_path in sorted((fdir / "evals").glob("*.json")):
+            case = json.loads(eval_path.read_text(encoding="utf-8"))
+            conn.execute(
+                "INSERT OR REPLACE INTO evals (id, factory, title, input, pass_criteria, path) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (case["id"], name, case["title"], case["input"], case["pass_criteria"],
+                 eval_path.relative_to(root).as_posix()))
+        conn.commit()
+    finally:
+        conn.close()
+
+
+def forget_factory(root: Path, name: str) -> None:
+    """Remove one deleted factory's index rows (prompts, evals, runs). Leaves every
+    other factory's rows and the rest of the runs ledger intact."""
+    if not db_path(root).exists():
+        return
+    conn = connect(root)
+    try:
+        conn.execute("DELETE FROM prompt_versions WHERE factory = ?", (name,))
+        conn.execute("DELETE FROM evals WHERE factory = ?", (name,))
+        conn.execute("DELETE FROM runs WHERE factory = ?", (name,))
+        conn.commit()
+    finally:
+        conn.close()

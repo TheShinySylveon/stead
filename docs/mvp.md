@@ -128,10 +128,6 @@ more code:
 
 ## Deferred until MVP (recorded, not lost)
 
-- One-tab spec lifecycle — draft → approve → build → publish on a single
-  surface (today split across the Repos and Factories tabs) — plus the Factories
-  tab UX overhaul, guided New factory, factory delete —
-  [Vision](vision.md#open-items-from-review).
 - Filing issues upstream (humans file issues for MVP; Stead comments) —
   [Vision](vision.md).
 - Per-spec acceptance check in CI (the fail-before/pass-after gate already runs

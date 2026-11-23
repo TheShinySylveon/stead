@@ -12,6 +12,16 @@ specific tool, model, or vendor.
 > No vendor SDK, no hardwired key, no SaaS account required to read or write
 > context.
 
+## Tool preference
+
+**Prefer the cockpit (GUI) over the CLI — always.** For every operation the
+local cockpit (`stead ui`) exposes, drive it there first: the page reads and
+writes the same markdown through the same handlers as the CLI, so the SQLite
+index stays in sync and remote writes stay confirmation-gated. Reach for the CLI
+only when the cockpit does not offer the operation (for example `stead doctor`,
+`stead metrics`, `stead factory merge`, `stead build --publish --wait`) or when
+a script or a scheduled job needs it.
+
 ## What this system is
 
 A local **context system** plus **factories**, covering both your
@@ -94,9 +104,9 @@ state.db             <- GITIGNORED, rebuildable operational index (stead init)
   contributions). Schema and naming rules: `CONVENTIONS.md`.
 - **One logical place** per object. If unsure where something goes, put it in
   `inbox/` and flag it for triage. Never scatter freestyle files.
-- Prefer the CLI (`stead task|repo|contribution add/set`) so files and the SQLite
-  index stay in sync. If you edit markdown by hand, run `python -m stead init`
-  afterwards to re-index (init is a safe, idempotent rebuild).
+- Write through the cockpit or the CLI (both keep files and the SQLite index in
+  sync). If you edit markdown by hand, run `python -m stead init` afterwards to
+  re-index (init is a safe, idempotent rebuild).
 - Update the `updated:` date whenever you change an object. Never edit `created:`
   or `id:`.
 - **Public/private split:** GitHub-derived data (`repos/`, `contributions/`) is
@@ -127,6 +137,7 @@ python -m stead factory start                 # remove the stop file
 python -m stead factory defaults --max-builds-per-day N --build-minutes N [--max-tokens-per-build N] [--max-cost-per-build USD]
 python -m stead factory watch                # watched feature specs; no push
 python -m stead factory new --name NAME --title T
+python -m stead factory delete --name NAME [--force]  # refuses shipped factories + run logs without --force
 python -m stead inbox import PATH             # local .eml .ics .md .txt into inbox/
 python -m stead inbox list [--kind KIND]      # read-only: what is waiting in inbox/
 python -m stead hook set                      # webhook token, printed once

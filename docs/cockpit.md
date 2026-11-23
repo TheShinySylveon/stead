@@ -20,9 +20,9 @@ The page has no external fonts or scripts. It works offline.
 
 Writes go through the same rules as the CLI. Markdown stays the source of
 truth. The page calls a model only when you check **Draft with model** or
-press **Build with model**. A cockpit build runs in the background with live
-progress, commits locally, and stops there. Publish, merge, and issue comments
-are explicit, confirmation-gated steps (and refused on a shared server).
+press **Build** on an approved spec. A cockpit build runs in the background
+with live progress, commits locally, and stops there. Publish, merge, and issue
+comments are explicit, confirmation-gated steps (and refused on a shared server).
 
 ## First visit
 
@@ -38,10 +38,10 @@ See [First run](first-run.md).
 | Tasks | Add a task, move its status. The title opens the note. |
 | Projects | Onboard a later project (repo + constitution, optional Spec Kit). Or add a project with no repo. Change a project's status. |
 | Library | Add and edit documents and meetings. Rename them. The id does not change. |
-| Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. On a shared server, trigger, reach, code_path, and the checks/protected-path fields are read-only. |
+| Repos | Add a repo. Sync GitHub read-only, or re-index offline. Change kind, status, trigger, and the factory ceiling. Add a local issue or feature spec. The build pipeline lives here: each issue/spec is a card with one next step (Draft → Approve → Build → Publish); Details opens the spec with build options, Assemble shadow, and Review. On a shared server, trigger, reach, code_path, and the checks/protected-path fields are read-only. |
 | Wiki | A Confluence-style space per repo: home, page tree, child pages, labels, metadata, on-page table of contents. Arrange reorders and pins; Request a change files a request document instead of editing generated pages. |
 | Inbox | Drop a note, or import a local `.eml`, `.ics`, `.md`, or `.txt` file. File it as a document, meeting, or task, or delete it. |
-| Factories | Assemble a shadow run. Check Draft with model to write `output.md`. Watch now assembles; Watch and build plans, edits, checks, and commits locally. Publish and merge need a confirmation. New factory, per-case eval results, Judge, Promote prompt. A shared server refuses any build. New factory takes only a name and title; there is no factory delete yet (tracked as ASAP). |
+| Factories | What a factory is and what each one reads, in plain language. Assemble a shadow run; check Draft with model to write `output.md`. Watch now assembles; Watch and build plans, edits, checks, and commits locally. Guided New factory (a custom factory reads a project). Delete a factory (shipped factories and run logs need force). Per-case eval results, Judge, Promote prompt. feature-builder's Draft → Approve → Build → Publish lives on Repos. A shared server refuses any build. |
 | Settings | This computer or a shared server. The rented model (including the call timeout). The install factory default (including build minutes). The build kill switch. The build ledger (metrics) with Correct/Incorrect marking. The weekly job and the hourly/daily monitor cadence. Doctor. Rotate the access token. Add a sign-in, or reset its password. Sign out on a shared server. Choose who is writing. Add actors (`human` or `agent`). The capture webhook. Rebuild the index. |
 
 Opening a project, task, document, or meeting shows the note and an editor.
@@ -57,10 +57,14 @@ repo with cached contributions, asks before forcing.
 chips, and counts once.
 
 A contribution opens as a **public spec**. The banner is there because that
-file can be shared. Private notes belong in Library. **Approve this spec for
-building** records a hash of the current body; any later edit needs
-re-approval. On a shared server, approval, the author role, and authoring a
-spec with acceptance criteria are read-only.
+file can be shared. Private notes belong in Library. The reader shows the
+current stage and the single next step — Draft, Approve, Build, or Publish —
+with a plain-language hint. **Approve** records a hash of the current body; any
+later edit needs re-approval. **Build options** (minutes / tokens / USD / reach)
+bound the build; an explicit `0` turns the token or cost limit off. **Assemble
+shadow** previews the feature-builder bundle without building, and **Review**
+runs the independent reviewer. On a shared server, approval, the author role,
+and authoring a spec with acceptance criteria are read-only.
 
 ## GitHub sync
 
@@ -76,10 +80,11 @@ to any agent. Come back and approve or reject the run on Home. **Open run**
 shows the draft, the prompt, and the bundle. Home lists the newest runs, with
 a control to show the full history.
 
-Draft pull requests are not a button. `stead factory publish` opens one
-from an isolated branch. `stead factory merge` is a separate command, and
-only when that repo says `reach: merge`. The cockpit does not push or merge.
-A contribution shows both commands, ready to copy.
+**Publish** opens a pull request from an isolated branch, and **Merge** merges
+only when that repo says `reach: merge` and the checks are green. Both are
+confirmation-gated buttons on the spec, and also CLI commands (`stead factory
+publish`, `stead factory merge`). The cockpit never pushes the default branch;
+on a shared server these remote writes are refused.
 
 An approved digest or status can be filed as a private document with the
 **File as document** button on Home, or `stead run file --run ID`.

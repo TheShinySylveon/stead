@@ -277,46 +277,24 @@ user-facing limits live in the README; the engineering roadmap (PR feedback
 repair, queue and workers, check auto-detection, patch-level edits, post-merge
 cleanup) is `PLAN.md` §7, which is human-owned.
 
-### ASAP — cockpit Factories UX (reported in use)
+### Cockpit Factories UX — landed
 
-The Factories tab is the weakest surface and undermines confidence in the whole
-factory idea. Reported directly by a user:
+Reported in use and fixed (PRs #107, #108). The whole spec lifecycle
+(Draft → Approve → Build → Publish) now lives on the Repos tab — one card, one
+next step — with build options, Assemble shadow, Review, and a plain-language
+stage hint in the spec reader. The Factories tab explains what a factory is and
+what each one reads. New factory is a guided form (a custom factory reads a
+project) with a visible result and next step. `stead factory delete` (and a
+cockpit Delete button) removes a factory, refusing the four shipped factories and
+any run logs unless `--force`. Creating or deleting a factory updates only that
+factory's index rows, preserving the runs ledger and other factories' production
+prompts.
 
-- **The spec lifecycle is split across two tabs.** Drafting, approving, building,
-  and publishing a spec are the Repos tab's flow cards (Draft → Approve → Build
-  → Publish), while `feature-builder`'s "Assemble shadow" / "Build with model"
-  are a separate Factories tab panel — one flow, two surfaces, no shared stage,
-  so a person bounces between tabs to take an issue to a PR. Consolidate the
-  whole lifecycle onto a single surface (one tab, one card, next-step-only
-  controls) so draft → approve → build → publish reads in one place.
-- **Nothing is self-evident.** The tab never explains what a factory is, what
-  each control does (Assemble shadow, Build with model, Watch now / Watch and
-  build, reach, Judge, Promote), or what input a factory needs. A first-time user
-  cannot tell what will happen before clicking.
-- **Creating a factory has no options and feels like nothing happens.** The New
-  factory form takes only a name and a title. There is no choice of factory kind
-  or input (project / spec / none), no trigger / reach / checks / method, and no
-  clear confirmation or guided next step after scaffolding. A "code factory"
-  cannot be meaningfully configured from the UI: `code_path`, `checks`, and
-  `reach` live on the repo, and the tab never points there.
-- **A factory cannot be deleted.** `stead delete` covers context objects only
-  (project, task, document, meeting, repo, actor). There is no `factory delete`
-  command and no cockpit control, so scaffolding is one-way.
+### CLI ↔ GUI parity — verified
 
-Fix direction: first pull the `feature-builder` build controls onto the same
-surface as the spec pipeline so the whole issue → PR flow lives on one tab (see
-the split-lifecycle bullet above); then explain the tab in plain language (what
-a factory is, the plan → build → verify → deliver loop, what ghost / shadow /
-draft-pr / pr / merge mean); give each factory a one-line "what it does / what it
-needs"; make New factory a guided form (kind + input + sensible defaults) with a
-visible result and a next step; add `stead factory delete NAME` (refuse the four
-shipped factories unless `--force`) and a cockpit delete with confirmation.
-
-### CLI ↔ GUI parity
-
-Every CLI command should be reachable from the cockpit, so the browser is a
-first-class surface rather than a reduced one. Publish, merge, and issue
-comments are reachable behind a human confirmation, and long model steps
+Every CLI command has a cockpit control (checked command-by-command); the last
+gap, `factory delete`, landed with the Factories UX work. Publish, merge, and
+issue comments are reachable behind a human confirmation, and long model steps
 (build, spec draft, review) run in the background with live progress.
 
 **Safety / autonomy**
