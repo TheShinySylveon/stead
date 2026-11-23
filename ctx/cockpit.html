@@ -117,6 +117,29 @@
     padding: var(--space-xs) var(--space-sm); min-height: 36px;
   }
   input[type="search"] { width: 240px; }
+  /* Custom select: hide the native arrow and draw our own, so dropdowns match the theme. */
+  select {
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    background-image: url("data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNiIgaGVpZ2h0PSIxNiIgdmlld0JveD0iMCAwIDE2IDE2Ij48cGF0aCBkPSJNNCA2bDQgNCA0LTQiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzlhYTZiOCIgc3Ryb2tlLXdpZHRoPSIxLjUiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCIvPjwvc3ZnPg==");
+    background-repeat: no-repeat; background-position: right 8px center; background-size: 14px;
+    padding-right: 30px; cursor: pointer;
+    transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+  }
+  select:hover { border-color: var(--color-rule-2); }
+  select:focus-visible { border-color: var(--color-accent); }
+  /* A lightweight in-card toggle for "edit settings" (chips on the surface, fields on demand). */
+  details.reveal { margin-top: var(--space-xs); }
+  details.reveal > summary {
+    cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: var(--space-2xs);
+    color: var(--color-muted); font: 500 var(--text-sm)/1.4 var(--font-body);
+    padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius-control);
+    transition: color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+  }
+  details.reveal > summary::-webkit-details-marker { display: none; }
+  details.reveal > summary::before { content: "+"; font-family: var(--font-outlier); color: var(--color-accent); }
+  details.reveal > summary:hover { color: var(--color-ink); background: var(--color-paper-2); }
+  details.reveal[open] > summary { color: var(--color-ink); }
+  details.reveal[open] > summary::before { content: "\2212"; }
   input[type="file"] { font: inherit; color: var(--color-muted); }
   input[type="file"]::file-selector-button {
     font: 500 var(--text-sm)/1.2 var(--font-body); margin-right: var(--space-xs);
@@ -200,6 +223,11 @@
   .chip.blocked, .chip.fail { background: var(--color-bad-soft); color: var(--color-bad); border-color: transparent; }
   .chip.review, .chip.inbox { background: var(--color-cool-soft); color: var(--color-cool); border-color: transparent; }
   .chip.done, .chip.pass { background: var(--color-ok-soft); color: var(--color-ok); border-color: transparent; }
+  .activity {
+    font: 400 var(--text-xs)/1.4 var(--font-outlier);
+    color: var(--color-accent);
+    white-space: pre-wrap; min-height: 1.4em;
+  }
   .grid { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: var(--space-sm); }
   .home-split { display: grid; grid-template-columns: minmax(0, 1.4fr) minmax(280px, 0.8fr); gap: var(--space-lg); align-items: start; }
   .home-split > section { min-width: 0; }
@@ -292,6 +320,21 @@
     word-break: break-word;
   }
   .build-log[hidden] { display: none; }
+  /* Everyday content first, manual "add/manage" forms collapsed behind a toggle. */
+  details.disclose { margin-top: var(--space-lg); border-top: var(--rule-hair) solid var(--color-rule); padding-top: var(--space-sm); }
+  details.disclose > summary {
+    cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: var(--space-xs);
+    font: 500 var(--text-sm)/1.4 var(--font-body); color: var(--color-muted);
+    padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius-control);
+    transition: color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+  }
+  details.disclose > summary::-webkit-details-marker { display: none; }
+  details.disclose > summary::before { content: "+"; font-family: var(--font-outlier); font-weight: 500; color: var(--color-accent); }
+  details.disclose > summary:hover { color: var(--color-ink); background: var(--color-paper-2); }
+  details.disclose[open] > summary { color: var(--color-ink); }
+  details.disclose[open] > summary::before { content: "\2212"; }
+  details.disclose > .disclose-body { margin-top: var(--space-sm); display: grid; gap: var(--space-md); }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); margin-bottom: var(--space-xs); }
   a { color: var(--color-accent); text-underline-offset: 0.16em; }
   ::selection { background: color-mix(in oklab, var(--color-accent) 25%, transparent); }
   @media (max-width: 68rem) {
@@ -372,7 +415,8 @@ const state = { snap: null, view: "home", q: "", onboardResult: null,
   scheduleText: "", scheduleProject: "", hookToken: "",
   showAllRuns: false, evals: {}, opener: null, dirty: false,
   wikiRepo: "", wiki: null, wikiPath: "", wikiPageData: null,
-  wikiArrange: false, wikiRequestForm: false, detailId: null, detail: null };
+  wikiArrange: false, wikiRequestForm: false, detailId: null, detail: null,
+  activity: null };
 
 const VALID_VIEWS = new Set(VIEWS.map(([id]) => id));
 function viewFromHash() {
@@ -399,6 +443,18 @@ function when(value) {
   const d = new Date(value);
   return Number.isNaN(d.getTime()) ? String(value) : d.toLocaleString();
 }
+function ago(value) {
+  if (!value) return "";
+  const d = new Date(String(value).slice(0, 10) + "T00:00:00");
+  if (Number.isNaN(d.getTime())) return String(value);
+  const days = Math.round((Date.now() - d.getTime()) / 86400000);
+  if (days < 0) return "just now";
+  if (days === 0) return "today";
+  if (days < 7) return days + "d ago";
+  if (days < 30) return Math.floor(days / 7) + "w ago";
+  if (days < 365) return Math.floor(days / 30) + "mo ago";
+  return Math.floor(days / 365) + "y ago";
+}
 
 function esc(s) {
   return String(s ?? "").replace(/[&<>"']/g, c => ({
@@ -417,6 +473,15 @@ function match(item) {
 function options(values, selected) {
   return values.map(v => `<option${v === selected ? " selected" : ""}>${esc(v)}</option>`).join("");
 }
+function disclose(summary, body) {
+  return `<details class="disclose"><summary>${summary}</summary><div class="disclose-body">${body}</div></details>`;
+}
+const TYPE_LABEL = {
+  task: "Task", contribution: "Contribution", inbox: "Inbox", document: "Document",
+  meeting: "Meeting", project: "Project", repo: "Repo",
+};
+const REACH_TONE = { ghost: "done", shadow: "doing", "draft-pr": "review", pr: "review", merge: "fail" };
+const REPO_STATUS_TONE = { active: "", paused: "blocked", archived: "done" };
 function toast(message, ms) {
   const el = document.getElementById("toast");
   el.hidden = false;
@@ -443,25 +508,39 @@ function logFor(el) {
   return detail ? detail.querySelector("[data-log]") : null;
 }
 async function awaitTask(path, payload, verb, logEl) {
+  const contribution = payload.contribution || "";
   const started = await api(path, {method: "POST", body: JSON.stringify(payload)});
   const taskId = started.task;
   if (!taskId) throw new Error(verb + " did not start");
   const write = (text) => {
     if (logEl) { logEl.hidden = false; logEl.textContent += text + "\n"; logEl.scrollTop = logEl.scrollHeight; }
+    if (contribution) {
+      state.activity = { contribution, verb, line: text };
+      const lineEl = document.querySelector('[data-activity="' + contribution + '"]');
+      if (lineEl) lineEl.textContent = text;
+    }
   };
   write(verb + " started…");
   let seen = 0;
-  for (let i = 0; i < 2400; i++) {
-    await new Promise(r => setTimeout(r, 1200));
-    const snap = await api("/api/task?id=" + encodeURIComponent(taskId));
-    if (snap.status === "done") { write("✓ " + verb + " finished."); return snap.result; }
-    if (snap.status === "failed") { write("✗ " + (snap.error || (verb + " failed"))); throw new Error(snap.error || (verb + " failed")); }
-    const lines = snap.progress || [];
-    for (let j = seen; j < lines.length; j++) write(lines[j]);
-    seen = lines.length;
+  try {
+    for (let i = 0; i < 2400; i++) {
+      await new Promise(r => setTimeout(r, 1200));
+      const snap = await api("/api/task?id=" + encodeURIComponent(taskId));
+      if (snap.status === "done") { write("✓ " + verb + " finished."); return snap.result; }
+      if (snap.status === "failed") { write("✗ " + (snap.error || (verb + " failed"))); throw new Error(snap.error || (verb + " failed")); }
+      const lines = snap.progress || [];
+      for (let j = seen; j < lines.length; j++) write(lines[j]);
+      seen = lines.length;
+    }
+    write("⚠ " + verb + " is taking too long; watch it in the terminal");
+    throw new Error(verb + " is taking too long; watch it in the terminal");
+  } finally {
+    if (contribution && state.activity && state.activity.contribution === contribution) {
+      state.activity = null;
+      const lineEl = document.querySelector('[data-activity="' + contribution + '"]');
+      if (lineEl) lineEl.textContent = "";
+    }
   }
-  write("⚠ " + verb + " is taking too long; watch it in the terminal");
-  throw new Error(verb + " is taking too long; watch it in the terminal");
 }
 async function load() {
   const y = window.scrollY;
@@ -522,18 +601,22 @@ function renderHome() {
       </div>
     </div>`).join("");
   return `
-    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
-      <input type="text" id="search-q" placeholder="Search all context (titles and bodies)" aria-label="Search context" style="flex:1">
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="search-q" placeholder="Search all context (titles and bodies)" aria-label="Search context" style="flex:1;min-width:200px">
       <button type="button" class="quiet" data-search>Search</button>
     </div>
+    <form class="inline" id="capture" style="margin-bottom:16px">
+      <input type="text" name="title" placeholder="Capture a thought — lands in inbox for triage" required maxlength="200" aria-label="Quick capture" style="flex:1;min-width:200px">
+      <button class="primary" type="submit">Capture</button>
+    </form>
     <div id="search-result" style="margin-bottom:16px"></div>
     <div class="stats">${stats.map(([n, label]) => `<div class="stat"><b>${esc(n)}</b><span>${esc(label)}</span></div>`).join("")}</div>
     <div class="home-split">
       <section>
-        <div class="section-title">Needs you</div>
+        <div class="panel-head"><span class="section-title" style="margin:0">Needs you</span><span class="meta">${attention.length}</span></div>
         ${attention.length ? `<div class="list">${attention.map(item => `
           <button type="button" class="row" data-open data-type="${esc(item.type)}" data-id="${esc(item.id)}">
-            <span><strong>${esc(item.title)}</strong><br><small>${esc(item.type)} · ${esc(item.id)}</small></span>
+            <span><strong>${esc(item.title)}</strong><br><small>${esc(TYPE_LABEL[item.type] || item.type)}</small></span>
             <span class="chips">${(item.labels || [[item.label, item.tone]]).map(([label, tone]) => chip(label, tone)).join("")}</span>
           </button>`).join("")}</div>` : `<div class="empty">Nothing waiting. Capture a note, or enjoy the quiet.</div>`}
       </section>
@@ -578,15 +661,17 @@ function renderTasks() {
       </div>`).join("")}</div>`;
   }).join("");
   const projectOptions = projects.map(p => `<option value="${esc(p.id)}">${esc(p.title)}</option>`).join("");
-  return `
+  const addTask = `
     <form class="inline" id="add-task">
       <input type="text" name="title" placeholder="New task" required aria-label="Task title">
       <select name="project" aria-label="Project" ${projects.length ? "" : "disabled"}>${projectOptions}</select>
       <select name="status" aria-label="Status">${options(choices, "to-do")}</select>
       <button class="primary" type="submit" ${projects.length ? "" : "disabled"}>Add task</button>
-    </form>
-    ${projects.length ? "" : `<div class="empty">Add a project first. Tasks have to belong to one.</div>`}
-    <div class="board">${cols}</div>`;
+    </form>`;
+  return `
+    ${projects.length ? "" : `<div class="empty">Add a project first — tasks have to belong to one.</div>`}
+    ${tasks.length ? `<div class="board">${cols}</div>` : `<div class="empty">No tasks yet. Add the first one below.</div>`}
+    ${disclose("Add a task", addTask)}`;
 }
 function renderProjects() {
   const items = state.snap.projects.filter(match);
@@ -598,7 +683,7 @@ function renderProjects() {
     <p>${esc(result.specify_detail || "")}</p>
     ${result.specify_command && result.specify !== "ran" ? `<p class="meta">${esc(result.specify_command)}</p>` : ""}
   </div>` : "";
-  return `
+  const onboardForm = `
     <form class="stack" id="onboard">
       <div class="section-title">Onboard</div>
       <p class="meta">Creates the project, the repo record, and the constitution. specify init runs only in a code directory you name, and only if specify is installed. Nothing is pushed.</p>
@@ -614,13 +699,15 @@ function renderProjects() {
       <input type="text" name="path" placeholder="Existing code directory (optional)" aria-label="Code directory">
       <div><button class="primary" type="submit">Onboard project</button></div>
     </form>
-    ${resultBox}
     <form class="inline" id="add-project">
       <input type="text" name="title" placeholder="Project only, no repo" required aria-label="Project title">
       <select name="status" aria-label="Project status">${options(statuses, "active")}</select>
       <button class="quiet" type="submit">Add project</button>
-    </form>
-    ${items.length ? `<div class="grid">${items.map(projectCard).join("")}</div>` : `<div class="empty">No projects yet.</div>`}`;
+    </form>`;
+  return `
+    ${resultBox}
+    ${items.length ? `<div class="grid">${items.map(projectCard).join("")}</div>` : `<div class="empty">No projects yet. Add the first one below.</div>`}
+    ${disclose("Onboard a project · or add one without a repo", onboardForm)}`;
 }
 function renderLibrary() {
   const docs = state.snap.documents.filter(match);
@@ -639,87 +726,115 @@ function renderLibrary() {
       <textarea name="body" placeholder="Optional note" aria-label="${label} body"></textarea>
       <div><button class="primary" type="submit">Add ${label.toLowerCase()}</button></div>
     </form>`;
-  return add("add-document", "Document", "New document") + block("Documents", docs, "document")
-    + add("add-meeting", "Meeting", "New meeting") + block("Meetings", meetings, "meeting");
+  return block("Documents", docs, "document")
+    + block("Meetings", meetings, "meeting")
+    + disclose("Add a document or meeting",
+      add("add-document", "Document", "New document") + add("add-meeting", "Meeting", "New meeting"));
 }
 function renderRepos() {
   const repos = state.snap.repos.filter(match);
   const contribs = (state.snap.pipeline || []).filter(match);
   const choices = state.snap.choices;
+  const STAGE_TONE = { draft: "doing", drafted: "doing", approved: "doing", built: "doing", published: "doing", pr: "doing", merged: "done", closed: "done" };
   const contribRow = (c) => {
-    const done = c.stage === "merged" || c.stage === "closed";
     const buttons = (c.actions || []).map(a =>
       `<button type="button" class="${a.tone}" data-action="${a.key}" data-id="${esc(c.act_id)}" data-title="${esc(c.title)}">${esc(a.label)}</button>`).join("");
+    const running = state.activity && state.activity.contribution === c.act_id;
+    const actText = running ? "● " + (state.activity.line || "running…") : "";
     return `
     <div class="card" style="display:block">
       <button type="button" class="linkish" data-toggle-contrib="${esc(c.act_id)}" style="display:flex;justify-content:space-between;gap:8px;align-items:start;width:100%">
         <span style="min-width:0">
           <strong>${esc(c.title)}</strong>
-          <span class="meta" style="display:block">${esc(c.kind)} #${esc(c.number)} · ${esc(c.repo)}</span>
+          <span class="meta" style="display:block">${esc(c.kind)} #${esc(c.number)} · ${esc(c.repo)} · ${ago(c.updated)}</span>
         </span>
-        <span class="chips">${chip(c.stage_label || c.state, done ? "done" : "doing")}${c.ci && c.ci !== "none" ? chip("ci " + c.ci, c.ci) : ""}${c.review && c.review !== "none" ? chip(c.review, "review") : ""}</span>
+        <span class="chips">${chip(c.stage_label || c.state, STAGE_TONE[c.stage] || "doing")}${c.ci && c.ci !== "none" ? chip("ci " + c.ci, c.ci === "fail" ? "fail" : "doing") : ""}${c.review && c.review !== "none" ? chip(c.review, "review") : ""}</span>
       </button>
       <div style="margin-top:8px;display:flex;gap:8px;align-items:center;flex-wrap:wrap">
         ${buttons}
+        <span class="activity" data-activity="${esc(c.act_id)}">${esc(actText)}</span>
         ${String(c.url || "").startsWith("https://") ? `<a href="${esc(c.url)}" target="_blank" rel="noopener">GitHub</a>` : ""}
       </div>
       <div class="contrib-slot" data-slot="${esc(c.act_id)}" hidden></div>
     </div>`;
   };
-  const open = contribs.filter(c => c.state !== "merged" && c.state !== "closed");
-  const done = contribs.filter(c => c.state === "merged" || c.state === "closed");
-  const openRows = open.map(contribRow).join("");
-  const doneRows = done.map(contribRow).join("");
+  const GROUPS = [
+    ["approved", "Ready to build"],
+    ["built", "Ready to publish"],
+    ["published", "PR opened"],
+    ["pr", "PR open"],
+    ["drafted", "Needs approval"],
+    ["draft", "Ready to draft"],
+  ];
+  const byStage = {};
+  const doneList = [];
+  for (const c of contribs) {
+    if (c.stage === "merged" || c.stage === "closed") { doneList.push(c); continue; }
+    const key = GROUPS.some(g => g[0] === c.stage) ? c.stage : "other";
+    (byStage[key] = byStage[key] || []).push(c);
+  }
+  const sections = GROUPS.filter(g => byStage[g[0]] && byStage[g[0]].length).map(g =>
+    `<div class="section-title">${g[1]} <span class="meta">${byStage[g[0]].length}</span></div>` +
+    byStage[g[0]].map(contribRow).join("")).join("");
+  const other = byStage.other || [];
+  const otherHtml = other.length ? `<div class="section-title">Open</div>` + other.map(contribRow).join("") : "";
+  const doneHtml = doneList.length ? `<div class="section-title">Done</div>` + doneList.map(contribRow).join("") : "";
   return `
-    <form class="inline" id="add-repo">
-      <input type="text" name="title" placeholder="New repo" required aria-label="Repo title">
-      <input type="text" name="url" placeholder="https://github.com/owner/name" aria-label="Repo URL">
-      <select name="kind" aria-label="Repo kind">${options(choices.repo_kind, "oss")}</select>
-      <select name="status" aria-label="Repo status">${options(choices.repo_status, "active")}</select>
-      <button class="primary" type="submit">Add repo</button>
-    </form>
-    <div style="display:flex;gap:8px;align-items:center;margin-bottom:16px;flex-wrap:wrap">
-      <input type="text" id="sync-scope" placeholder="Scope: owner/name, comma-separated (blank = saved/all)" aria-label="Sync scope" style="max-width:340px">
-      <button type="button" class="quiet" data-sync="0">Sync GitHub</button>
+    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
+      <button type="button" class="primary" data-sync="0">Sync GitHub</button>
       <button type="button" class="quiet" data-sync="1">Re-index offline</button>
-      <span class="meta">Read-only. Never opens a pull request.</span>
+      <input type="text" id="sync-scope" placeholder="Scope: owner/name, comma-separated (blank = saved/all)" aria-label="Sync scope" style="max-width:300px">
     </div>
-    <div class="section-title">Repos</div>
-    <div class="grid">${repos.map(r => `
-      <div class="card" style="display:block">
-        <button type="button" class="linkish" data-open data-type="repo" data-id="${esc(r.id)}">${esc(r.title)}</button>
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-          <select data-set-repo data-id="${esc(r.id)}" data-field="kind" aria-label="Kind for ${esc(r.title)}">${options(choices.repo_kind, r.kind || "oss")}</select>
-          <select data-set-repo data-id="${esc(r.id)}" data-field="status" aria-label="Status for ${esc(r.title)}">${options(choices.repo_status, r.status || "active")}</select>
-          <select data-set-repo data-id="${esc(r.id)}" data-field="trigger" aria-label="Trigger for ${esc(r.title)}">${options(choices.factory_trigger, r.factory_trigger || "on-demand")}</select>
-          <select data-set-repo data-id="${esc(r.id)}" data-field="reach" aria-label="Ceiling for ${esc(r.title)}">${options(choices.factory_reach, r.factory_reach || "shadow")}</select>
-        </div>
-        <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-          <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="code_path" value="${esc(r.code_path || "")}" placeholder="Local code path for publish" aria-label="Code path for ${esc(r.title)}">
-          <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="default_branch" value="${esc(r.default_branch || "")}" placeholder="Default branch" aria-label="Default branch for ${esc(r.title)}" style="max-width:170px">
-          <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="url" value="${esc(r.url || "")}" placeholder="Repo URL" aria-label="URL for ${esc(r.title)}">
-          <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="notes" value="${esc(r.notes || "")}" placeholder="Short notes" aria-label="Notes for ${esc(r.title)}">
-        </div>
-      </div>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
-    <form class="stack" id="add-spec">
-      <div class="section-title">Local issue or feature spec</div>
-      <p class="meta">Public file only. Nothing is posted to GitHub. Put private notes in a document.</p>
-      <input type="text" name="title" placeholder="Title" required aria-label="Spec title">
-      <select name="repo" aria-label="Repo" ${repos.length ? "" : "disabled"}>${repos.map(r => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}</select>
-      <div class="inline" style="margin:0">
-        <input type="number" name="number" min="1" placeholder="Number" required aria-label="Issue or PR number" style="width:120px">
-        <select name="kind" aria-label="Kind">${options(choices.contrib_kind, "issue")}</select>
-        <select name="method" aria-label="Method">${options(choices.method, "spec-kit")}</select>
-      </div>
-      <textarea name="description" placeholder="What and why. No private strategy." aria-label="Spec description"></textarea>
-      <textarea name="criteria" placeholder="One acceptance criterion per line" aria-label="Acceptance criteria"></textarea>
-      <div><button class="primary" type="submit" ${repos.length ? "" : "disabled"}>Add to local cache</button></div>
-    </form>
-    <p class="meta" style="margin:16px 0 8px">Build pipeline: each card is one build target. The button is the next step — Draft → Approve → Build → Publish. Open Details to read the spec, set build options, or preview the shadow bundle.</p>
-    <div class="section-title">Open</div>
-    ${openRows || `<div class="empty">Nothing open.</div>`}
-    <div class="section-title">Done</div>
-    ${doneRows || `<div class="empty">Nothing merged or closed yet.</div>`}`;
+    ${contribs.length
+      ? `<div class="section-title">Build pipeline</div>${sections}${otherHtml}${doneHtml}`
+      : `<div class="empty">Nothing in the pipeline yet. Sync GitHub to pull in your open PRs and assigned issues.</div>`}
+    ${disclose("Manage repos · add a repo or issue manually", `
+        <form class="inline" id="add-repo">
+          <input type="text" name="title" placeholder="New repo" required aria-label="Repo title">
+          <input type="text" name="url" placeholder="https://github.com/owner/name" aria-label="Repo URL">
+          <select name="kind" aria-label="Repo kind">${options(choices.repo_kind, "oss")}</select>
+          <select name="status" aria-label="Repo status">${options(choices.repo_status, "active")}</select>
+          <button class="primary" type="submit">Add repo</button>
+        </form>
+        <div class="section-title">Repos</div>
+        <div class="grid">${repos.map(r => `
+          <div class="card" style="display:block">
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+              <button type="button" class="linkish" data-open data-type="repo" data-id="${esc(r.id)}">${esc(r.title)}</button>
+              <span class="chips">${chip(r.kind || "oss", r.kind === "own" ? "doing" : "")}${chip(r.status || "active", REPO_STATUS_TONE[r.status] || "")}${chip("reach " + (r.factory_reach || "shadow"), REACH_TONE[r.factory_reach] || "")}</span>
+            </div>
+            <details class="reveal">
+              <summary>Settings</summary>
+              <div style="margin-top:8px;display:grid;gap:8px">
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="kind" aria-label="Kind for ${esc(r.title)}">${options(choices.repo_kind, r.kind || "oss")}</select>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="status" aria-label="Status for ${esc(r.title)}">${options(choices.repo_status, r.status || "active")}</select>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="trigger" aria-label="Trigger for ${esc(r.title)}">${options(choices.factory_trigger, r.factory_trigger || "on-demand")}</select>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="reach" aria-label="Ceiling for ${esc(r.title)}">${options(choices.factory_reach, r.factory_reach || "shadow")}</select>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="code_path" value="${esc(r.code_path || "")}" placeholder="Local code path for publish" aria-label="Code path for ${esc(r.title)}">
+                  <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="default_branch" value="${esc(r.default_branch || "")}" placeholder="Default branch" aria-label="Default branch for ${esc(r.title)}" style="max-width:170px">
+                  <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="url" value="${esc(r.url || "")}" placeholder="Repo URL" aria-label="URL for ${esc(r.title)}">
+                  <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="notes" value="${esc(r.notes || "")}" placeholder="Short notes" aria-label="Notes for ${esc(r.title)}">
+                </div>
+              </div>
+            </details>
+          </div>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
+        <form class="stack" id="add-spec">
+          <div class="section-title">Local issue or feature spec</div>
+          <p class="meta">Public file only. Nothing is posted to GitHub. Put private notes in a document.</p>
+          <input type="text" name="title" placeholder="Title" required aria-label="Spec title">
+          <select name="repo" aria-label="Repo" ${repos.length ? "" : "disabled"}>${repos.map(r => `<option value="${esc(r.id)}">${esc(r.title)}</option>`).join("")}</select>
+          <div class="inline" style="margin:0">
+            <input type="number" name="number" min="1" placeholder="Number" required aria-label="Issue or PR number" style="width:120px">
+            <select name="kind" aria-label="Kind">${options(choices.contrib_kind, "issue")}</select>
+            <select name="method" aria-label="Method">${options(choices.method, "spec-kit")}</select>
+          </div>
+          <textarea name="description" placeholder="What and why. No private strategy." aria-label="Spec description"></textarea>
+          <textarea name="criteria" placeholder="One acceptance criterion per line" aria-label="Acceptance criteria"></textarea>
+          <div><button class="primary" type="submit" ${repos.length ? "" : "disabled"}>Add to local cache</button></div>
+        </form>`)}`;
 }
 function wikiTree(nodes, current, depth, pinned, arrange) {
   return (nodes || []).map(node => {
@@ -848,16 +963,14 @@ function renderWiki() {
 
 function renderInbox() {  const items = state.snap.inbox.filter(match);
   return `
-    <form class="stack" id="capture">
+    <form class="stack" id="capture" style="margin-bottom:12px">
       <input type="text" name="title" placeholder="Capture a thought" required maxlength="200" aria-label="Capture title">
-      <textarea name="body" maxlength="20000" placeholder="Optional detail. This lands in inbox/ for triage — not in a contribution file." aria-label="Capture body"></textarea>
-      <div><button class="primary" type="submit">Drop in inbox</button></div>
+      <div class="inline" style="margin:0">
+        <textarea name="body" maxlength="20000" placeholder="Optional detail. Lands in inbox/ for triage — not in a contribution file." aria-label="Capture body" style="min-height:44px;flex:1"></textarea>
+        <button class="primary" type="submit">Drop in inbox</button>
+      </div>
     </form>
-    <form class="inline" id="import-inbox" style="margin-bottom:12px">
-      <input type="file" name="file" accept=".eml,.ics,.md,.txt" required aria-label="Import a file">
-      <button class="quiet" type="submit">Import to inbox</button>
-      <span class="meta">.eml, .ics, .md, or .txt. Local only.</span>
-    </form>
+    <div class="section-title">Waiting${items.length ? ` (${items.length})` : ""}</div>
     ${items.length ? `<div class="list">${items.map(item => `
       <div class="card" style="display:block">
         <button type="button" class="linkish" data-open data-type="inbox" data-id="${esc(item.name)}">${esc(item.name)}</button>
@@ -870,7 +983,13 @@ function renderInbox() {  const items = state.snap.inbox.filter(match);
           <button class="quiet" type="submit" name="type" value="task" ${state.snap.projects.length ? "" : "disabled"}>File as task</button>
           <button class="quiet" type="button" data-delete-inbox="${esc(item.name)}">Delete</button>
         </form>
-      </div>`).join("")}</div>` : `<div class="empty">Inbox is clear.</div>`}`;
+      </div>`).join("")}</div>` : `<div class="empty">Inbox is clear.</div>`}
+    ${disclose("Import a file",
+      `<form class="inline" id="import-inbox" style="margin:0">
+        <input type="file" name="file" accept=".eml,.ics,.md,.txt" required aria-label="Import a file">
+        <button class="quiet" type="submit">Import to inbox</button>
+        <span class="meta">.eml, .ics, .md, or .txt. Local only.</span>
+      </form>`)}`;
 }
 function renderFactories() {
   const rank = ["weekly-contribution-digest", "weekly-project-status", "feature-builder", "context-maintenance"];
@@ -931,19 +1050,20 @@ function renderFactories() {
   }).join("") || `<div class="empty">No factories.</div>`;
   return `
     <p class="meta" style="margin-bottom:12px">A factory is a named pipeline: assemble a context bundle → draft → review → deliver. Everything drafts locally; nothing is posted or pushed. Each panel below says what it does and what it reads.</p>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
-      <button type="button" class="quiet" data-watch>Watch now</button>
-      <button type="button" class="quiet" data-watch-build>Watch and build</button>
-      <span class="meta">Watch assembles. Watch and build uses the model, runs checks, and commits locally. Publish and merge are CLI commands.</span>
-    </div>
-    <form class="stack" id="new-factory" style="margin-bottom:16px">
-      <div class="section-title">New factory</div>
-      <p class="meta">A custom factory reads a project (its tasks, documents, and meetings). Trigger, reach, and checks live on the repo, not here.</p>
-      <input type="text" name="name" placeholder="factory-name" required maxlength="40" pattern="[a-z][a-z0-9-]*" aria-label="New factory name">
-      <input type="text" name="title" placeholder="What it drafts (one line)" required maxlength="80" aria-label="New factory title">
-      <div><button class="primary" type="submit">Create factory</button></div>
-    </form>
-    ${panels}`;
+    ${panels}
+    ${disclose("Watch · add a factory",
+      `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="quiet" data-watch>Watch now</button>
+        <button type="button" class="quiet" data-watch-build>Watch and build</button>
+        <span class="meta">Watch assembles. Watch and build uses the model, runs checks, and commits locally. Publish and merge are CLI commands.</span>
+      </div>
+      <form class="stack" id="new-factory" style="margin:0">
+        <div class="section-title">New factory</div>
+        <p class="meta">A custom factory reads a project (its tasks, documents, and meetings). Trigger, reach, and checks live on the repo, not here.</p>
+        <input type="text" name="name" placeholder="factory-name" required maxlength="40" pattern="[a-z][a-z0-9-]*" aria-label="New factory name">
+        <input type="text" name="title" placeholder="What it drafts (one line)" required maxlength="80" aria-label="New factory title">
+        <div><button class="primary" type="submit">Create factory</button></div>
+      </form>`)}`;
 }
 
 function renderSettings() {
