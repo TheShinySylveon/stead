@@ -145,6 +145,7 @@ python -m stead factory run --factory context-maintenance [--shadow|--live] [--g
 python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live] [--generate] [--reach REACH]
 python -m stead digest [--generate]
 python -m stead factory new --name NAME --title "What it drafts"
+python -m stead factory delete --name NAME [--force]
 python -m stead factory watch [--build] [--publish] [--merge]
 python -m stead factory defaults [--trigger on-demand|watch] [--reach ghost|shadow|draft-pr|pr] \
     [--max-builds-per-day N] [--build-minutes N]
@@ -164,8 +165,12 @@ raise the ceiling and it does not open a pull request. `--reach` is
 feature-builder only. It cannot exceed the repo ceiling. Merge is not an
 install default. See [Models](models.md).
 
-`factory new` writes `FACTORY.md`, `prompts/v1.md`, and one eval. Run
-`stead init` after that so the prompt is indexed.
+`factory new` writes `FACTORY.md`, `prompts/v1.md`, and one eval, and indexes the
+prompt directly (no `stead init` needed). A custom factory reads a project.
+`factory delete` removes a factory folder; it refuses the four shipped factories
+and any run logs (the audit trail) unless `--force`. Both update only that
+factory's index rows, so the runs ledger and other factories' production prompts
+are preserved.
 
 `factory stop` writes `.stead-stop`; a build and a watched run check it
 between steps. `factory start` removes it. `factory defaults` also stores the
