@@ -43,6 +43,26 @@ MAX_MINUTES = 240
 STALE_LOCK_SECONDS = 6 * 3600
 LOCK_NAME = ".stead-build.lock"
 
+# Escalating reminders for a model that has a plan but never edits a file. Each
+# fires once at its step threshold — only while no file has changed — with
+# growing force, to break read/search/list loops instead of just the one nudge.
+_NO_EDIT_NUDGES = (
+    (5, "You have a plan but have not changed any file yet. Stop reading and "
+        "planning. Edit the file you are changing now (or write a new file), "
+        "then run check, then finish."),
+    (15, "You still have not changed any file. Stop exploring. Pick ONE file and "
+         "edit it on your very next action — do not read, list, or search again "
+         "until you have made an edit."),
+    (30, "You have made no edits after many steps. Make an edit on your very next "
+         "action."),
+)
+# A model re-reading or re-searching the same target this many times gets a
+# reminder to stop and act instead of looping.
+_REPEAT_WARN_AT = 3
+# A model re-editing the same file this many times gets a reminder to finish or
+# move on.
+_EDIT_WARN_AT = 5
+
 # Structured output for the model call: pin the reply to one action object.
 # JSON-schema form (not `json_object`): LM Studio enforces `json_schema`/`text`,
 # and json_object only guarantees valid JSON, not one action of the right shape.
@@ -334,16 +354,22 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         edits = 0
         failures = 0
         no_test = 0
-        progress_nudged = False
+        nudged: set[int] = set()
+        read_counts: dict[str, int] = {}
+        search_counts: dict[str, int] = {}
+        read_warned: set[str] = set()
+        search_warned: set[str] = set()
+        edit_counts: dict[str, int] = {}
+        edit_warned: set[str] = set()
         checks_mode = "none" if ghost or not checks else "host"
         for _step in range(max_steps):
             _remain_running(root, deadline)
-            if plan and not files and not deleted and _step >= 5 and not progress_nudged:
-                transcript.append(
-                    "You have a plan but have not changed any file yet. Stop reading "
-                    "and planning. Edit the file you are changing now (or write a new "
-                    "file), then run check, then finish.")
-                progress_nudged = True
+            if plan and not files and not deleted:
+                for threshold, message in _NO_EDIT_NUDGES:
+                    if _step >= threshold and threshold not in nudged:
+                        transcript.append(message)
+                        nudged.add(threshold)
+                        break
             full_prompt = prompt + "\n\n" + "\n\n".join(_fit_budget(prompt, transcript))
             chars_sent += len(full_prompt)
             _step_start = time.monotonic()
@@ -407,6 +433,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 text = target.read_text(encoding="utf-8", errors="replace")
                 actions.append({"action": "read", "path": rel})
                 transcript.append(_read_view(rel, text, action.get("start"), action.get("end")))
+                read_counts[rel] = read_counts.get(rel, 0) + 1
+                if read_counts[rel] >= _REPEAT_WARN_AT and rel not in read_warned:
+                    transcript.append(
+                        f"Note: you have read {rel} {read_counts[rel]} times already. "
+                        "Stop re-reading it. Edit a file now, or finish if the spec is met.")
+                    read_warned.add(rel)
                 continue
             if kind == "search":
                 query = str(action.get("query") or "").strip()
@@ -416,6 +448,12 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 hits = _search(code, query)
                 actions.append({"action": "search", "query": query})
                 transcript.append(f"search {query!r}:\n" + ("\n".join(hits) or "no matches"))
+                search_counts[query] = search_counts.get(query, 0) + 1
+                if search_counts[query] >= _REPEAT_WARN_AT and query not in search_warned:
+                    transcript.append(
+                        f"Note: you have searched {query!r} {search_counts[query]} times already. "
+                        "Stop re-searching. Edit a file now, or finish if the spec is met.")
+                    search_warned.add(query)
                 continue
             if kind == "plan":
                 summary = str(action.get("summary") or "").strip()
@@ -505,6 +543,13 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 actions.append({"action": kind, "path": rel})
                 transcript.append(f"edited {rel}: {note}" if kind == "edit"
                                   else f"wrote {rel} ({len(data)} bytes)")
+                edit_counts[rel] = edit_counts.get(rel, 0) + 1
+                if edit_counts[rel] >= _EDIT_WARN_AT and rel not in edit_warned:
+                    transcript.append(
+                        f"Note: you have edited {rel} {edit_counts[rel]} times. If the "
+                        "spec is met, send finish. If not, change a different file instead "
+                        "of re-editing this one.")
+                    edit_warned.add(rel)
                 continue
             if kind == "delete":
                 if not plan:

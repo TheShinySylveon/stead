@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The build loop pushes back on models that loop.** A model that plans but
+  never edits now gets escalating reminders at steps 5, 15, and 30 (not one
+  ignored nudge); re-reading or re-searching the same target 3+ times, or
+  re-editing the same file 5+ times, gets a pointed "stop and act, or finish"
+  reminder. This breaks the read-only and doc-thrash loops a weak model falls
+  into on a broad spec.
 - **The prompt cap now fits a 250k-token model.** `MAX_PROMPT_CHARS` is raised
   from 120k to 1M chars (~250k tokens at 4 chars/token), so a build can send
   the model its full context window instead of truncating the transcript at a

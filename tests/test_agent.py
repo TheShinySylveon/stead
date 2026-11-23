@@ -469,6 +469,49 @@ class BuildTest(BuildFixture):
         agent.recover_checkout(self.root, "contribution-me-app-issue-42")
         self.assertTrue(marker.exists())
 
+    def test_repeated_reads_get_a_reminder(self) -> None:
+        prompts = []
+
+        def responder(prompt):
+            prompts.append(prompt)
+            n = len(prompts)
+            if n == 1:
+                return json.dumps({"action": "plan", "summary": "Add the flag."})
+            if n <= 5:  # four reads of the same file
+                return json.dumps({"action": "read", "path": "app.py"})
+            if n == 6:
+                return json.dumps({"action": "write", "path": "app.py",
+                                   "content": "import argparse\nprint('hi')\n"})
+            return json.dumps({"action": "finish", "summary": "Done."})
+
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+        self.assertTrue(any("read app.py 3 times" in p for p in prompts),
+                        "a repeated read should trigger a reminder")
+
+    def test_no_edit_nudge_escalates(self) -> None:
+        prompts = []
+
+        def responder(prompt):
+            prompts.append(prompt)
+            n = len(prompts)
+            if n == 1:
+                return json.dumps({"action": "plan", "summary": "Add the flag."})
+            if n <= 17:  # sixteen list actions, past the step-15 nudge
+                return json.dumps({"action": "list", "path": "."})
+            if n == 18:
+                return json.dumps({"action": "write", "path": "app.py",
+                                   "content": "import argparse\nprint('hi')\n"})
+            return json.dumps({"action": "finish", "summary": "Done."})
+
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+        joined = "\n".join(prompts)
+        self.assertIn("Stop reading and planning", joined)
+        self.assertIn("Stop exploring", joined)
+
     def test_checks_get_a_scrubbed_environment(self) -> None:
         import os
         import unittest.mock as mock
