@@ -2,6 +2,17 @@
 
 ## Unreleased
 
+- **Cockpit polish from an Impeccable critique (desktop).**
+  - **Lifecycle track:** each pipeline card shows Draft · Approve · Build · Publish with the current step and the repo's limit, and replaces the amber stage chip.
+  - **Review before approve:** a drafted spec offers Review spec; Approve appears only inside the opened spec. Build options wait for approval and default to the repo's limit.
+  - **Fix:** a successful build no longer erases its own log. Lines are kept per contribution and restored after the redraw, with a result note.
+  - **Safety copy:** the sidebar no longer says nothing writes to GitHub (Publish, Comment and Merge do, each behind a confirmation); the Factories and Settings lines are scoped the same way.
+  - **Colour roles:** amber marks the step that needs you; ci pass is green and ci pending neutral; links are blue; Sync GitHub and "Use a shared server" are quiet buttons.
+  - **Home:** runs awaiting a verdict join Needs you (the Home badge counts them), and the four count tiles are gone.
+  - **One field for filter and search:** typing in the header field filters the view; Enter searches all context, with results under the header on any view; Escape clears.
+  - **Settings:** every field has a visible label that stays once it is filled (placeholders are now examples); People sits in a panel, and its actor selects say so when there are no actors yet.
+  - **Accessibility:** fields and buttons have 3:1 borders and a readable placeholder; a skip link; the view title is the page's h1, updates `document.title`, and takes focus on navigation; expanding a spec sets `aria-expanded`; Escape no longer fires twice.
+  - **Craft:** no one-sided list trail, no glow on the mark, a tint instead of a side bar for the current nav item, sans headings inside notes and specs, `*emphasis*` rendered, and targeted reduced-motion rules instead of a global kill.
 - **The default wall-clock budget is now 4 hours (was 30 minutes).** A weak
   local model can take far longer than 30 minutes to work through a build, so
   `--max-minutes` and `build_minutes` default to 240 (4 hours), and the ceiling
