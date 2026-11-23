@@ -15,6 +15,15 @@
   "Assemble shadow" preview, "Review", and a plain-language hint for each stage.
   The Factories tab's `feature-builder` panel no longer duplicates the build — it
   points to the Repos pipeline — so there is one place to take an issue to a PR.
+- **Factories are self-evident, guided, and deletable.** The Factories tab opens
+  with a plain-language explanation and each panel says what it does and what it
+  reads. New factory is a guided form (name + what it drafts) with a visible result
+  and next step; a custom factory reads a project. `stead factory delete --name NAME
+  [--force]` (and a cockpit Delete button) removes a factory; it refuses the four
+  shipped factories and any run logs (the audit trail) unless `--force`. Creating or
+  deleting a factory updates only that factory's index rows — it never rebuilds the
+  database, so the runs ledger and other factories' production prompts are preserved.
+  CLI↔GUI parity verified: every CLI command has a cockpit control.
 - **`sync github` reconciles merged PRs, and the cockpit splits open from done.**
   Cached open PR contributions now get their live state checked during sync, so
   a merged or closed PR stops showing as open (before, sync only fetched open

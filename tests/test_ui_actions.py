@@ -136,6 +136,31 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("eval-demo", body["error"])
 
+    def test_factory_new_and_delete_preserve_runs(self) -> None:
+        status, body = self._post("/api/factory/new", {"name": "spec-notes", "title": "Spec notes"})
+        self.assertEqual(status, 200, body)
+        status, snap = self._get("/api/snapshot")
+        self.assertEqual(status, 200)
+        f = next(x for x in snap["factories"] if x["name"] == "spec-notes")
+        self.assertEqual(f["needs"], "project")
+        self.assertEqual(f["blurb"], "Spec notes")
+        status, body = self._post("/api/factory/delete", {"name": "spec-notes"})
+        self.assertEqual(status, 200, body)
+        self.assertFalse((self.root / "factories/spec-notes").exists())
+        # creating/deleting a factory must not wipe the existing run or reset prompts
+        conn = db.connect(self.root)
+        run = conn.execute("SELECT verdict FROM runs WHERE id=?", (self.run_id,)).fetchone()
+        prod = conn.execute(
+            "SELECT status FROM prompt_versions WHERE factory='weekly-project-status' AND version='v2'"
+        ).fetchone()[0]
+        conn.close()
+        self.assertIsNotNone(run)
+        self.assertEqual(run[0], "approved")
+        self.assertEqual(prod, "production")
+        status, body = self._post("/api/factory/delete", {"name": "weekly-project-status"})
+        self.assertEqual(status, 400)
+        self.assertIn("shipped", body["error"])
+
     def test_file_run_and_watch(self) -> None:
         status, body = self._post("/api/run/file", {"id": self.run_id})
         self.assertEqual(status, 200, body)

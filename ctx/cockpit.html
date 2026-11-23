@@ -825,6 +825,13 @@ function renderInbox() {  const items = state.snap.inbox.filter(match);
 }
 function renderFactories() {
   const rank = ["weekly-contribution-digest", "weekly-project-status", "feature-builder", "context-maintenance"];
+  const BLURBS = {
+    "weekly-contribution-digest": "A weekly digest of your GitHub contributions in flight.",
+    "weekly-project-status": "A status update for one project.",
+    "feature-builder": "Turns an approved spec into a branch and PR.",
+    "context-maintenance": "A triage note for the inbox, broken relations, stale objects, and duplicates.",
+  };
+  const NEEDS = {project: "a project", contribution: "an approved spec", none: "no input (whole cache)"};
   const factories = state.snap.factories
     .filter(f => match({title: f.name, id: f.name}))
     .sort((a, b) => (rank.indexOf(a.name) + 1 || 99) - (rank.indexOf(b.name) + 1 || 99) || a.name.localeCompare(b.name));
@@ -860,27 +867,32 @@ function renderFactories() {
     </div>` : "";
     return `<div class="panel" style="padding:14px 16px;margin-bottom:12px">
       <strong>${esc(f.name)}</strong>
+      <p class="meta" style="margin:4px 0">${esc(f.blurb || BLURBS[f.name] || "Custom factory.")} Needs: ${NEEDS[f.needs] || f.needs}.</p>
       <div class="chips" style="margin:8px 0">${chip(prod ? prod.version + " production" : "no prompt", prod ? "done" : "")}${chip(f.evals + " evals")}</div>
       ${form}
       <form class="inline" data-promote="${esc(f.name)}" style="margin-top:8px">
         <select name="version" aria-label="Prompt version for ${esc(f.name)}">${(f.prompts || []).map(p => `<option value="${esc(p.version)}" ${prod && prod.version === p.version ? "selected" : ""}>${esc(p.version)}${prod && prod.version === p.version ? " (production)" : ""}</option>`).join("")}</select>
         <button class="quiet" type="submit" data-promote-button ${prod ? "disabled" : ""}>Promote prompt</button>
         <button type="button" class="quiet" data-evals="${esc(f.name)}">Check evals</button>
+        <button type="button" class="quiet" data-factory-delete="${esc(f.name)}">Delete</button>
       </form>
       ${evalsBox}
       ${runs || `<div class="meta">No runs yet.</div>`}
     </div>`;
   }).join("") || `<div class="empty">No factories.</div>`;
   return `
+    <p class="meta" style="margin-bottom:12px">A factory is a named pipeline: assemble a context bundle → draft → review → deliver. Everything drafts locally; nothing is posted or pushed. Each panel below says what it does and what it reads.</p>
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
       <button type="button" class="quiet" data-watch>Watch now</button>
       <button type="button" class="quiet" data-watch-build>Watch and build</button>
       <span class="meta">Watch assembles. Watch and build uses the model, runs checks, and commits locally. Publish and merge are CLI commands.</span>
     </div>
-    <form class="inline" id="new-factory" style="margin-bottom:16px">
+    <form class="stack" id="new-factory" style="margin-bottom:16px">
+      <div class="section-title">New factory</div>
+      <p class="meta">A custom factory reads a project (its tasks, documents, and meetings). Trigger, reach, and checks live on the repo, not here.</p>
       <input type="text" name="name" placeholder="factory-name" required maxlength="40" pattern="[a-z][a-z0-9-]*" aria-label="New factory name">
-      <input type="text" name="title" placeholder="What it drafts" required maxlength="80" aria-label="New factory title">
-      <button class="primary" type="submit">New factory</button>
+      <input type="text" name="title" placeholder="What it drafts (one line)" required maxlength="80" aria-label="New factory title">
+      <div><button class="primary" type="submit">Create factory</button></div>
     </form>
     ${panels}`;
 }
@@ -1470,6 +1482,24 @@ document.body.addEventListener("click", async (event) => {
     finally { assembleBtn.disabled = false; }
     return;
   }
+  const factoryDelete = event.target.closest("[data-factory-delete]");
+  if (factoryDelete) {
+    const name = factoryDelete.dataset.factoryDelete;
+    if (!confirm("Delete factory " + name + "? This removes its definition, prompts, and evals.")) return;
+    try {
+      factoryDelete.disabled = true;
+      try {
+        await api("/api/factory/delete", {method: "POST", body: JSON.stringify({name})});
+      } catch (err) {
+        if (!confirm(err.message + "\n\nForce delete anyway?")) throw err;
+        await api("/api/factory/delete", {method: "POST", body: JSON.stringify({name, force: true})});
+      }
+      toast("Deleted factory " + name);
+      await load();
+    } catch (err) { toast(err.message); }
+    finally { factoryDelete.disabled = false; }
+    return;
+  }
   const publishBtn = event.target.closest("[data-publish]");
   if (publishBtn) {
     if (!confirm("Publish a pull request for this spec? This pushes a branch and opens a PR on GitHub.")) return;
@@ -1888,7 +1918,7 @@ document.body.addEventListener("submit", async (event) => {
       form.reset();
     } else if (form.id === "new-factory") {
       const result = await api("/api/factory/new", {method: "POST", body: JSON.stringify({name: data.name, title: data.title})});
-      toast("Created " + result.name + ". Check evals before promoting.");
+      toast("Created " + result.name + ". Next: Check evals, then Assemble shadow.");
       form.reset();
       await load();
     } else if (form.id === "import-inbox") {
