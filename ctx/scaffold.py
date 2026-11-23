@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-import os
 import re
 import shutil
 from pathlib import Path
@@ -47,10 +46,11 @@ def scaffold(root: Path, name: str, title: str, input_kind: str = "project") -> 
         raise ScaffoldError("title is required and must be at most 80 characters")
     if input_kind not in INPUTS:
         raise ScaffoldError(f"input must be one of {', '.join(INPUTS)}")
-    folder = root / "factories" / os.path.basename(name)
-    if folder.exists():
+    if _factory_dir(root, name) is not None:
         raise ScaffoldError(f"factory already exists: {name}")
-    (folder / "prompts").mkdir(parents=True)
+    (root / "factories" / name).mkdir(parents=True)
+    folder = _factory_dir(root, name)
+    (folder / "prompts").mkdir()
     (folder / "evals").mkdir()
     definition = (
         f"# FACTORY: {name}\n\n{title}\n\n"
@@ -70,7 +70,7 @@ def scaffold(root: Path, name: str, title: str, input_kind: str = "project") -> 
         "Do not invent facts. Do not post, push, or merge.\n",
         encoding="utf-8",
     )
-    (folder / "evals" / f"eval-{name}.json").write_text(
+    (folder / "evals" / f"eval-{folder.name}.json").write_text(
         json.dumps({
             "id": f"eval-{name}",
             "factory": name,
