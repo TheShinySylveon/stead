@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The default wall-clock budget is now 4 hours (was 30 minutes).** A weak
+  local model can take far longer than 30 minutes to work through a build, so
+  `--max-minutes` and `build_minutes` default to 240 (4 hours), and the ceiling
+  is raised from 8 hours to 24 hours for builds that need even longer.
 - **The default token budget is now 100k (was 2M).** For a local model whose
   context window is 100k tokens, the 2M default was unreachable. `stead factory
   defaults` (and the `--max-tokens` / cockpit Tokens field) now default to

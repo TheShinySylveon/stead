@@ -44,9 +44,9 @@ def factory_defaults(root: Path) -> dict:
     except (TypeError, ValueError):
         builds = 3
     try:
-        minutes = int(raw.get("build_minutes", 30))
+        minutes = int(raw.get("build_minutes", 240))
     except (TypeError, ValueError):
-        minutes = 30
+        minutes = 240
     try:
         tokens = int(raw.get("max_tokens_per_build", 100_000))
     except (TypeError, ValueError):
@@ -59,7 +59,7 @@ def factory_defaults(root: Path) -> dict:
         "trigger": trigger,
         "reach": reach,
         "max_builds_per_day": max(0, min(builds, 100)),
-        "build_minutes": max(1, min(minutes, 480)),
+        "build_minutes": max(1, min(minutes, 1440)),
         "max_tokens_per_build": max(0, tokens),
         "max_cost_per_build_usd": max(0.0, cost),
     }

@@ -1101,7 +1101,7 @@ function renderSettings() {
       <form class="inline" id="set-factory">
         <select name="trigger" aria-label="Install trigger">${options(state.snap.choices.factory_trigger, (state.snap.factory || {}).trigger || "on-demand")}</select>
         <select name="reach" aria-label="Install ceiling">${options(state.snap.choices.factory_reach_install, (state.snap.factory || {}).reach || "shadow")}</select>
-        <input type="number" name="build_minutes" min="1" max="480" placeholder="Build minutes" aria-label="Build minutes" value="${esc((state.snap.factory || {}).build_minutes || 30)}" style="width:7em">
+        <input type="number" name="build_minutes" min="1" max="1440" placeholder="Build minutes" aria-label="Build minutes" value="${esc((state.snap.factory || {}).build_minutes || 240)}" style="width:7em">
         <button class="primary" type="submit">Save factory default</button>
       </form>
       <div class="inline" style="margin-top:8px">
@@ -1291,7 +1291,7 @@ function contributionDetail(data, title, id) {
     <details data-build-options style="margin-top:10px">
       <summary class="meta">Build options</summary>
       <div class="inline" style="margin-top:8px">
-        <input type="number" name="max_minutes" min="1" max="480" placeholder="Minutes" aria-label="Build minutes" style="width:6.5em">
+        <input type="number" name="max_minutes" min="1" max="1440" placeholder="Minutes" aria-label="Build minutes" style="width:6.5em">
         <input type="number" name="max_steps" min="1" placeholder="Steps" aria-label="Max steps" style="width:5.5em">
         <input type="number" name="max_tokens" min="0" placeholder="Tokens" aria-label="Max tokens" style="width:6.5em">
         <input type="number" name="max_cost" min="0" step="0.01" placeholder="USD" aria-label="Max cost" style="width:6em">
