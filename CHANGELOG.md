@@ -18,10 +18,11 @@
   local model can take far longer than 30 minutes to work through a build, so
   `--max-minutes` and `build_minutes` default to 240 (4 hours), and the ceiling
   is raised from 8 hours to 24 hours for builds that need even longer.
-- **The default token budget is now 100k (was 2M).** For a local model whose
-  context window is 100k tokens, the 2M default was unreachable. `stead factory
-  defaults` (and the `--max-tokens` / cockpit Tokens field) now default to
-  100k tokens per build.
+- **The default token budget is now 10M (was 2M).** A local model has no
+  per-token cost, so a generous cumulative budget is safe and lets a 300-step
+  build run to completion instead of aborting. `stead factory defaults` (and
+  the `--max-tokens` / cockpit Tokens field) now default to 10M tokens per
+  build.
 - **The build step cap is now 300 (was 30).** `stead build` defaults to 300
   model steps, and the CLI's `--steps N` no longer clamps to 60. The cockpit's
   Build options gain a **Steps** field so GUI builds can set their own cap, and
