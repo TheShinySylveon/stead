@@ -234,7 +234,7 @@ class SpecApprovalTest(unittest.TestCase):
         prompts: list[str] = []
         result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
                                  responder=lambda p: prompts.append(p) or draft)
-        self.assertIn("At most 8 criteria", prompts[0])
+        self.assertIn("8 is the hard maximum", prompts[0])
         self.assertEqual(len(result["warnings"]), 1)
         self.assertIn("a build would refuse this draft", result["warnings"][0])
         self.assertIn("10 acceptance criteria", result["warnings"][0])
