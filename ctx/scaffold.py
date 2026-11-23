@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from pathlib import Path
@@ -20,6 +21,18 @@ class ScaffoldError(Exception):
         super().__init__(message)
 
 
+def _factory_dir(root: Path, name: str) -> Path | None:
+    """The factories/<name> directory, found by enumeration — never by building a
+    path from user input (same read-side pattern as objects.find). None if absent."""
+    base = root / "factories"
+    if not base.is_dir():
+        return None
+    for path in base.iterdir():
+        if path.is_dir() and path.name == name:
+            return path
+    return None
+
+
 def scaffold(root: Path, name: str, title: str, input_kind: str = "project") -> Path:
     """Create factories/<name>/ with a definition, v1 prompt, and one eval.
 
@@ -34,7 +47,7 @@ def scaffold(root: Path, name: str, title: str, input_kind: str = "project") -> 
         raise ScaffoldError("title is required and must be at most 80 characters")
     if input_kind not in INPUTS:
         raise ScaffoldError(f"input must be one of {', '.join(INPUTS)}")
-    folder = root / "factories" / name
+    folder = root / "factories" / os.path.basename(name)
     if folder.exists():
         raise ScaffoldError(f"factory already exists: {name}")
     (folder / "prompts").mkdir(parents=True)
@@ -75,7 +88,10 @@ def scaffold(root: Path, name: str, title: str, input_kind: str = "project") -> 
 
 def factory_meta(root: Path, name: str) -> dict:
     """The frontmatter a factory declares in FACTORY.md (input, title), or {}."""
-    path = root / "factories" / name / "FACTORY.md"
+    folder = _factory_dir(root, name)
+    if folder is None:
+        return {}
+    path = folder / "FACTORY.md"
     if not path.is_file():
         return {}
     try:
@@ -97,8 +113,8 @@ def delete_factory(root: Path, name: str, force: bool = False) -> dict:
     name = (name or "").strip()
     if not _NAME.match(name):
         raise ScaffoldError("name must be lowercase letters, numbers, and hyphens")
-    folder = root / "factories" / name
-    if not folder.is_dir():
+    folder = _factory_dir(root, name)
+    if folder is None:
         raise ScaffoldError(f"factory not found: {name}")
     if name in _shipped_factories() and not force:
         raise ScaffoldError(
