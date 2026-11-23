@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Long builds stream to the end instead of giving up.** The cockpit no
+  longer stops polling a build after ~48 minutes with "Build is taking too
+  long" — a build now runs up to its 4-hour budget with the log streaming the
+  whole way. Streaming also no longer stalls after 200 progress lines: the task
+  now reports a monotonic line total so the card can keep appending new lines
+  even as the server trims its buffer.
 - **Cockpit review fixes.** A build started from the opened spec logs there as well as on the card; `*emphasis*` and `_emphasis_` no longer change code spans or link addresses; the skip link moves focus without replacing the view's address.
 - **Cockpit polish from an Impeccable critique (desktop).**
   - **Lifecycle track:** each pipeline card shows Draft · Approve · Build · Publish with the current step and the repo's limit, and replaces the amber stage chip.

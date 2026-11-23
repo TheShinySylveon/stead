@@ -26,6 +26,7 @@ class Task:
     result: dict | None = None
     error: str = ""
     lines: list[str] = field(default_factory=list)
+    line_count: int = 0  # monotonic total of lines ever appended
 
     def snapshot(self) -> dict:
         return {
@@ -34,6 +35,7 @@ class Task:
             "elapsed": round(time.time() - self.started, 1),
             "error": self.error, "result": self.result,
             "progress": list(self.lines[-PROGRESS_KEEP:]),
+            "progress_total": self.line_count,
         }
 
 
@@ -60,6 +62,7 @@ class TaskRunner:
         def progress(line: str) -> None:
             with self._lock:
                 task.lines.append(str(line))
+                task.line_count += 1
                 del task.lines[:-PROGRESS_KEEP]
 
         def run() -> None:
