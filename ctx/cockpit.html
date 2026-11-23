@@ -18,7 +18,7 @@
     --space-3xs: 2px; --space-2xs: 4px; --space-xs: 8px; --space-sm: 12px; --space-md: 16px; --space-lg: 24px; --space-xl: 40px; --space-2xl: 64px;
     --text-xs: 0.75rem; --text-sm: 0.875rem; --text-md: 1rem; --text-lg: 1.2rem; --text-xl: 1.44rem; --text-2xl: 1.728rem;
     --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
-    --dur-micro: 120ms; --dur-short: 220ms;
+    --dur-micro: 150ms; --dur-short: 250ms;
     --color-paper: oklch(17% 0.008 250); --color-paper-2: oklch(21% 0.009 250); --color-paper-3: oklch(13.5% 0.007 250);
     --color-ink: oklch(95% 0.005 250); --color-ink-2: oklch(83% 0.008 250); --color-muted: oklch(71% 0.01 250);
     --color-rule: oklch(31% 0.01 250); --color-rule-2: oklch(42% 0.012 250);
@@ -26,11 +26,11 @@
     --color-cool: oklch(77% 0.12 245); --color-cool-soft: oklch(29% 0.05 245);
     --color-ok: oklch(76% 0.15 150); --color-ok-soft: oklch(24.5% 0.03 150); --color-bad: oklch(70% 0.17 25); --color-bad-soft: oklch(24.5% 0.035 25);
     --color-nav: oklch(14.5% 0.008 250);
-    --font-display: "Host Grotesk", "Segoe UI", ui-sans-serif, system-ui, sans-serif;
-    --font-body: var(--font-display);
-    --font-outlier: "Atkinson Hyperlegible Mono", ui-monospace, Consolas, monospace;
+    --font-display: ui-monospace, "Cascadia Code", "JetBrains Mono", "SF Mono", SFMono-Regular, Menlo, Consolas, monospace;
+    --font-body: system-ui, -apple-system, "Segoe UI", "IBM Plex Sans", Roboto, "Helvetica Neue", Arial, sans-serif;
+    --font-outlier: var(--font-display);
     --radius-card: 10px; --radius-control: 6px; --rule-hair: 1px;
-    --tracking-display: -0.03em; --display-weight: 500;
+    --tracking-display: 0; --display-weight: 500;
     --rail: 220px;
   }
   *, *::before, *::after { box-sizing: border-box; }
@@ -66,6 +66,7 @@
     width: 16px; height: 16px; border-radius: var(--space-2xs);
     border: var(--rule-hair) solid var(--color-accent);
     background: var(--color-accent);
+    box-shadow: 0 0 10px color-mix(in oklab, var(--color-accent) 45%, transparent);
     flex: none;
   }
   .brand h1 { font-size: var(--text-lg); line-height: 1.1; }
@@ -357,6 +358,25 @@ const state = { snap: null, view: "home", q: "", onboardResult: null,
   wikiRepo: "", wiki: null, wikiPath: "", wikiPageData: null,
   wikiArrange: false, wikiRequestForm: false };
 
+const VALID_VIEWS = new Set(VIEWS.map(([id]) => id));
+function viewFromHash() {
+  const h = (location.hash || "").replace(/^#\/?/, "");
+  return VALID_VIEWS.has(h) ? h : "";
+}
+async function go(view) {
+  if (!VALID_VIEWS.has(view)) return;
+  const changed = view !== state.view;
+  state.view = view;
+  state.settingsToken = "";
+  closeReader();
+  if (view === "wiki" && state.wikiRepo) {
+    await openWiki(state.wikiRepo);
+  } else {
+    render();
+  }
+  if (changed && location.hash !== "#" + view) location.hash = view;
+}
+
 function when(value) {
   if (!value) return "";
   const d = new Date(value);
@@ -420,6 +440,8 @@ async function awaitTask(path, payload, verb) {
 async function load() {
   const y = window.scrollY;
   state.snap = await api("/api/snapshot");
+  const v = viewFromHash();
+  if (v) state.view = v;
   render();
   const version = document.getElementById("version");
   if (version) version.textContent = "v" + state.snap.version;
@@ -1733,14 +1755,7 @@ document.body.addEventListener("click", async (event) => {
   }
   const nav = event.target.closest("[data-nav]");
   if (nav) {
-    state.view = nav.dataset.nav;
-    state.settingsToken = "";
-    closeReader();
-    if (state.view === "wiki" && state.wikiRepo) {
-      await openWiki(state.wikiRepo);
-    } else {
-      render();
-    }
+    await go(nav.dataset.nav);
     return;
   }
   const wikiOpen = event.target.closest("[data-wiki-open]");
@@ -2039,6 +2054,10 @@ document.addEventListener("keydown", (event) => {
     event.preventDefault();
     document.getElementById("q").focus();
   }
+});
+window.addEventListener("hashchange", () => {
+  const v = viewFromHash();
+  if (v && v !== state.view) go(v);
 });
 load().catch(err => {
   document.getElementById("main").innerHTML = `<div class="empty">${esc(err.message)}</div>`;

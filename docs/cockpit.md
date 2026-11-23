@@ -18,6 +18,9 @@ On this computer the server refuses any address except loopback
 
 The page has no external fonts or scripts. It works offline.
 
+Each section has a `#hash` route (for example `#repos`, `#tasks`), so the back
+button, browser history, and shared URLs land on the right view.
+
 Writes go through the same rules as the CLI. Markdown stays the source of
 truth. The page calls a model only when you check **Draft with model** or
 press **Build** on an approved spec. A cockpit build runs in the background

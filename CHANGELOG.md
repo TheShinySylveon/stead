@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Cockpit UI/UX polish (ui-ux-pro-max design system).** Headings and figures
+  now set in a monospace display face for a developer-tool feel (system fonts —
+  the page stays offline), with sans body text, slightly longer interaction
+  transitions, a subtle glow on the brand mark, and the existing graphite/amber
+  palette kept. Views are now deep-linkable: each section has a `#hash` route,
+  so the back button, browser history, and shared URLs land on the right view.
 - **The contribution list is a pipeline, not a CRUD grid.** Each build target is
   one card with a stage (`ready to draft → drafted → approved → built → PR
   opened → merged/closed`) and a single "next step" button, so you only see the
