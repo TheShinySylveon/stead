@@ -111,7 +111,7 @@
     padding-bottom: var(--space-md); border-bottom: var(--rule-hair) solid var(--color-rule);
   }
   .top h1 { font-size: var(--text-2xl); }
-  #title:focus { outline: none; }
+  #title:focus, #content:focus { outline: none; }
   .top p { margin: var(--space-2xs) 0 0; color: var(--color-ink-2); max-width: 62ch; }
   input[type="search"], input[type="text"], input[type="password"], input[type="number"], textarea, select {
     font: inherit; color: inherit; background: var(--color-paper-3);
@@ -393,7 +393,7 @@
   <nav id="nav" aria-label="Sections"></nav>
   <p class="nav-foot">Loopback by default. Files are the source of truth. GitHub is written only by Publish, Comment or Merge, and each asks first.<br><span id="version"></span></p>
 </aside>
-<main id="content">
+<main id="content" tabindex="-1">
   <div class="top">
     <div>
       <h1 id="title" tabindex="-1">Home</h1>
@@ -548,9 +548,13 @@ async function awaitTask(path, payload, verb, logEl) {
   if (!taskId) throw new Error(verb + " did not start");
   const write = (text) => {
     if (contribution) state.logs[contribution].push(text);
-    // Write to whichever log is on screen now: a redraw may have replaced logEl.
-    const live = (contribution && liveLog(contribution)) || logEl;
-    if (live) { live.hidden = false; live.textContent += text + "\n"; live.scrollTop = live.scrollHeight; }
+    // The log the task started from (the reader or the card) while it is on screen,
+    // plus the card's current log: a redraw may have replaced the card's.
+    const targets = new Set();
+    if (logEl && logEl.isConnected) targets.add(logEl);
+    const card = contribution && liveLog(contribution);
+    if (card) targets.add(card);
+    for (const live of targets) { live.hidden = false; live.textContent += text + "\n"; live.scrollTop = live.scrollHeight; }
     if (contribution) {
       state.activity = { contribution, verb, line: text };
       const lineEl = document.querySelector('[data-activity="' + contribution + '"]');
@@ -1274,12 +1278,16 @@ function render() {
 }
 
 function inline(s) {
+  // Code spans and link tags are set aside first so emphasis cannot touch them.
+  const kept = [];
+  const hold = (html) => "\u0001" + (kept.push(html) - 1) + "\u0001";
   return esc(s)
-    .replace(/`([^`]+)`/g, "<code>$1</code>")
+    .replace(/`([^`]+)`/g, (_, code) => hold("<code>" + code + "</code>"))
+    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, text, url) => hold('<a href="' + url + '" target="_blank" rel="noopener">') + text + hold("</a>"))
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?![\w*])/g, "$1<em>$2</em>")
     .replace(/(^|[^\w])_([^_\s][^_]*?)_(?!\w)/g, "$1<em>$2</em>")
-    .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+    .replace(/\u0001(\d+)\u0001/g, (_, i) => kept[+i]);
 }
 function headingId(text) {
   return "h-" + String(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "");
@@ -1595,6 +1603,10 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
+document.querySelector(".skip").addEventListener("click", (event) => {
+  event.preventDefault();
+  document.getElementById("content").focus();
+});
 document.body.addEventListener("click", async (event) => {
   const lockRemove = event.target.closest("[data-lock-remove]");
   if (lockRemove) {

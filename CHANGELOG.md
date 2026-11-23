@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- **Cockpit review fixes.** A build started from the opened spec logs there as well as on the card; `*emphasis*` and `_emphasis_` no longer change code spans or link addresses; the skip link moves focus without replacing the view's address.
 - **Cockpit polish from an Impeccable critique (desktop).**
   - **Lifecycle track:** each pipeline card shows Draft · Approve · Build · Publish with the current step and the repo's limit, and replaces the amber stage chip.
   - **Review before approve:** a drafted spec offers Review spec; Approve appears only inside the opened spec. Build options wait for approval and default to the repo's limit.
