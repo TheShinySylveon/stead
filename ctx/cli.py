@@ -791,8 +791,8 @@ def build_parser() -> argparse.ArgumentParser:
     bld.add_argument("--wait-minutes", type=int, default=30)
     bld.add_argument("--repair-rounds", type=int, default=2,
                      help="how many failed check rounds the model may fix")
-    bld.add_argument("--max-minutes", type=int, default=30,
-                     help="wall-clock budget for this build (default 30)")
+    bld.add_argument("--max-minutes", type=int, default=240,
+                     help="wall-clock budget for this build (default 240 = 4 hours)")
     bld.add_argument("--max-tokens", type=int,
                      help="token budget for this build. Defaults to the install default.")
     bld.add_argument("--max-cost", type=float,
