@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The build step cap is now 300 (was 30).** `stead build` defaults to 300
+  model steps, and the CLI's `--steps N` no longer clamps to 60. The cockpit's
+  Build options gain a **Steps** field so GUI builds can set their own cap, and
+  a build that leaves it blank uses the 300 default.
 - **A stale build lock is now resolvable from the cockpit.** When a build fails
   with "another build holds the lock", or a lock is left behind after a crash,
   the contribution reader's Build options show the lock (pid, host, age, and

@@ -1172,6 +1172,7 @@ function contributionDetail(data, title, id) {
       <summary class="meta">Build options</summary>
       <div class="inline" style="margin-top:8px">
         <input type="number" name="max_minutes" min="1" max="480" placeholder="Minutes" aria-label="Build minutes" style="width:6.5em">
+        <input type="number" name="max_steps" min="1" placeholder="Steps" aria-label="Max steps" style="width:5.5em">
         <input type="number" name="max_tokens" min="0" placeholder="Tokens" aria-label="Max tokens" style="width:6.5em">
         <input type="number" name="max_cost" min="0" step="0.01" placeholder="USD" aria-label="Max cost" style="width:6em">
         <select name="reach" aria-label="Reach">${(state.snap.choices.factory_reach || []).map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("")}</select>
@@ -1539,6 +1540,7 @@ document.body.addEventListener("click", async (event) => {
             return el && el.value !== "" ? Number(el.value) : undefined;
           };
           const mm = opt("max_minutes"); if (mm) payload.max_minutes = mm;
+          const ms = opt("max_steps"); if (ms) payload.max_steps = ms;
           // 0 means "off" for tokens/cost and must reach the server; only an empty field is omitted.
           const mt = opt("max_tokens"); if (mt !== undefined) payload.max_tokens = mt;
           const mc = opt("max_cost"); if (mc !== undefined) payload.max_cost = mc;

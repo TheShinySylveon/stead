@@ -779,7 +779,8 @@ def build_parser() -> argparse.ArgumentParser:
                      help="push the branch and open a pull request when the ceiling allows")
     bld.add_argument("--merge", action="store_true",
                      help="after opening, merge when the repo says reach: merge and checks are green")
-    bld.add_argument("--steps", type=int, default=24)
+    bld.add_argument("--steps", type=int, default=300,
+                     help="max model steps for this build (default 300)")
     bld.add_argument("--resume", action="store_true",
                      help="continue a failed build on its branch, keeping its WIP commit")
     bld.add_argument("--retry", action="store_true",
@@ -1283,7 +1284,7 @@ def main(argv: list[str] | None = None) -> int:
                                wait=args.wait,
                                wait_minutes=max(1, args.wait_minutes),
                                repair_rounds=max(0, args.repair_rounds),
-                               max_steps=max(1, min(args.steps, 60)),
+                               max_steps=max(1, args.steps),
                                max_minutes=max(1, args.max_minutes),
                                max_tokens=args.max_tokens, max_cost=args.max_cost,
                                progress=lambda line: print(line, file=sys.stderr, flush=True))
