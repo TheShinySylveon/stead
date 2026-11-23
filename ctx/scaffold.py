@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 from pathlib import Path
@@ -48,7 +49,11 @@ def scaffold(root: Path, name: str, title: str, input_kind: str = "project") -> 
         raise ScaffoldError(f"input must be one of {', '.join(INPUTS)}")
     if _factory_dir(root, name) is not None:
         raise ScaffoldError(f"factory already exists: {name}")
-    (root / "factories" / name).mkdir(parents=True)
+    base = os.path.realpath(root / "factories")
+    target = os.path.realpath(os.path.join(base, name))
+    if not target.startswith(base + os.sep):
+        raise ScaffoldError("factory name must stay inside factories/")
+    Path(target).mkdir(parents=True)
     folder = _factory_dir(root, name)
     (folder / "prompts").mkdir()
     (folder / "evals").mkdir()
