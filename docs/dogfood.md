@@ -48,7 +48,7 @@ gets done on this repo. The full scope and definition of done are in
   Merged/closed outcomes and human edits are reconciled from live PR state by
   `stead sync github` (read-only), so a human merge under the `pr` ceiling
   reaches the numbers. Publish those numbers here as they accumulate.
-- **Spend is bounded.** Each build has a token budget (default 100k) and, when
+- **Spend is bounded.** Each build has a token budget (default 10M) and, when
   model prices are configured, a USD budget. A watch run also has a daily build
   count. Raise or lower them with `stead factory defaults`.
 
