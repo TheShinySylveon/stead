@@ -564,17 +564,25 @@ async function awaitTask(path, payload, verb, logEl) {
   write(verb + " started…");
   let seen = 0;
   try {
-    for (let i = 0; i < 2400; i++) {
+    while (true) {
       await new Promise(r => setTimeout(r, 1200));
       const snap = await api("/api/task?id=" + encodeURIComponent(taskId));
       if (snap.status === "done") { write("✓ " + verb + " finished."); return snap.result; }
       if (snap.status === "failed") { write("✗ " + (snap.error || (verb + " failed"))); throw new Error(snap.error || (verb + " failed")); }
       const lines = snap.progress || [];
-      for (let j = seen; j < lines.length; j++) write(lines[j]);
-      seen = lines.length;
+      const total = snap.progress_total;
+      if (total != null) {
+        const fresh = total - seen;
+        if (fresh > 0) {
+          const start = Math.max(0, lines.length - fresh);
+          for (let j = start; j < lines.length; j++) write(lines[j]);
+          seen = total;
+        }
+      } else {
+        for (let j = seen; j < lines.length; j++) write(lines[j]);
+        seen = lines.length;
+      }
     }
-    write("⚠ " + verb + " is taking too long; watch it in the terminal");
-    throw new Error(verb + " is taking too long; watch it in the terminal");
   } finally {
     if (contribution && state.activity && state.activity.contribution === contribution) {
       state.activity = null;

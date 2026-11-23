@@ -36,6 +36,22 @@ class TaskRunnerTest(unittest.TestCase):
         self.assertEqual(snap["status"], "done", snap)
         self.assertIn("step 1", snap["progress"])
 
+    def test_progress_total_counts_beyond_the_cap(self) -> None:
+        from ctx.tasks import PROGRESS_KEEP
+        runner = TaskRunner()
+        n = PROGRESS_KEEP + 50
+
+        def work(progress):
+            for i in range(n):
+                progress(f"line {i}")
+            return {"ok": True}
+
+        task_id = runner.start("build", "x", work)
+        snap = _settled(runner, task_id)
+        self.assertEqual(snap["progress_total"], n)
+        self.assertEqual(len(snap["progress"]), PROGRESS_KEEP)
+        self.assertEqual(snap["progress"][0], f"line {n - PROGRESS_KEEP}")
+
     def test_task_failure_surfaces_the_error(self) -> None:
         runner = TaskRunner()
 
