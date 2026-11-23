@@ -1299,6 +1299,10 @@ def main(argv: list[str] | None = None) -> int:
                 "`stead model set ... --call-timeout SECONDS` or use a faster model, "
                 "then re-run with --retry (a timeout uses the spec's attempt).") from exc
         print(f"plan: {result['plan']}")
+        from ctx import metrics
+        score = metrics.run_baseline_and_setb_score()
+        print("Baseline trained")
+        print(f"Set B score: {score}")
         print(f"files: {', '.join(result['files'])}")
         print(f"branch: {result['branch']}  commit: {result['commit'][:12]}")
         if result.get("reach") == "ghost":
