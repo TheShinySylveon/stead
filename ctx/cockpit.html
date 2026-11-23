@@ -297,6 +297,21 @@
     word-break: break-word;
   }
   .build-log[hidden] { display: none; }
+  /* Everyday content first, manual "add/manage" forms collapsed behind a toggle. */
+  details.disclose { margin-top: var(--space-lg); border-top: var(--rule-hair) solid var(--color-rule); padding-top: var(--space-sm); }
+  details.disclose > summary {
+    cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: var(--space-xs);
+    font: 500 var(--text-sm)/1.4 var(--font-body); color: var(--color-muted);
+    padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius-control);
+    transition: color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+  }
+  details.disclose > summary::-webkit-details-marker { display: none; }
+  details.disclose > summary::before { content: "+"; font-family: var(--font-outlier); font-weight: 500; color: var(--color-accent); }
+  details.disclose > summary:hover { color: var(--color-ink); background: var(--color-paper-2); }
+  details.disclose[open] > summary { color: var(--color-ink); }
+  details.disclose[open] > summary::before { content: "\2212"; }
+  details.disclose > .disclose-body { margin-top: var(--space-sm); display: grid; gap: var(--space-md); }
+  .panel-head { display: flex; justify-content: space-between; align-items: baseline; gap: var(--space-sm); margin-bottom: var(--space-xs); }
   a { color: var(--color-accent); text-underline-offset: 0.16em; }
   ::selection { background: color-mix(in oklab, var(--color-accent) 25%, transparent); }
   @media (max-width: 68rem) {
@@ -435,6 +450,13 @@ function match(item) {
 function options(values, selected) {
   return values.map(v => `<option${v === selected ? " selected" : ""}>${esc(v)}</option>`).join("");
 }
+function disclose(summary, body) {
+  return `<details class="disclose"><summary>${summary}</summary><div class="disclose-body">${body}</div></details>`;
+}
+const TYPE_LABEL = {
+  task: "Task", contribution: "Contribution", inbox: "Inbox", document: "Document",
+  meeting: "Meeting", project: "Project", repo: "Repo",
+};
 function toast(message, ms) {
   const el = document.getElementById("toast");
   el.hidden = false;
@@ -554,18 +576,22 @@ function renderHome() {
       </div>
     </div>`).join("");
   return `
-    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center">
-      <input type="text" id="search-q" placeholder="Search all context (titles and bodies)" aria-label="Search context" style="flex:1">
+    <div style="display:flex;gap:8px;margin-bottom:16px;align-items:center;flex-wrap:wrap">
+      <input type="text" id="search-q" placeholder="Search all context (titles and bodies)" aria-label="Search context" style="flex:1;min-width:200px">
       <button type="button" class="quiet" data-search>Search</button>
     </div>
+    <form class="inline" id="capture" style="margin-bottom:16px">
+      <input type="text" name="title" placeholder="Capture a thought — lands in inbox for triage" required maxlength="200" aria-label="Quick capture" style="flex:1;min-width:200px">
+      <button class="primary" type="submit">Capture</button>
+    </form>
     <div id="search-result" style="margin-bottom:16px"></div>
     <div class="stats">${stats.map(([n, label]) => `<div class="stat"><b>${esc(n)}</b><span>${esc(label)}</span></div>`).join("")}</div>
     <div class="home-split">
       <section>
-        <div class="section-title">Needs you</div>
+        <div class="panel-head"><span class="section-title" style="margin:0">Needs you</span><span class="meta">${attention.length}</span></div>
         ${attention.length ? `<div class="list">${attention.map(item => `
           <button type="button" class="row" data-open data-type="${esc(item.type)}" data-id="${esc(item.id)}">
-            <span><strong>${esc(item.title)}</strong><br><small>${esc(item.type)} · ${esc(item.id)}</small></span>
+            <span><strong>${esc(item.title)}</strong><br><small>${esc(TYPE_LABEL[item.type] || item.type)}</small></span>
             <span class="chips">${(item.labels || [[item.label, item.tone]]).map(([label, tone]) => chip(label, tone)).join("")}</span>
           </button>`).join("")}</div>` : `<div class="empty">Nothing waiting. Capture a note, or enjoy the quiet.</div>`}
       </section>
@@ -610,15 +636,17 @@ function renderTasks() {
       </div>`).join("")}</div>`;
   }).join("");
   const projectOptions = projects.map(p => `<option value="${esc(p.id)}">${esc(p.title)}</option>`).join("");
-  return `
+  const addTask = `
     <form class="inline" id="add-task">
       <input type="text" name="title" placeholder="New task" required aria-label="Task title">
       <select name="project" aria-label="Project" ${projects.length ? "" : "disabled"}>${projectOptions}</select>
       <select name="status" aria-label="Status">${options(choices, "to-do")}</select>
       <button class="primary" type="submit" ${projects.length ? "" : "disabled"}>Add task</button>
-    </form>
-    ${projects.length ? "" : `<div class="empty">Add a project first. Tasks have to belong to one.</div>`}
-    <div class="board">${cols}</div>`;
+    </form>`;
+  return `
+    ${projects.length ? "" : `<div class="empty">Add a project first — tasks have to belong to one.</div>`}
+    ${tasks.length ? `<div class="board">${cols}</div>` : `<div class="empty">No tasks yet. Add the first one below.</div>`}
+    ${disclose("Add a task", addTask)}`;
 }
 function renderProjects() {
   const items = state.snap.projects.filter(match);
@@ -630,7 +658,7 @@ function renderProjects() {
     <p>${esc(result.specify_detail || "")}</p>
     ${result.specify_command && result.specify !== "ran" ? `<p class="meta">${esc(result.specify_command)}</p>` : ""}
   </div>` : "";
-  return `
+  const onboardForm = `
     <form class="stack" id="onboard">
       <div class="section-title">Onboard</div>
       <p class="meta">Creates the project, the repo record, and the constitution. specify init runs only in a code directory you name, and only if specify is installed. Nothing is pushed.</p>
@@ -646,13 +674,15 @@ function renderProjects() {
       <input type="text" name="path" placeholder="Existing code directory (optional)" aria-label="Code directory">
       <div><button class="primary" type="submit">Onboard project</button></div>
     </form>
-    ${resultBox}
     <form class="inline" id="add-project">
       <input type="text" name="title" placeholder="Project only, no repo" required aria-label="Project title">
       <select name="status" aria-label="Project status">${options(statuses, "active")}</select>
       <button class="quiet" type="submit">Add project</button>
-    </form>
-    ${items.length ? `<div class="grid">${items.map(projectCard).join("")}</div>` : `<div class="empty">No projects yet.</div>`}`;
+    </form>`;
+  return `
+    ${resultBox}
+    ${items.length ? `<div class="grid">${items.map(projectCard).join("")}</div>` : `<div class="empty">No projects yet. Add the first one below.</div>`}
+    ${disclose("Onboard a project · or add one without a repo", onboardForm)}`;
 }
 function renderLibrary() {
   const docs = state.snap.documents.filter(match);
@@ -671,8 +701,10 @@ function renderLibrary() {
       <textarea name="body" placeholder="Optional note" aria-label="${label} body"></textarea>
       <div><button class="primary" type="submit">Add ${label.toLowerCase()}</button></div>
     </form>`;
-  return add("add-document", "Document", "New document") + block("Documents", docs, "document")
-    + add("add-meeting", "Meeting", "New meeting") + block("Meetings", meetings, "meeting");
+  return block("Documents", docs, "document")
+    + block("Meetings", meetings, "meeting")
+    + disclose("Add a document or meeting",
+      add("add-document", "Document", "New document") + add("add-meeting", "Meeting", "New meeting"));
 }
 function renderRepos() {
   const repos = state.snap.repos.filter(match);
@@ -731,9 +763,7 @@ function renderRepos() {
     ${contribs.length
       ? `<div class="section-title">Build pipeline</div>${sections}${otherHtml}${doneHtml}`
       : `<div class="empty">Nothing in the pipeline yet. Sync GitHub to pull in your open PRs and assigned issues.</div>`}
-    <details style="margin-top:24px">
-      <summary class="meta">Manage repos · add a repo or issue manually</summary>
-      <div style="margin-top:12px;display:grid;gap:16px">
+    ${disclose("Manage repos · add a repo or issue manually", `
         <form class="inline" id="add-repo">
           <input type="text" name="title" placeholder="New repo" required aria-label="Repo title">
           <input type="text" name="url" placeholder="https://github.com/owner/name" aria-label="Repo URL">
@@ -771,9 +801,7 @@ function renderRepos() {
           <textarea name="description" placeholder="What and why. No private strategy." aria-label="Spec description"></textarea>
           <textarea name="criteria" placeholder="One acceptance criterion per line" aria-label="Acceptance criteria"></textarea>
           <div><button class="primary" type="submit" ${repos.length ? "" : "disabled"}>Add to local cache</button></div>
-        </form>
-      </div>
-    </details>`;
+        </form>`)}`;
 }
 function wikiTree(nodes, current, depth, pinned, arrange) {
   return (nodes || []).map(node => {
@@ -902,16 +930,14 @@ function renderWiki() {
 
 function renderInbox() {  const items = state.snap.inbox.filter(match);
   return `
-    <form class="stack" id="capture">
+    <form class="stack" id="capture" style="margin-bottom:12px">
       <input type="text" name="title" placeholder="Capture a thought" required maxlength="200" aria-label="Capture title">
-      <textarea name="body" maxlength="20000" placeholder="Optional detail. This lands in inbox/ for triage — not in a contribution file." aria-label="Capture body"></textarea>
-      <div><button class="primary" type="submit">Drop in inbox</button></div>
+      <div class="inline" style="margin:0">
+        <textarea name="body" maxlength="20000" placeholder="Optional detail. Lands in inbox/ for triage — not in a contribution file." aria-label="Capture body" style="min-height:44px;flex:1"></textarea>
+        <button class="primary" type="submit">Drop in inbox</button>
+      </div>
     </form>
-    <form class="inline" id="import-inbox" style="margin-bottom:12px">
-      <input type="file" name="file" accept=".eml,.ics,.md,.txt" required aria-label="Import a file">
-      <button class="quiet" type="submit">Import to inbox</button>
-      <span class="meta">.eml, .ics, .md, or .txt. Local only.</span>
-    </form>
+    <div class="section-title">Waiting${items.length ? ` (${items.length})` : ""}</div>
     ${items.length ? `<div class="list">${items.map(item => `
       <div class="card" style="display:block">
         <button type="button" class="linkish" data-open data-type="inbox" data-id="${esc(item.name)}">${esc(item.name)}</button>
@@ -924,7 +950,13 @@ function renderInbox() {  const items = state.snap.inbox.filter(match);
           <button class="quiet" type="submit" name="type" value="task" ${state.snap.projects.length ? "" : "disabled"}>File as task</button>
           <button class="quiet" type="button" data-delete-inbox="${esc(item.name)}">Delete</button>
         </form>
-      </div>`).join("")}</div>` : `<div class="empty">Inbox is clear.</div>`}`;
+      </div>`).join("")}</div>` : `<div class="empty">Inbox is clear.</div>`}
+    ${disclose("Import a file",
+      `<form class="inline" id="import-inbox" style="margin:0">
+        <input type="file" name="file" accept=".eml,.ics,.md,.txt" required aria-label="Import a file">
+        <button class="quiet" type="submit">Import to inbox</button>
+        <span class="meta">.eml, .ics, .md, or .txt. Local only.</span>
+      </form>`)}`;
 }
 function renderFactories() {
   const rank = ["weekly-contribution-digest", "weekly-project-status", "feature-builder", "context-maintenance"];
@@ -985,19 +1017,20 @@ function renderFactories() {
   }).join("") || `<div class="empty">No factories.</div>`;
   return `
     <p class="meta" style="margin-bottom:12px">A factory is a named pipeline: assemble a context bundle → draft → review → deliver. Everything drafts locally; nothing is posted or pushed. Each panel below says what it does and what it reads.</p>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
-      <button type="button" class="quiet" data-watch>Watch now</button>
-      <button type="button" class="quiet" data-watch-build>Watch and build</button>
-      <span class="meta">Watch assembles. Watch and build uses the model, runs checks, and commits locally. Publish and merge are CLI commands.</span>
-    </div>
-    <form class="stack" id="new-factory" style="margin-bottom:16px">
-      <div class="section-title">New factory</div>
-      <p class="meta">A custom factory reads a project (its tasks, documents, and meetings). Trigger, reach, and checks live on the repo, not here.</p>
-      <input type="text" name="name" placeholder="factory-name" required maxlength="40" pattern="[a-z][a-z0-9-]*" aria-label="New factory name">
-      <input type="text" name="title" placeholder="What it drafts (one line)" required maxlength="80" aria-label="New factory title">
-      <div><button class="primary" type="submit">Create factory</button></div>
-    </form>
-    ${panels}`;
+    ${panels}
+    ${disclose("Watch · add a factory",
+      `<div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+        <button type="button" class="quiet" data-watch>Watch now</button>
+        <button type="button" class="quiet" data-watch-build>Watch and build</button>
+        <span class="meta">Watch assembles. Watch and build uses the model, runs checks, and commits locally. Publish and merge are CLI commands.</span>
+      </div>
+      <form class="stack" id="new-factory" style="margin:0">
+        <div class="section-title">New factory</div>
+        <p class="meta">A custom factory reads a project (its tasks, documents, and meetings). Trigger, reach, and checks live on the repo, not here.</p>
+        <input type="text" name="name" placeholder="factory-name" required maxlength="40" pattern="[a-z][a-z0-9-]*" aria-label="New factory name">
+        <input type="text" name="title" placeholder="What it drafts (one line)" required maxlength="80" aria-label="New factory title">
+        <div><button class="primary" type="submit">Create factory</button></div>
+      </form>`)}`;
 }
 
 function renderSettings() {

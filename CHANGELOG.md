@@ -35,7 +35,12 @@
   the manual add/repo forms collapse behind a single "Manage repos" toggle at
   the bottom instead of taking the top of the screen. The graphite/amber dark
   theme and monospace display headings are kept (system fonts — still offline).
-  Views are deep-linkable via `#hash` routes.
+  Views are deep-linkable via `#hash` routes. The same "everyday first, manual
+  entry collapsed" rule now applies across the whole cockpit: Tasks, Projects,
+  Library, and Factories put their content (board, grid, lists, panels) first and
+  tuck "add"/"onboard"/"watch" forms behind a toggle, Inbox keeps a compact
+  capture and hides file import, and Home gains a one-line quick capture with the
+  "Needs you" items called out by type instead of a raw id.
 - **The contribution list is a pipeline, not a CRUD grid.** Each build target is
   one card with a stage (`ready to draft → drafted → approved → built → PR
   opened → merged/closed`) and a single "next step" button, so you only see the
