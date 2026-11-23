@@ -136,6 +136,23 @@ class CockpitActionsTest(unittest.TestCase):
         self.assertEqual(status, 400)
         self.assertIn("eval-demo", body["error"])
 
+    def test_factory_new_input_and_delete(self) -> None:
+        status, body = self._post("/api/factory/new",
+                                  {"name": "spec-notes", "title": "Spec notes", "input": "contribution"})
+        self.assertEqual(status, 200, body)
+        self.assertEqual(body["input"], "contribution")
+        status, snap = self._get("/api/snapshot")
+        self.assertEqual(status, 200)
+        f = next(x for x in snap["factories"] if x["name"] == "spec-notes")
+        self.assertEqual(f["needs"], "contribution")
+        self.assertEqual(f["blurb"], "Spec notes")
+        status, body = self._post("/api/factory/delete", {"name": "spec-notes"})
+        self.assertEqual(status, 200, body)
+        self.assertFalse((self.root / "factories/spec-notes").exists())
+        status, body = self._post("/api/factory/delete", {"name": "weekly-project-status"})
+        self.assertEqual(status, 400)
+        self.assertIn("shipped", body["error"])
+
     def test_file_run_and_watch(self) -> None:
         status, body = self._post("/api/run/file", {"id": self.run_id})
         self.assertEqual(status, 200, body)

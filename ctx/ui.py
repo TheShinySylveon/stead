@@ -386,6 +386,7 @@ def _attention(tasks: list[dict], contribs: list[dict], inbox: list[dict]) -> li
 
 
 def _factories(root: Path, runs: list[dict]) -> list[dict]:
+    from ctx.scaffold import INPUTS, factory_meta
     folder = root / "factories"
     if not folder.is_dir():
         return []
@@ -398,9 +399,12 @@ def _factories(root: Path, runs: list[dict]) -> list[dict]:
                 prompts.append({"version": path.stem, "path": _rel(root, path)})
         evals = len(list((fdir / "evals").glob("*.json"))) if (fdir / "evals").is_dir() else 0
         recent = [r for r in runs if r["factory"] == fdir.name][:5]
+        meta = factory_meta(root, fdir.name)
+        declared = str(meta.get("input") or "")
         out.append({
             "name": fdir.name,
-            "needs": FACTORY_NEEDS.get(fdir.name, "project"),
+            "needs": declared if declared in INPUTS else FACTORY_NEEDS.get(fdir.name, "project"),
+            "blurb": str(meta.get("title") or ""),
             "prompts": prompts,
             "evals": evals,
             "recent_runs": recent,
@@ -1158,15 +1162,30 @@ def file_run(root: Path, run_id: object, title: str | None = None) -> dict:
     return {"ok": True, "id": filed["id"], "path": _rel(root, filed["path"])}
 
 
-def new_factory(root: Path, name: str, title: str) -> dict:
+def new_factory(root: Path, name: str, title: str, input_kind: str = "project") -> dict:
     from ctx.scaffold import ScaffoldError, scaffold
     try:
-        folder = scaffold(root, name, title)
+        folder = scaffold(root, name, title, input_kind=input_kind)
     except ScaffoldError as exc:
         raise UiError(str(exc)) from exc
     ensure_index(root)
     db.init_db(root)
-    return {"ok": True, "name": folder.name, "path": _rel(root, folder)}
+    return {"ok": True, "name": folder.name, "path": _rel(root, folder),
+            "input": input_kind}
+
+
+def delete_factory(root: Path, name: str, force: bool = False) -> dict:
+    """Remove a factory folder. A local, destructive setup change, so it is
+    refused on a shared server. Shipped factories and run logs need force."""
+    require_local_execution(root)
+    from ctx.scaffold import ScaffoldError, delete_factory as remove
+    try:
+        removed = remove(root, name, force=force)
+    except ScaffoldError as exc:
+        raise UiError(str(exc)) from exc
+    ensure_index(root)
+    db.init_db(root)
+    return {"ok": True, **removed}
 
 
 def watch_now(root: Path, build: bool = False, publish: bool = False,
@@ -1876,7 +1895,11 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/run/file":
             result = file_run(root, payload.get("id"), payload.get("title"))
         elif path == "/api/factory/new":
-            result = new_factory(root, payload.get("name") or "", payload.get("title") or "")
+            result = new_factory(root, payload.get("name") or "", payload.get("title") or "",
+                                 input_kind=payload.get("input") or "project")
+        elif path == "/api/factory/delete":
+            result = delete_factory(root, payload.get("name") or "",
+                                    force=bool(payload.get("force")))
         elif path == "/api/factory/watch":
             if payload.get("publish") or payload.get("merge"):
                 _require_confirm(payload, "watch publish")

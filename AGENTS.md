@@ -126,7 +126,8 @@ python -m stead factory stop                  # .stead-stop: halt builds between
 python -m stead factory start                 # remove the stop file
 python -m stead factory defaults --max-builds-per-day N --build-minutes N [--max-tokens-per-build N] [--max-cost-per-build USD]
 python -m stead factory watch                # watched feature specs; no push
-python -m stead factory new --name NAME --title T
+python -m stead factory new --name NAME --title T [--input project|contribution|none]
+python -m stead factory delete --name NAME [--force]  # refuses shipped factories + run logs without --force
 python -m stead inbox import PATH             # local .eml .ics .md .txt into inbox/
 python -m stead inbox list [--kind KIND]      # read-only: what is waiting in inbox/
 python -m stead hook set                      # webhook token, printed once

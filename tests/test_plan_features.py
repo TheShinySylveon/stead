@@ -15,7 +15,7 @@ from pathlib import Path
 from ctx import cli, config, db, factory, frontmatter, ui
 from ctx.schedule import install, show
 from ctx.inbox_import import import_file
-from ctx.scaffold import ScaffoldError, scaffold
+from ctx.scaffold import ScaffoldError, delete_factory, factory_meta, scaffold
 
 
 class MaintenanceTest(unittest.TestCase):
@@ -84,6 +84,43 @@ class ScaffoldAndImportTest(unittest.TestCase):
         self.assertTrue((folder / "prompts/v1.md").is_file())
         with self.assertRaises(ScaffoldError):
             scaffold(root, "tidy-notes", "Again")
+
+    def test_scaffold_persists_input_kind_and_title(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        scaffold(root, "spec-factory", "Draft from a spec", input_kind="contribution")
+        meta = factory_meta(root, "spec-factory")
+        self.assertEqual(meta.get("input"), "contribution")
+        self.assertEqual(meta.get("title"), "Draft from a spec")
+        with self.assertRaises(ScaffoldError):
+            scaffold(root, "bad-input", "Bad", input_kind="bogus")
+
+    def test_delete_factory_refuses_shipped_and_run_logs(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "factories/feature-builder").mkdir(parents=True)
+        with self.assertRaises(ScaffoldError):
+            delete_factory(root, "feature-builder")
+        folder = scaffold(root, "tidy-notes", "Tidy")
+        (folder / "runs" / "20260101T000000Z-x").mkdir(parents=True)
+        with self.assertRaises(ScaffoldError):
+            delete_factory(root, "tidy-notes")
+        delete_factory(root, "tidy-notes", force=True)
+        self.assertFalse(folder.exists())
+        delete_factory(root, "feature-builder", force=True)
+        self.assertFalse((root / "factories/feature-builder").exists())
+
+    def test_delete_factory_removes_a_clean_custom_factory(self) -> None:
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        folder = scaffold(root, "tidy-notes", "Tidy")
+        delete_factory(root, "tidy-notes")
+        self.assertFalse(folder.exists())
+        with self.assertRaises(ScaffoldError):
+            delete_factory(root, "tidy-notes")
 
     def test_import_writes_inbox_and_not_a_contribution(self) -> None:
         tmp = tempfile.TemporaryDirectory()
