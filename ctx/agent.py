@@ -36,7 +36,7 @@ IGNORE_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
                ".specify", "dist", "build", ".next", "target"}
 MAX_FILE_BYTES = 200_000
 MAX_READ_CHARS = 40_000
-MAX_PROMPT_CHARS = 120_000
+MAX_PROMPT_CHARS = 1_000_000
 MAX_STEPS = 300
 MAX_TOTAL_EDITS = 1_000_000
 MAX_MINUTES = 240

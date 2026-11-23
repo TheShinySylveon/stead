@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The prompt cap now fits a 250k-token model.** `MAX_PROMPT_CHARS` is raised
+  from 120k to 1M chars (~250k tokens at 4 chars/token), so a build can send
+  the model its full context window instead of truncating the transcript at a
+  fraction of it.
 - **Long builds stream to the end instead of giving up.** The cockpit no
   longer stops polling a build after ~48 minutes with "Build is taking too
   long" — a build now runs up to its 4-hour budget with the log streaming the
