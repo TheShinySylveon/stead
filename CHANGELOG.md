@@ -41,6 +41,12 @@
   tuck "add"/"onboard"/"watch" forms behind a toggle, Inbox keeps a compact
   capture and hides file import, and Home gains a one-line quick capture with the
   "Needs you" items called out by type instead of a raw id.
+- **Dropdown selectors are restyled and de-cluttered.** Native `<select>` controls
+  now use a custom chevron, dark-theme surface, and hover/focus states instead of
+  the OS default. Repo cards no longer show four always-on dropdowns: they show
+  their current `kind` / `status` / `reach` as read-only chips, with the editable
+  fields behind a per-card "Settings" toggle. GitHub-synced contribution fields
+  (`state`, `ci`, `review`) remain read-only chips, never dropdowns.
 - **The contribution list is a pipeline, not a CRUD grid.** Each build target is
   one card with a stage (`ready to draft → drafted → approved → built → PR
   opened → merged/closed`) and a single "next step" button, so you only see the

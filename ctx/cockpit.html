@@ -117,6 +117,29 @@
     padding: var(--space-xs) var(--space-sm); min-height: 36px;
   }
   input[type="search"] { width: 240px; }
+  /* Custom select: hide the native arrow and draw our own, so dropdowns match the theme. */
+  select {
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    background-image: url("data:image/svg+xml;charset=utf-8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 16 16'%3E%3Cpath d='M4 6l4 4 4-4' fill='none' stroke='%239aa6b8' stroke-width='1.5' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat; background-position: right 8px center; background-size: 14px;
+    padding-right: 30px; cursor: pointer;
+    transition: border-color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+  }
+  select:hover { border-color: var(--color-rule-2); }
+  select:focus-visible { border-color: var(--color-accent); }
+  /* A lightweight in-card toggle for "edit settings" (chips on the surface, fields on demand). */
+  details.reveal { margin-top: var(--space-xs); }
+  details.reveal > summary {
+    cursor: pointer; list-style: none; display: inline-flex; align-items: center; gap: var(--space-2xs);
+    color: var(--color-muted); font: 500 var(--text-sm)/1.4 var(--font-body);
+    padding: var(--space-2xs) var(--space-xs); border-radius: var(--radius-control);
+    transition: color var(--dur-micro) var(--ease-out), background-color var(--dur-micro) var(--ease-out);
+  }
+  details.reveal > summary::-webkit-details-marker { display: none; }
+  details.reveal > summary::before { content: "+"; font-family: var(--font-outlier); color: var(--color-accent); }
+  details.reveal > summary:hover { color: var(--color-ink); background: var(--color-paper-2); }
+  details.reveal[open] > summary { color: var(--color-ink); }
+  details.reveal[open] > summary::before { content: "\2212"; }
   input[type="file"] { font: inherit; color: var(--color-muted); }
   input[type="file"]::file-selector-button {
     font: 500 var(--text-sm)/1.2 var(--font-body); margin-right: var(--space-xs);
@@ -457,6 +480,8 @@ const TYPE_LABEL = {
   task: "Task", contribution: "Contribution", inbox: "Inbox", document: "Document",
   meeting: "Meeting", project: "Project", repo: "Repo",
 };
+const REACH_TONE = { ghost: "done", shadow: "doing", "draft-pr": "review", pr: "review", merge: "fail" };
+const REPO_STATUS_TONE = { active: "", paused: "blocked", archived: "done" };
 function toast(message, ms) {
   const el = document.getElementById("toast");
   el.hidden = false;
@@ -774,19 +799,27 @@ function renderRepos() {
         <div class="section-title">Repos</div>
         <div class="grid">${repos.map(r => `
           <div class="card" style="display:block">
-            <button type="button" class="linkish" data-open data-type="repo" data-id="${esc(r.id)}">${esc(r.title)}</button>
-            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-              <select data-set-repo data-id="${esc(r.id)}" data-field="kind" aria-label="Kind for ${esc(r.title)}">${options(choices.repo_kind, r.kind || "oss")}</select>
-              <select data-set-repo data-id="${esc(r.id)}" data-field="status" aria-label="Status for ${esc(r.title)}">${options(choices.repo_status, r.status || "active")}</select>
-              <select data-set-repo data-id="${esc(r.id)}" data-field="trigger" aria-label="Trigger for ${esc(r.title)}">${options(choices.factory_trigger, r.factory_trigger || "on-demand")}</select>
-              <select data-set-repo data-id="${esc(r.id)}" data-field="reach" aria-label="Ceiling for ${esc(r.title)}">${options(choices.factory_reach, r.factory_reach || "shadow")}</select>
+            <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap">
+              <button type="button" class="linkish" data-open data-type="repo" data-id="${esc(r.id)}">${esc(r.title)}</button>
+              <span class="chips">${chip(r.kind || "oss", r.kind === "own" ? "doing" : "")}${chip(r.status || "active", REPO_STATUS_TONE[r.status] || "")}${chip("reach " + (r.factory_reach || "shadow"), REACH_TONE[r.factory_reach] || "")}</span>
             </div>
-            <div style="margin-top:8px;display:flex;gap:8px;flex-wrap:wrap">
-              <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="code_path" value="${esc(r.code_path || "")}" placeholder="Local code path for publish" aria-label="Code path for ${esc(r.title)}">
-              <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="default_branch" value="${esc(r.default_branch || "")}" placeholder="Default branch" aria-label="Default branch for ${esc(r.title)}" style="max-width:170px">
-              <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="url" value="${esc(r.url || "")}" placeholder="Repo URL" aria-label="URL for ${esc(r.title)}">
-              <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="notes" value="${esc(r.notes || "")}" placeholder="Short notes" aria-label="Notes for ${esc(r.title)}">
-            </div>
+            <details class="reveal">
+              <summary>Settings</summary>
+              <div style="margin-top:8px;display:grid;gap:8px">
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="kind" aria-label="Kind for ${esc(r.title)}">${options(choices.repo_kind, r.kind || "oss")}</select>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="status" aria-label="Status for ${esc(r.title)}">${options(choices.repo_status, r.status || "active")}</select>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="trigger" aria-label="Trigger for ${esc(r.title)}">${options(choices.factory_trigger, r.factory_trigger || "on-demand")}</select>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="reach" aria-label="Ceiling for ${esc(r.title)}">${options(choices.factory_reach, r.factory_reach || "shadow")}</select>
+                </div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                  <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="code_path" value="${esc(r.code_path || "")}" placeholder="Local code path for publish" aria-label="Code path for ${esc(r.title)}">
+                  <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="default_branch" value="${esc(r.default_branch || "")}" placeholder="Default branch" aria-label="Default branch for ${esc(r.title)}" style="max-width:170px">
+                  <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="url" value="${esc(r.url || "")}" placeholder="Repo URL" aria-label="URL for ${esc(r.title)}">
+                  <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="notes" value="${esc(r.notes || "")}" placeholder="Short notes" aria-label="Notes for ${esc(r.title)}">
+                </div>
+              </div>
+            </details>
           </div>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
         <form class="stack" id="add-spec">
           <div class="section-title">Local issue or feature spec</div>
