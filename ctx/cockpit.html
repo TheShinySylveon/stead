@@ -666,6 +666,7 @@ function renderRepos() {
       <textarea name="criteria" placeholder="One acceptance criterion per line" aria-label="Acceptance criteria"></textarea>
       <div><button class="primary" type="submit" ${repos.length ? "" : "disabled"}>Add to local cache</button></div>
     </form>
+    <p class="meta" style="margin:16px 0 8px">Build pipeline: each card is one build target. The button is the next step — Draft → Approve → Build → Publish. Open Details to read the spec, set build options, or preview the shadow bundle.</p>
     <div class="section-title">Open</div>
     ${openRows || `<div class="empty">Nothing open.</div>`}
     <div class="section-title">Done</div>
@@ -838,21 +839,7 @@ function renderFactories() {
         ${draftBox}
         <button class="primary" type="submit">Assemble shadow</button></form>`;
     } else if (f.needs === "contribution") {
-      const specs = (state.snap.pipeline || []).filter(c =>
-        c.kind === "issue" && c.state !== "merged" && c.state !== "closed");
-      const opts = specs.map(c => `<option value="${esc(c.act_id || c.id)}" data-stage="${esc(c.stage || "")}">${esc(c.title)} · ${esc(c.stage_label || c.state || "issue")}</option>`).join("");
-      const reaches = (state.snap.choices.factory_reach || []).map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("");
-      const buildReady = specs.length && (specs[0].stage || "") === "approved";
-      form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="contribution">
-        <select name="contribution" data-spec-select aria-label="Spec for ${esc(f.name)}">${opts}</select>
-        <select name="reach" aria-label="Reach for ${esc(f.name)}">${reaches}</select>
-        <input type="number" name="max_minutes" min="1" max="480" placeholder="Minutes" aria-label="Build minutes" style="width:6.5em">
-        <input type="number" name="max_tokens" min="0" placeholder="Tokens" aria-label="Max tokens" style="width:6.5em">
-        <input type="number" name="max_cost" min="0" step="0.01" placeholder="USD" aria-label="Max cost" style="width:6em">
-        ${draftBox}
-        <button class="primary" type="submit" ${specs.length ? "" : "disabled"}>Assemble shadow</button>
-        <button type="button" class="quiet" data-build="1" ${buildReady ? "" : "disabled"}>Build with model</button>
-        <span class="meta" data-build-hint>${buildReady ? "" : "Build needs an approved spec — on the Repos tab: Draft → Approve, then build here."}</span></form>`;
+      form += `<p class="meta">Turns an approved spec into a branch and PR. Draft → Approve → Build → Publish all live on the <button type="button" class="linkish" data-nav="repos">Repos tab</button> pipeline — open an issue's Details there to read the spec, set build options, or preview the shadow bundle. This panel is for prompts, evals, and run history.</p>`;
     } else {
       form += `<form class="inline" data-factory="${esc(f.name)}" data-needs="none">
         ${draftBox}
@@ -1144,6 +1131,27 @@ async function openReader(type, id) {
     const done = flow.stage === "merged" || flow.stage === "closed";
     const flowButtons = (flow.actions || []).map(a =>
       `<button type="button" class="${a.tone}" data-action="${a.key}" data-id="${esc(flow.act_id || data.id || id)}" data-title="${esc(title)}">${esc(a.label)}</button>`).join("");
+    const stageHint = {
+      draft: "No spec yet. Draft turns this issue into a spec with acceptance criteria and a plan.",
+      drafted: "Spec drafted, not approved. Read it above, then Approve to lock its exact text.",
+      approved: "Approved. Build runs the model: plan → edit → check → commit on an isolated branch.",
+      built: "Built on a branch. Publish opens a pull request.",
+      published: "PR open. Review it, then merge (if the repo allows).",
+      merged: "Merged. Done.",
+      closed: "Closed.",
+    }[flow.stage] || "Only the next step is shown. Save edits first, then the stage follows it.";
+    const buildOptions = type === "contribution" && ["drafted", "approved", "built", "published"].includes(flow.stage) ? `
+      <details data-build-options style="margin-top:10px">
+        <summary class="meta">Build options</summary>
+        <div class="inline" style="margin-top:8px">
+          <input type="number" name="max_minutes" min="1" max="480" placeholder="Minutes" aria-label="Build minutes" style="width:6.5em">
+          <input type="number" name="max_tokens" min="0" placeholder="Tokens" aria-label="Max tokens" style="width:6.5em">
+          <input type="number" name="max_cost" min="0" step="0.01" placeholder="USD" aria-label="Max cost" style="width:6em">
+          <select name="reach" aria-label="Reach">${(state.snap.choices.factory_reach || []).map(r => `<option value="${esc(r)}">${esc(r)}</option>`).join("")}</select>
+          <button type="button" class="quiet" data-assemble="${esc(flow.act_id || data.id || id)}">Assemble shadow</button>
+        </div>
+        <p class="meta" style="margin-top:6px">Minutes/tokens/USD bound the build. Reach caps the shadow preview; the repo ceiling still governs publish and merge.</p>
+      </details>` : "";
     const specEditor = type === "contribution" ? `
       <form id="save-spec" data-id="${esc(data.id || id)}" style="margin-top:16px">
         <div class="section-title">Public spec</div>
@@ -1156,7 +1164,8 @@ async function openReader(type, id) {
           ${flowButtons}
           ${["approved", "built", "published"].includes(flow.stage) ? `<button type="button" class="quiet" data-review="${esc(flow.act_id || data.id || id)}">Review</button>` : ""}
         </div>
-        <p class="meta" style="margin-top:8px">Only the next step is shown. Save edits first, then the stage below follows it.</p>
+        <p class="meta" style="margin-top:8px">${stageHint}</p>
+        ${buildOptions}
       </div>` : "";
     const path = data.path ? `<div class="meta">${esc(data.path)}</div>` : "";
     const roll = data.rollup ? `
@@ -1315,36 +1324,6 @@ document.body.addEventListener("click", async (event) => {
   }
   const runOpen = event.target.closest("[data-run-open]");
   if (runOpen) { openRun(runOpen.dataset.runOpen); return; }
-  const buildBtn = event.target.closest("[data-build]");
-  if (buildBtn) {
-    const buildForm = buildBtn.closest("form");
-    const field = (name) => buildForm && buildForm.querySelector('[name="' + name + '"]')
-      ? buildForm.querySelector('[name="' + name + '"]').value : "";
-    const contribution = field("contribution");
-    if (!contribution) { toast("Pick a feature spec first"); return; }
-    const selectedOpt = buildForm.querySelector('[name="contribution"]').selectedOptions[0];
-    const stage = selectedOpt ? (selectedOpt.dataset.stage || "") : "";
-    if (stage && stage !== "approved") {
-      toast("This spec is not approved. On the Repos tab: Draft → Approve, then build.");
-      return;
-    }
-    if (!confirm("Let the model build " + contribution +
-                 "? It plans and works within the repo's reach ceiling, then commits locally. Nothing is pushed.")) return;
-    const payload = {contribution};
-    if (field("max_minutes")) payload.max_minutes = Number(field("max_minutes"));
-    if (field("max_tokens")) payload.max_tokens = Number(field("max_tokens"));
-    if (field("max_cost")) payload.max_cost = Number(field("max_cost"));
-    try {
-      buildBtn.disabled = true;
-      const result = await awaitTask("/api/build", payload, "Build");
-      toast(result && result.branch
-        ? "Built on " + result.branch + ". Publish it when you are ready."
-        : "Build finished. Publish it when you are ready.");
-      await load();
-    } catch (err) { toast(err.message); }
-    finally { buildBtn.disabled = false; }
-    return;
-  }
   if (event.target.closest("[data-toggle-runs]")) {
     state.showAllRuns = !state.showAllRuns;
     render();
@@ -1417,7 +1396,18 @@ document.body.addEventListener("click", async (event) => {
         toast("Spec approved");
       } else if (act === "build") {
         if (!confirm("Build " + title + " with the model? It plans, runs checks, and commits locally.")) return;
-        const result = await awaitTask("/api/build", {contribution: id}, "Build");
+        const payload = {contribution: id};
+        if (actionBtn.closest("#reader")) {
+          const reader = document.getElementById("reader");
+          const opt = (name) => {
+            const el = reader && reader.querySelector('[data-build-options] [name="' + name + '"]');
+            return el && el.value !== "" ? Number(el.value) : undefined;
+          };
+          const mm = opt("max_minutes"); if (mm) payload.max_minutes = mm;
+          const mt = opt("max_tokens"); if (mt) payload.max_tokens = mt;
+          const mc = opt("max_cost"); if (mc) payload.max_cost = mc;
+        }
+        const result = await awaitTask("/api/build", payload, "Build");
         toast(result && result.branch ? "Built on " + result.branch : "Build finished");
       } else if (act === "publish") {
         if (!confirm("Publish a pull request for this spec? This pushes a branch and opens a PR on GitHub.")) return;
@@ -1462,6 +1452,21 @@ document.body.addEventListener("click", async (event) => {
             ((result && result.reason) || "Review finished"));
     } catch (err) { toast(err.message); }
     finally { reviewBtn.disabled = false; }
+    return;
+  }
+  const assembleBtn = event.target.closest("[data-assemble]");
+  if (assembleBtn) {
+    try {
+      assembleBtn.disabled = true;
+      const reader = document.getElementById("reader");
+      const reachEl = reader && reader.querySelector('[data-build-options] [name="reach"]');
+      const payload = {factory: "feature-builder", contribution: assembleBtn.dataset.assemble};
+      if (reachEl && reachEl.value) payload.reach = reachEl.value;
+      const result = await api("/api/factory/run", {method: "POST", body: JSON.stringify(payload)});
+      toast(result.generated ? "Draft " + result.output_path : "Shadow run " + result.run_id + " · " + result.run_dir);
+      await load();
+    } catch (err) { toast(err.message); }
+    finally { assembleBtn.disabled = false; }
     return;
   }
   const publishBtn = event.target.closest("[data-publish]");
@@ -1780,17 +1785,6 @@ document.body.addEventListener("click", async (event) => {
   if (open && !event.target.closest("select")) openReader(open.dataset.type, open.dataset.id);
 });
 document.body.addEventListener("change", async (event) => {
-  const specSelect = event.target.closest("[data-spec-select]");
-  if (specSelect) {
-    const opt = specSelect.selectedOptions[0];
-    const stage = opt ? (opt.dataset.stage || "") : "";
-    const form = specSelect.closest("form");
-    const btn = form && form.querySelector("[data-build]");
-    const hint = form && form.querySelector("[data-build-hint]");
-    if (btn) btn.disabled = stage !== "approved";
-    if (hint) hint.textContent = stage === "approved" ? "" : "Build needs an approved spec — on the Repos tab: Draft → Approve, then build here.";
-    return;
-  }
   const promoteSelect = event.target.closest("[data-promote] select");
   if (promoteSelect) {
     const form = promoteSelect.closest("[data-promote]");
