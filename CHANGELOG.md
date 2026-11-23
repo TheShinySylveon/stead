@@ -12,6 +12,16 @@
   reused the pid), and a removal that actually fails is reported as a failure
   rather than a silent success. The CLI-equivalent recovery no longer requires
   hunting for the lock file under the temp directory.
+- **Cockpit UI/UX overhaul (ui-ux-pro-max design system).** The whole build
+  flow now lives on one pane: each build target on the Repos tab expands inline
+  to show its spec, stage, and the next action (Draft → Approve → Build →
+  Publish), plus build options, a "Preview bundle" button, and an editable spec —
+  no separate overlay or tab hops. Builds, drafts, and reviews stream their
+  progress into an inline log, so a run never looks stalled. Controls are
+  streamlined: the spec editor and build options collapse behind small toggles,
+  and "Review" only appears once a branch exists. Headings and figures use a
+  monospace display face (system fonts — still offline), with sans body text and
+  the graphite/amber palette kept. Views are deep-linkable via `#hash` routes.
 - **The contribution list is a pipeline, not a CRUD grid.** Each build target is
   one card with a stage (`ready to draft → drafted → approved → built → PR
   opened → merged/closed`) and a single "next step" button, so you only see the
