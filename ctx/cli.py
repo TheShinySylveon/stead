@@ -768,7 +768,7 @@ def build_parser() -> argparse.ArgumentParser:
     hook.add_parser("show", help="say whether a webhook token is set. Never prints it.")
 
     dele = sub.add_parser("delete", help="remove one object file. Git history is the audit trail.")
-    dele.add_argument("type", choices=("project", "task", "document", "meeting", "repo", "actor"))
+    dele.add_argument("type", choices=("project", "task", "document", "meeting", "repo", "actor", "contribution"))
     dele.add_argument("id")
     dele.add_argument("--force", action="store_true",
                       help="delete a project or repo that still has linked objects")

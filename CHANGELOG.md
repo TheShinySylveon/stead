@@ -15,6 +15,11 @@
   "Assemble shadow" preview, "Review", and a plain-language hint for each stage.
   The Factories tab's `feature-builder` panel no longer duplicates the build — it
   points to the Repos pipeline — so there is one place to take an issue to a PR.
+- **Sync drops closed issues that were never started.** A cached issue GitHub
+  closed is removed from the local cache when it has no draft, approval, or build
+  record; a started one is marked closed so it stays visible and can be deleted
+  deliberately. `stead delete contribution ID` (and the cockpit Delete button)
+  now removes a contribution — and its drafted spec — instead of refusing.
 - **Factories are self-evident, guided, and deletable.** The Factories tab opens
   with a plain-language explanation and each panel says what it does and what it
   reads. New factory is a guided form (name + what it drafts) with a visible result

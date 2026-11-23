@@ -82,3 +82,10 @@ class TaskRunner:
     def list(self) -> list[dict]:
         with self._lock:
             return [task.snapshot() for task in self._tasks.values()]
+
+    def active_targets(self) -> set[str]:
+        """The targets of tasks still running, so deletion can refuse to touch
+        a contribution a background build or draft is mid-way through."""
+        with self._lock:
+            return {task.target for task in self._tasks.values()
+                    if task.status == "running"}

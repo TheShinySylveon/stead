@@ -160,7 +160,7 @@ python -m stead repo list [--kind own|oss]
 python -m stead contribution add --title T --repo REPO --kind issue|pr --number N [--role author|assignee|reviewer] [--state open|closed|merged] [--ci pending|pass|fail|none] [--method spec-kit|builtin]
 python -m stead contribution list
 python -m stead contribution set ID [--state S] [--ci C] [--review R] [--role R] [--method spec-kit|builtin]
-python -m stead delete TYPE ID [--force]       # TYPE: project task document meeting repo actor
+python -m stead delete TYPE ID [--force]       # TYPE: project task document meeting repo actor contribution
 
 python -m stead sync github [--author @me] [--limit N]   # READ-ONLY refresh via gh
 python -m stead sync github --offline                    # no network: re-index cache
@@ -236,8 +236,9 @@ page has no external assets, so it works offline.
   (`title`, `url`, `state`, `ci`, `review`, `updated`); your edits to `role`,
   `method`, `tags`, `related`, `created`, and the body are preserved across
   syncs. A missing `method` is filled with `spec-kit`; sync never overrides it.
-- **READ-ONLY:** only `gh search` / `gh pr view` / `gh api user` (GET). No remote
-  writes, ever. `--offline` skips the network and re-indexes cached files.
+- **READ-ONLY:** only `gh search` / `gh pr view` / `gh issue view` / `gh api user`
+  (GET). No remote writes, ever. `--offline` skips the network and re-indexes
+  cached files.
 - `gh` missing or not authenticated -> clear message; use `--offline`. Sample
   data marked `EXAMPLE` lives in `examples/context/`, not in a fresh `context/`.
 

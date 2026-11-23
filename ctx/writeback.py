@@ -615,6 +615,71 @@ def _pr_owner_name(url: str) -> str:
     return ""
 
 
+def issue_started(root: Path, issue_id: str) -> bool:
+    """Whether a cached issue has local work: a drafted spec, an approval, or a
+    build record. A 'started' issue is kept (and flagged) when GitHub closes it;
+    an unstarted one is safe to drop from the cache."""
+    found = objects.find(root, "contribution", issue_id)
+    if found is not None and found[1].get("spec_sha"):
+        return True
+    draft_ids: list[str] = []
+    for _path, meta, _body in objects.iter_objects(root, "contribution"):
+        if str(meta.get("drafted_from") or "") == issue_id:
+            draft_ids.append(str(meta.get("id") or ""))
+            if meta.get("spec_sha"):
+                return True
+    if draft_ids:
+        return True
+    linked = {issue_id, *draft_ids}
+    for _path, meta, _body in objects.iter_objects(root, "document"):
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if RECORD_TAG in tags and str(meta.get("contribution") or "") in linked:
+            return True
+    return False
+
+
+def reconcile_issue_state(root: Path, view_issue, repos: list[str] | None = None) -> dict:
+    """Reconcile cached open issues against live GitHub state. READ-ONLY:
+    ``view_issue(url)`` returns ``gh issue view --json state`` or None.
+
+    An issue GitHub closed is dropped from the cache when it was never started
+    (no draft, approval, or build record). A started issue is marked closed so it
+    stays visible and can be deleted deliberately. ``repos`` limits the scope
+    exactly like reconcile_pr_state."""
+    scope = {n.lower() for n in (repos or [])}
+    removed: list[str] = []
+    closed: list[str] = []
+    for path, meta, _body in objects.iter_objects(root, "contribution"):
+        if str(meta.get("kind") or "") != "issue":
+            continue
+        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        if meta.get("drafted_from") or "feature-spec" in tags:
+            continue  # a local spec (authored or drafted), not a cached GitHub issue
+        if str(meta.get("state") or "") != "open":
+            continue
+        url = str(meta.get("url") or "")
+        if not url:
+            continue
+        if scope and _pr_owner_name(url).lower() not in scope:
+            continue
+        try:
+            data = view_issue(url)
+        except Exception:
+            continue
+        if not isinstance(data, dict):
+            continue
+        if str(data.get("state") or "").upper() != "CLOSED":
+            continue
+        issue_id = str(meta.get("id") or path.stem)
+        if issue_started(root, issue_id):
+            _patch(root, "contribution", issue_id, {"state": "closed"})
+            closed.append(issue_id)
+        else:
+            path.unlink(missing_ok=True)
+            removed.append(issue_id)
+    return {"removed": removed, "closed": closed}
+
+
 def _patch(root: Path, otype: str, ref: str, fields: dict) -> None:
     found = objects.find(root, otype, ref)
     if found is None:

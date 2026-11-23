@@ -1189,7 +1189,7 @@ async function openReader(type, id) {
           `<button type="button" class="quiet" data-run-open="${esc(r.id)}">run ${esc(r.id)} · ${esc(r.factory)} · ${esc(r.verdict)}</button>`).join("")}</div>`
           : `<div class="meta">No factory runs for this project yet.</div>`}
       </div>` : "";
-    const deletable = ["project", "task", "document", "meeting", "repo", "actor"].includes(type);
+    const deletable = ["project", "task", "document", "meeting", "repo", "actor", "contribution"].includes(type);
     const danger = deletable ? `
       <div class="panel" style="padding:12px 14px;margin-top:12px">
         <strong>Delete</strong>
