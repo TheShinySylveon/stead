@@ -1162,16 +1162,14 @@ def file_run(root: Path, run_id: object, title: str | None = None) -> dict:
     return {"ok": True, "id": filed["id"], "path": _rel(root, filed["path"])}
 
 
-def new_factory(root: Path, name: str, title: str, input_kind: str = "project") -> dict:
+def new_factory(root: Path, name: str, title: str) -> dict:
     from ctx.scaffold import ScaffoldError, scaffold
     try:
-        folder = scaffold(root, name, title, input_kind=input_kind)
+        folder = scaffold(root, name, title)
     except ScaffoldError as exc:
         raise UiError(str(exc)) from exc
-    ensure_index(root)
-    db.init_db(root)
-    return {"ok": True, "name": folder.name, "path": _rel(root, folder),
-            "input": input_kind}
+    db.index_new_factory(root, folder.name)
+    return {"ok": True, "name": folder.name, "path": _rel(root, folder)}
 
 
 def delete_factory(root: Path, name: str, force: bool = False) -> dict:
@@ -1183,8 +1181,7 @@ def delete_factory(root: Path, name: str, force: bool = False) -> dict:
         removed = remove(root, name, force=force)
     except ScaffoldError as exc:
         raise UiError(str(exc)) from exc
-    ensure_index(root)
-    db.init_db(root)
+    db.forget_factory(root, name)
     return {"ok": True, **removed}
 
 
@@ -1895,8 +1892,7 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/run/file":
             result = file_run(root, payload.get("id"), payload.get("title"))
         elif path == "/api/factory/new":
-            result = new_factory(root, payload.get("name") or "", payload.get("title") or "",
-                                 input_kind=payload.get("input") or "project")
+            result = new_factory(root, payload.get("name") or "", payload.get("title") or "")
         elif path == "/api/factory/delete":
             result = delete_factory(root, payload.get("name") or "",
                                     force=bool(payload.get("force")))

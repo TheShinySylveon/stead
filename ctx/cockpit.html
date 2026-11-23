@@ -889,14 +889,9 @@ function renderFactories() {
     </div>
     <form class="stack" id="new-factory" style="margin-bottom:16px">
       <div class="section-title">New factory</div>
-      <p class="meta">Pick what it reads. Trigger, reach, and checks live on the repo, not here.</p>
+      <p class="meta">A custom factory reads a project (its tasks, documents, and meetings). Trigger, reach, and checks live on the repo, not here.</p>
       <input type="text" name="name" placeholder="factory-name" required maxlength="40" pattern="[a-z][a-z0-9-]*" aria-label="New factory name">
       <input type="text" name="title" placeholder="What it drafts (one line)" required maxlength="80" aria-label="New factory title">
-      <select name="input" aria-label="What the factory reads">
-        <option value="project">A project — its tasks, documents, and meetings</option>
-        <option value="contribution">A spec — an approved feature spec (issue)</option>
-        <option value="none">No input — drafts from the whole cache</option>
-      </select>
       <div><button class="primary" type="submit">Create factory</button></div>
     </form>
     ${panels}`;
@@ -1922,8 +1917,8 @@ document.body.addEventListener("submit", async (event) => {
       toast("Actor added");
       form.reset();
     } else if (form.id === "new-factory") {
-      const result = await api("/api/factory/new", {method: "POST", body: JSON.stringify({name: data.name, title: data.title, input: data.input || "project"})});
-      toast("Created " + result.name + " (reads: " + (result.input || "project") + "). Next: Check evals, then Assemble shadow.");
+      const result = await api("/api/factory/new", {method: "POST", body: JSON.stringify({name: data.name, title: data.title})});
+      toast("Created " + result.name + ". Next: Check evals, then Assemble shadow.");
       form.reset();
       await load();
     } else if (form.id === "import-inbox") {

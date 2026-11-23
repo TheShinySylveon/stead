@@ -6,6 +6,7 @@ import json
 import os
 import re
 import shutil
+import stat
 from pathlib import Path
 
 from ctx import frontmatter
@@ -112,6 +113,12 @@ def _shipped_factories() -> set[str]:
             factory.FEATURE_BUILDER_FACTORY, "weekly-project-status"}
 
 
+def _clear_readonly(func, path, _exc):
+    """Windows rmtree helper: clear a read-only bit and retry the removal."""
+    os.chmod(path, stat.S_IWRITE)
+    func(path)
+
+
 def delete_factory(root: Path, name: str, force: bool = False) -> dict:
     """Remove factories/<name>/. Refuses the four shipped factories and any
     factory with run logs (the audit trail) unless ``force`` is set."""
@@ -128,5 +135,5 @@ def delete_factory(root: Path, name: str, force: bool = False) -> dict:
     if runs.is_dir() and any(runs.iterdir()) and not force:
         raise ScaffoldError(
             f"{name} has run logs (the audit trail); pass --force to delete them too")
-    shutil.rmtree(folder)
+    shutil.rmtree(folder, onerror=_clear_readonly)
     return {"name": name}

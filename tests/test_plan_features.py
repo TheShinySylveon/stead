@@ -122,6 +122,22 @@ class ScaffoldAndImportTest(unittest.TestCase):
         with self.assertRaises(ScaffoldError):
             delete_factory(root, "tidy-notes")
 
+    def test_cli_force_delete_shipped_factory_is_not_reseeded(self) -> None:
+        import contextlib
+        import io
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        cli.main(["--root", str(root), "init"])
+        self.assertTrue((root / "factories/feature-builder").is_dir())
+        buf = io.StringIO()
+        with contextlib.redirect_stdout(buf):
+            rc = cli.main(["--root", str(root), "factory", "delete",
+                           "--name", "feature-builder", "--force"])
+        self.assertEqual(rc, 0)
+        self.assertFalse((root / "factories/feature-builder").exists())
+        self.assertNotIn("init", buf.getvalue())
+
     def test_import_writes_inbox_and_not_a_contribution(self) -> None:
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)

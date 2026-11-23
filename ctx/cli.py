@@ -910,8 +910,6 @@ def build_parser() -> argparse.ArgumentParser:
     fnew = fr.add_parser("new", help="scaffold a factory folder. Does not call a model.")
     fnew.add_argument("--name", required=True)
     fnew.add_argument("--title", required=True)
-    fnew.add_argument("--input", choices=("project", "contribution", "none"), default="project",
-                      help="what the factory's assemble asks for (default: project)")
     fdel = fr.add_parser("delete", help="remove a factory folder. Refuses shipped factories and run logs without --force.")
     fdel.add_argument("--name", required=True)
     fdel.add_argument("--force", action="store_true",
@@ -1381,11 +1379,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "factory" and args.sub == "new":
         from ctx.scaffold import ScaffoldError, scaffold
         try:
-            folder = scaffold(root, args.name, args.title, input_kind=args.input)
+            folder = scaffold(root, args.name, args.title)
         except ScaffoldError as exc:
             raise SystemExit(str(exc)) from exc
-        print(f"scaffolded {folder.relative_to(root).as_posix()} (input: {args.input})")
-        print("run python -m stead init to index the prompt")
+        db.index_new_factory(root, folder.name)
+        print(f"scaffolded {folder.relative_to(root).as_posix()} (index updated)")
         return 0
     if args.command == "factory" and args.sub == "delete":
         from ctx.scaffold import ScaffoldError, delete_factory
@@ -1393,8 +1391,8 @@ def main(argv: list[str] | None = None) -> int:
             removed = delete_factory(root, args.name, force=args.force)
         except ScaffoldError as exc:
             raise SystemExit(str(exc)) from exc
-        print(f"deleted factory {removed['name']}")
-        print("run python -m stead init to re-index")
+        db.forget_factory(root, removed["name"])
+        print(f"deleted factory {removed['name']} (index updated)")
         return 0
     if args.command == "factory" and args.sub == "publish":
         from ctx.publish import PublishError, publish
