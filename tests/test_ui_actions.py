@@ -200,6 +200,27 @@ class CockpitActionsTest(unittest.TestCase):
                                   {"type": "task", "id": "task-linked"})
         self.assertEqual(status, 404)
 
+    def test_delete_contribution_removes_it_and_its_draft(self) -> None:
+        (self.root / "context/contributions").mkdir(parents=True)
+        issue = {"id": "contribution-me-app-issue-9", "type": "contribution",
+                 "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                 "repo": "repo-me-app", "kind": "issue", "number": 9, "role": "author",
+                 "state": "open", "visibility": "public"}
+        (self.root / "context/contributions/issue-9.md").write_text(
+            frontmatter.dumps(issue, "# Flag\n"), encoding="utf-8")
+        draft = {"id": "contribution-me-app-issue-9-spec", "type": "contribution",
+                 "title": "Flag", "created": "2026-11-21", "updated": "2026-11-21",
+                 "repo": "repo-me-app", "kind": "issue", "number": 9, "role": "author",
+                 "state": "open", "visibility": "public", "tags": ["feature-spec"],
+                 "drafted_from": "contribution-me-app-issue-9"}
+        (self.root / "context/contributions/issue-9-spec.md").write_text(
+            frontmatter.dumps(draft, "# Flag spec\n"), encoding="utf-8")
+        status, body = self._post("/api/object/delete",
+                                  {"type": "contribution", "id": "contribution-me-app-issue-9"})
+        self.assertEqual(status, 200, body)
+        self.assertFalse((self.root / "context/contributions/issue-9.md").exists())
+        self.assertFalse((self.root / "context/contributions/issue-9-spec.md").exists())
+
     def test_project_detail_has_a_rollup(self) -> None:
         req = urllib.request.Request(
             f"http://127.0.0.1:{self.port}/api/object?type=project&id=project-demo")

@@ -356,11 +356,13 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
 
     reconciled = 0
     reconciled_prs = 0
+    issue_report = {"removed": [], "closed": []}
     if not offline:
-        # Reconcile build records and cached open PRs against live PR state
-        # (read-only gh pr view): a human merge reaches the ledger, and a merged
-        # PR stops showing as open. Done before the re-index so the index picks
-        # up the reconciled state.
+        # Reconcile build records and cached open PRs/issues against live GitHub
+        # state (read-only gh view): a human merge reaches the ledger, a merged
+        # PR stops showing as open, and a closed issue is dropped from the cache
+        # (unstarted) or marked closed (started). Done before the re-index so the
+        # index picks up the reconciled state.
         from ctx import writeback
 
         def view_pr(url):
@@ -369,15 +371,28 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
             except SystemExit:
                 return None
 
+        def view_issue(url):
+            try:
+                return _gh_json(["issue", "view", url, "--json", "state"])
+            except SystemExit:
+                return None
+
         reconciled = writeback.reconcile_records(root, view_pr)["reconciled"]
         reconciled_prs = writeback.reconcile_pr_state(root, view_pr, repos)["reconciled"]
+        issue_report = writeback.reconcile_issue_state(root, view_issue, repos)
 
     conn = db.connect(root)
     try:
+        # Removed issue files are gone; drop their rows. reindex_github only
+        # upserts from files, so without this the rows would linger.
+        for cid in issue_report["removed"]:
+            conn.execute("DELETE FROM contributions WHERE id = ?", (cid,))
         counts = db.reindex_github(conn, root)
         conn.commit()
     finally:
         conn.close()
     return {"offline": offline, "repos_scope": list(repos), "fetched": len(items), "new": n_new,
             "updated": n_updated, "reconciled": reconciled,
-            "reconciled_prs": reconciled_prs, **counts}
+            "reconciled_prs": reconciled_prs,
+            "issues_removed": len(issue_report["removed"]),
+            "issues_closed": len(issue_report["closed"]), **counts}

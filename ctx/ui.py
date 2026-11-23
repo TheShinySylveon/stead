@@ -695,12 +695,10 @@ def _project_rollup(root: Path, project_id: str) -> dict:
 
 
 def delete_object(root: Path, otype: str, ref: str, force: bool = False) -> dict:
-    """Remove one object file. Git history is the audit trail."""
+    """Remove one object file. Git history is the audit trail. A contribution
+    can be deleted; its drafted spec (if any) is removed with it."""
     if otype not in objects.TYPE_DIRS:
         raise UiError("unknown object type", 404)
-    if otype == "contribution":
-        reason = "a cached contribution is GitHub-derived. Refresh the cache instead."
-        raise UiError(reason)
     found = objects.find(root, otype, ref)
     if found is None:
         raise UiError(f"{otype} not found: {ref}", 404)
@@ -721,13 +719,22 @@ def delete_object(root: Path, otype: str, ref: str, force: bool = False) -> dict
             raise UiError(
                 f"{object_id} still has {len(linked)} cached contribution(s). "
                 "Delete those first, or use force.")
-    path.unlink()
+    removed: list[tuple[Path, str]] = [(path, object_id)]
+    if otype == "contribution":
+        # Deleting a source issue also removes the spec drafted from it (one
+        # level: `spec draft` never drafts from a draft).
+        for dpath, dmeta, _dbody in objects.iter_objects(root, "contribution"):
+            if str(dmeta.get("drafted_from") or "") == object_id:
+                removed.append((dpath, str(dmeta.get("id") or dpath.stem)))
+    for rpath, _rid in removed:
+        rpath.unlink(missing_ok=True)
     if db.db_path(root).exists():
-        table = {"task": "tasks", "repo": "repos"}.get(otype)
+        table = {"task": "tasks", "repo": "repos", "contribution": "contributions"}.get(otype)
         if table:
             conn = db.connect(root)
             try:
-                conn.execute(f"DELETE FROM {table} WHERE id = ?", (object_id,))
+                for _rpath, rid in removed:
+                    conn.execute(f"DELETE FROM {table} WHERE id = ?", (rid,))
                 conn.commit()
             finally:
                 conn.close()

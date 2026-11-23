@@ -49,9 +49,10 @@ Saving updates the body and the `updated` date. It does not change `created`
 or `id`. Escape closes the reader. A project also shows a rollup: task counts,
 linked documents and meetings, and its recent runs.
 
-Every project, task, document, meeting, repo, and actor can be deleted from the
-reader. Git history keeps the old text. A project with linked objects, or a
-repo with cached contributions, asks before forcing.
+Every project, task, document, meeting, repo, actor, and contribution can be
+deleted from the reader. Git history keeps the old text. A project with linked
+objects, or a repo with cached contributions, asks before forcing. Deleting a
+contribution also removes the spec drafted from it.
 
 "Needs you" lists one row per object. An object with two reasons shows two
 chips, and counts once.
@@ -71,6 +72,11 @@ and authoring a spec with acceptance criteria are read-only.
 Repos → Sync GitHub runs `gh` read-only and refreshes the local cache.
 Re-index offline does the same with no network. Neither button creates a
 remote issue or pull request.
+
+Sync also reconciles cached state: a merged or closed PR stops showing as open,
+and a cached issue closed upstream is dropped when it was never started (no
+draft, approval, or build record) or marked closed when it was — so started
+issues stay visible and can be deleted from their reader.
 
 ## Factory runs
 

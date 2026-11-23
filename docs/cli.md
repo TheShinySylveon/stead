@@ -75,6 +75,9 @@ python -m stead delete TYPE ID [--force]
 `method` chooses tooling for feature-builder. It does not turn planning off.
 Omitted, it is `spec-kit`.
 
+`delete` covers projects, tasks, documents, meetings, repos, actors, and
+contributions. Deleting a contribution also removes the spec drafted from it.
+
 `delete` removes one project, task, document, meeting, repo, or actor file and
 its index row. Git history keeps the old text. A project with linked objects,
 or a repo with cached contributions, is refused unless `--force`. Cached
@@ -115,6 +118,12 @@ python -m stead sync github --offline
 `sync github` is read-only. It uses `gh`. `--offline` only re-indexes files
 already on disk. `--digest` assembles the digest only when the cache changed.
 It still does not post.
+
+Sync also reconciles cached state against live GitHub: a merged or closed PR
+stops showing as open; a cached issue that was closed upstream is dropped from
+the cache when it was never started (no draft, approval, or build record), or
+marked `closed` when it was started — so a started issue stays visible and can
+be deleted deliberately with `stead delete contribution ID`.
 
 By default it caches your open PRs, review requests, and assigned issues from
 every repo. `--repo OWNER/NAME` (repeatable) limits one run to those repos;

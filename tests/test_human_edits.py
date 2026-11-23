@@ -194,6 +194,33 @@ class ReconcilePrStateTest(unittest.TestCase):
         self.assertEqual(self._state(root, "pr-a"), "merged")
         self.assertEqual(self._state(root, "pr-b"), "open")
 
+    def test_reconcile_issue_state_drops_unstarted_and_marks_started(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "context/contributions").mkdir(parents=True)
+        self._write(root, "issue-drop", "issue", "https://github.com/me/app/issues/1")
+        self._write(root, "issue-keep", "issue", "https://github.com/me/app/issues/2")
+        self._write(root, "issue-open", "issue", "https://github.com/me/app/issues/3")
+        draft = {"id": "contribution-me-app-issue-keep-spec", "type": "contribution",
+                 "title": "Spec", "created": "2026-11-21", "updated": "2026-11-21",
+                 "repo": "repo-me-app", "kind": "issue", "number": 2, "role": "author",
+                 "state": "open", "visibility": "public", "url": "https://github.com/me/app/issues/2",
+                 "tags": ["feature-spec"], "drafted_from": "contribution-me-app-issue-keep"}
+        (root / "context/contributions/issue-keep-spec.md").write_text(
+            frontmatter.dumps(draft, "# Spec\n"), encoding="utf-8")
+
+        def view_issue(url):
+            return {"state": "CLOSED"} if "issues/3" not in url else {"state": "OPEN"}
+
+        result = writeback.reconcile_issue_state(root, view_issue)
+        self.assertEqual(sorted(result["removed"]), ["contribution-me-app-issue-drop"])
+        self.assertEqual(sorted(result["closed"]), ["contribution-me-app-issue-keep"])
+        self.assertFalse((root / "context/contributions/issue-drop.md").exists())
+        self.assertEqual(self._state(root, "issue-keep"), "closed")
+        self.assertEqual(self._state(root, "issue-open"), "open")
+        self.assertEqual(self._state(root, "issue-keep-spec"), "open")  # local draft untouched
+
 
 if __name__ == "__main__":
     unittest.main()
