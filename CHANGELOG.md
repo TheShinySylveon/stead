@@ -10,7 +10,8 @@
   TODO accumulation) are fed back as a nudge. Rules are shape-based and
   registry-keyed by extension (`.py`, `.c`, `.h`, `.js`, `.ts`, `.go`, `.rs`),
   not a single language; the repo's own linter via `checks:` stays the
-  authoritative gate. A repo can opt out with `slop_gate: false`.
+  authoritative gate. A repo can opt out with `slop_gate: false` — settable from
+  the cockpit repo Settings (alongside `require_tests`), not just the CLI.
 - **Mistake → rule loop.** `stead metrics mark ID --correct false --rule "..."` (and
   the cockpit Incorrect button) now proposes the described check to the inbox as
   a candidate anti-slop rule, so a hand-checked failure becomes a future

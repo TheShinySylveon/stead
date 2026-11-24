@@ -125,7 +125,7 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
     for key in ("status", "project", "repo", "kind", "url", "role", "state",
                 "ci", "review", "method", "number", "trigger", "reach",
                 "code_path", "default_branch", "drafted_from", "spec_sha",
-                "auto_publish"):
+                "auto_publish", "require_tests", "slop_gate"):
         if meta.get(key) not in (None, ""):
             item[key] = meta[key]
     if otype == "repo":
@@ -1060,6 +1060,16 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
         else:
             meta.pop("auto_publish", None)
         changed = True
+    for field in ("require_tests", "slop_gate"):
+        # Build-quality booleans, default on. Only a stored "false"/"off" turns
+        # them off; anything else stores "true". Mirror the CLI `--set`.
+        if field in payload:
+            from ctx import safety
+            if safety.truthy(payload.get(field)):
+                meta[field] = "true"
+            else:
+                meta[field] = "false"
+            changed = True
     if "notes" in payload:
         notes = (payload.get("notes") or "").strip()
         if len(notes) > 400:

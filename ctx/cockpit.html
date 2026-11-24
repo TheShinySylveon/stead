@@ -884,6 +884,13 @@ function renderRepos() {
                   <select data-set-repo data-id="${esc(r.id)}" data-field="auto_publish" aria-label="Auto-publish for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], r.auto_publish === "true" ? "on" : "off")}</select>
                   <span class="meta">Build commits to a branch; only auto-publish opens the PR.</span>
                 </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <span class="meta">Require tests</span>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="require_tests" aria-label="Require tests for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], r.require_tests === "false" ? "off" : "on")}</select>
+                  <span class="meta">Anti-slop gate</span>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="slop_gate" aria-label="Anti-slop gate for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], r.slop_gate === "false" ? "off" : "on")}</select>
+                  <span class="meta">A build with acceptance criteria must add a failing-then-passing test; new files are checked for anti-slop findings.</span>
+                </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
                   <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="code_path" value="${esc(r.code_path || "")}" placeholder="Local code path for publish" aria-label="Code path for ${esc(r.title)}">
                   <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="default_branch" value="${esc(r.default_branch || "")}" placeholder="Default branch" aria-label="Default branch for ${esc(r.title)}" style="max-width:170px">
