@@ -638,8 +638,8 @@ def _post(url: str, body: dict, headers: dict, api_key: str, timeout: float) -> 
         detail = ""
         try:
             detail = exc.read().decode("utf-8", errors="replace")[:500]
-        except Exception:
-            pass
+        except (OSError, UnicodeDecodeError):
+            pass  # a body we cannot read is still an error; report the code
         raise ModelError(f"model request failed ({exc.code}) {detail}") from exc
     except urllib.error.URLError as exc:
         raise ModelError(f"could not reach the model: {exc.reason}") from exc

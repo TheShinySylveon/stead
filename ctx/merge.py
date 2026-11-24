@@ -139,8 +139,8 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
         writeback.mark_merged(root, contribution_ref,
                               url=(view.get("url") or "").strip(),
                               head_sha=head_sha or expected)
-    except Exception:
-        pass
+    except writeback.WritebackError:
+        pass  # the merge succeeded; a failed ledger update is not a failed merge
     return {
         "merged": True,
         "number": number,
