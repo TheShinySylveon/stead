@@ -2352,7 +2352,7 @@ class CockpitHandler(BaseHTTPRequestHandler):
             session = secrets.token_urlsafe(24)
             with self.server.sessions_lock:
                 self.server.sessions[session] = person["actor"]
-            cookie = "stead_session=%s; HttpOnly; SameSite=Lax; Path=/" % session
+            cookie = f"stead_session={session}; HttpOnly; SameSite=Lax; Path=/"
             self._send_session(cookie, ctype)
             return
         expected = getattr(self.server, "access_token", "") or ""
@@ -2360,7 +2360,7 @@ class CockpitHandler(BaseHTTPRequestHandler):
         if not expected or not token or not secrets.compare_digest(token, expected):
             self._reject(401, "access token required")
             return
-        cookie = "stead_access=%s; HttpOnly; SameSite=Lax; Path=/" % token
+        cookie = f"stead_access={token}; HttpOnly; SameSite=Lax; Path=/"
         self._send_session(cookie, ctype)
 
     def _session_fields(self, raw: bytes, ctype: str) -> dict:

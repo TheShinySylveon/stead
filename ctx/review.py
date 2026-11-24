@@ -158,6 +158,6 @@ def review(root: Path, contribution_ref: str, *, responder=None,
     from ctx import writeback
     try:
         result["record"] = writeback.record_review(root, contribution_ref, result)
-    except Exception:
-        pass
+    except writeback.WritebackError:
+        pass  # the verdict stands; a failed record is not a failed review
     return result

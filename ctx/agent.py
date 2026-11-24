@@ -881,16 +881,16 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     root, contribution_ref, exc, branch=branch,
                     elapsed=round(time.monotonic() - started, 1),
                     checks_mode=checks_mode, reason=reason)
-            except Exception:
-                pass
+            except writeback.WritebackError:
+                pass  # a failed failure-record is not the failure itself
         raise
     finally:
         _clear_started(root, body)
         try:
             if wt is not None:
                 _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
-        except Exception:
-            pass
+        except (BuildError, OSError):
+            pass  # teardown must not mask the real failure
         _unlock(lock)
         shutil.rmtree(hooks_dir, ignore_errors=True)
 
@@ -1456,8 +1456,8 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
         if wt is not None:
             try:
                 _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
-            except Exception:
-                pass
+            except (BuildError, OSError):
+                pass  # teardown must not mask the real failure
         _unlock(lock)
     raise BuildError(f"the model did not finish within {max_steps} steps",
                      reason="build")
@@ -1494,7 +1494,7 @@ class _Progress:
             try:
                 self.echo(line)
             except Exception:
-                pass
+                pass  # a progress echo must never fail the build
 
     def finish(self, folder: Path | None) -> None:
         """Move the live log into the run's folder as progress.log."""
@@ -1596,11 +1596,11 @@ def _reclaim_stale_started(run, anchor: Path, root: Path, spec: dict,
     if wt:
         try:
             _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
-        except Exception:
-            pass
+        except (BuildError, OSError):
+            pass  # the stale worktree is already gone or unremovable
     try:
         _git(run, anchor, ["worktree", "prune"])
-    except Exception:
+    except (BuildError, OSError):
         pass
     from ctx import writeback
     try:
@@ -1608,8 +1608,8 @@ def _reclaim_stale_started(run, anchor: Path, root: Path, spec: dict,
             root, str(data.get("contribution") or spec.get("id") or ""),
             BuildError("the previous build was killed before it could record a result"),
             branch=branch_for(spec), reason="infrastructure")
-    except Exception:
-        pass
+    except writeback.WritebackError:
+        pass  # the reclaim still clears the stale lock
     _clear_started(root, body)
 
 
@@ -1674,8 +1674,8 @@ def _require_fail_before(run, anchor: Path, code: Path, default: str,
     finally:
         try:
             _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
-        except Exception:
-            pass
+        except (BuildError, OSError):
+            pass  # teardown must not mask the fail-before verdict
 
 
 def _porcelain(run, code: Path) -> list[tuple[str, str]]:
@@ -1858,8 +1858,8 @@ def _cleanup_failure(run, anchor: Path, code: Path, branch: str, default: str,
             # or identity setting made during the build is left alone.
             if safety.git_state_changes(git_before, after):
                 safety.git_state_restore(code, git_before, after)
-    except Exception:
-        pass
+    except (BuildError, OSError):
+        pass  # a failed restore is best-effort; it must not mask the original
     keep = model_worked and reason != "tamper"
     if keep:
         # Quarantine the model's own work so --resume can continue from it.
@@ -1871,12 +1871,12 @@ def _cleanup_failure(run, anchor: Path, code: Path, branch: str, default: str,
                 _git(run, code, ["add", "-A", "--", *stage])
             if _git(run, code, ["diff", "--cached", "--name-only"]).strip():
                 _git(run, code, ["commit", "-m", f"WIP: failed build on {branch}"])
-        except Exception:
-            pass
+        except (BuildError, OSError):
+            pass  # quarantining is best-effort; the failure record already exists
     try:
         _git(run, anchor, ["worktree", "remove", "--force", str(code)])
-    except Exception:
-        pass
+    except (BuildError, OSError):
+        pass  # teardown must not mask the original failure
     if not keep:
         # Nothing should carry forward: drop the branch if it has no commits
         # (a tamper that committed is also discarded).
@@ -1885,8 +1885,8 @@ def _cleanup_failure(run, anchor: Path, code: Path, branch: str, default: str,
                                        f"{default}..{branch}"]).strip()
             if reason == "tamper" or ahead == "0":
                 _git(run, anchor, ["branch", "-D", branch])
-        except Exception:
-            pass
+        except (BuildError, OSError):
+            pass  # an unremovable branch leaves the spec eligible, not broken
 
 
 def _search(code: Path, query: str) -> list[str]:
