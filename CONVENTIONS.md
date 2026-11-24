@@ -66,6 +66,8 @@ reach: shadow                        # optional ceiling: ghost | shadow | draft-
                                      # ghost = purely spec, docs, and a code plan for approval;
                                      # zero code applied. merge is never inherited from the
                                      # install default.
+auto_publish: false                  # optional: true makes a successful build open a pull
+                                     # request (when reach is draft-pr | pr | merge). Default false.
 checks: python -m pytest -q          # optional command `stead build` runs before it commits
 ---
 ```

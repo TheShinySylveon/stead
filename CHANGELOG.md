@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Per-repo auto-publish, and the cockpit says so.** A repo can set
+  `auto_publish: true` to have a successful build open a pull request
+  automatically (when its reach is `draft-pr`/`pr`/`merge`); default off. The
+  Repos settings gain an **Auto-publish PR** toggle, and the Build confirmation
+  and result now state plainly that Build commits to a branch and only
+  auto-publish (or the Publish step) opens a PR.
 - **`spec draft` now writes narrow, verifiable specs.** The drafting prompt
   pushes for ONE concrete change (picking the smallest slice of a broad issue
   rather than scoping the whole ambition), aims for 1-3 acceptance criteria

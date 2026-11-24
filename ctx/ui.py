@@ -124,7 +124,8 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
     }
     for key in ("status", "project", "repo", "kind", "url", "role", "state",
                 "ci", "review", "method", "number", "trigger", "reach",
-                "code_path", "default_branch", "drafted_from", "spec_sha"):
+                "code_path", "default_branch", "drafted_from", "spec_sha",
+                "auto_publish"):
         if meta.get(key) not in (None, ""):
             item[key] = meta[key]
     if otype == "repo":
@@ -1035,6 +1036,13 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
             raise UiError(f"invalid reach {payload['reach']!r}")
         meta["reach"] = payload["reach"]
         changed = True
+    if "auto_publish" in payload:
+        from ctx import safety
+        if safety.truthy(payload.get("auto_publish")):
+            meta["auto_publish"] = "true"
+        else:
+            meta.pop("auto_publish", None)
+        changed = True
     if "notes" in payload:
         notes = (payload.get("notes") or "").strip()
         if len(notes) > 400:
@@ -1330,17 +1338,39 @@ def _refuse_shared_remote(root: Path) -> None:
                       "the checkout.")
 
 
+def _repo_auto_publish(root: Path, contribution: str) -> bool:
+    """Whether a build of this contribution opens a PR after committing.
+
+    True only when the repo opts in with auto_publish AND its reach ceiling
+    allows publishing (draft-pr, pr, or merge)."""
+    found = objects.find(root, "contribution", contribution)
+    if found is None:
+        return False
+    repo = objects.find(root, "repo", found[1].get("repo") or "")
+    if repo is None:
+        return False
+    _repo_path, repo_meta, _repo_body = repo
+    from ctx import safety
+    if not safety.truthy(repo_meta.get("auto_publish")):
+        return False
+    from ctx.autonomy import effective
+    ceiling = effective(root, repo_meta)["ceiling"]
+    return ceiling in ("draft-pr", "pr", "merge")
+
+
 def build_task(root: Path, contribution: str, max_minutes: int | None,
                max_tokens: int | None, max_cost: float | None,
                max_steps: int | None, tasks: TaskRunner) -> dict:
-    """Build off the request; poll /api/task. Publishing and merging stay
-    separate, explicit steps."""
+    """Build off the request; poll /api/task. The repo's auto_publish setting
+    opens a PR after a successful build when its reach allows it."""
     require_local_execution(root)
     from ctx.agent import BuildError, build
     from ctx.models import ModelError
 
+    auto_publish = _repo_auto_publish(root, contribution)
+
     def run(progress):
-        kwargs = {"publish": False, "merge": False, "progress": progress}
+        kwargs = {"publish": auto_publish, "merge": False, "progress": progress}
         if max_minutes:
             kwargs["max_minutes"] = max_minutes
         if max_tokens:
