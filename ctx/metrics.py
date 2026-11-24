@@ -203,10 +203,14 @@ def render(report: dict) -> str:
     return "\n".join(lines)
 
 
-def run_baseline_and_setb_score() -> float:
+def run_baseline_and_setb_score() -> float | None:
     """Train the baseline model and evaluate it on the Set B benchmark.
 
-    Returns the Set B score as a float (non-zero expected).
+    Returns the Set B score as a float (non-zero expected) or None if the baseline
+    has not been measured (e.g., no clean runs of Set A or Set B builds).
     """
     # Placeholder: train baseline and compute Set B score.
-    return 0.85
+    # The baseline requires clean runs of Set A on two models, and Set B requires
+    # three first-attempt builds checked against the correctness rubric.
+    # Since we cannot run those experiments here, return None to indicate unmeasured.
+    return None
