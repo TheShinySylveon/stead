@@ -151,6 +151,7 @@ _FLOW_ACTIONS = {
     "build": ("Build", "primary"),
     "publish": ("Publish PR", "primary"),
     "comment": ("Comment on issue", "quiet"),
+    "address": ("Address review", "quiet"),
     "merge": ("Merge", "quiet"),
 }
 
@@ -282,6 +283,7 @@ def _published_flow(root: Path, meta: dict, record: dict) -> dict:
         actions.append("merge")
     if _comment_eligible(root, meta) and not _is_commented(record):
         actions.append("comment")
+    actions.append("address")
     return _flow("published", "PR opened", cid, actions)
 
 
@@ -1447,6 +1449,21 @@ def review_task(root: Path, contribution: str, tasks: TaskRunner) -> dict:
     return {"ok": True, "task": tasks.start("review", contribution, run)}
 
 
+def address_review_task(root: Path, contribution: str, push: bool,
+                        tasks: TaskRunner) -> dict:
+    """Address a PR's review comments off the request; poll /api/task."""
+    require_local_execution(root)
+    from ctx.agent import BuildError, address_review
+    from ctx.models import ModelError
+
+    def run(progress):
+        try:
+            return address_review(root, contribution, push=push, progress=progress)
+        except (BuildError, ModelError, TimeoutError) as exc:
+            raise UiError(str(exc)) from exc
+    return {"ok": True, "task": tasks.start("address", contribution, run)}
+
+
 def metrics_report(root: Path, repo: str = "", since: str = "") -> dict:
     from ctx import metrics
     try:
@@ -2043,6 +2060,9 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                                      bool(payload.get("redraft")), tasks)
         elif path == "/api/review":
             result = review_task(root, payload.get("contribution") or "", tasks)
+        elif path == "/api/review/address":
+            result = address_review_task(root, payload.get("contribution") or "",
+                                         not bool(payload.get("no_push")), tasks)
         elif path == "/api/metrics/mark":
             result = metrics_mark(root, payload.get("record") or "",
                                   str(payload.get("correct")).lower() == "true")

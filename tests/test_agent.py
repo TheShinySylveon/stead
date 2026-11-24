@@ -512,6 +512,71 @@ class BuildTest(BuildFixture):
         self.assertIn("Stop reading and planning", joined)
         self.assertIn("Stop exploring", joined)
 
+    def test_fetch_review_comments_parses_gh_output(self) -> None:
+        raw = json.dumps([
+            {"path": "ctx/metrics.py", "line": 206, "body": "fake score"},
+            {"path": "ctx/cli.py", "line": None, "body": "prints for every build"},
+            {"path": "ctx/x.py", "line": 1, "body": ""},  # empty body, skipped
+            "not a dict",
+        ])
+
+        def run(argv, cwd):
+            if argv and argv[0] == "gh":
+                return raw
+            raise AssertionError(argv)
+
+        comments = agent.fetch_review_comments(run, "me/app", 7, self.code)
+        self.assertEqual(len(comments), 2)
+        self.assertEqual(comments[0]["path"], "ctx/metrics.py")
+        self.assertEqual(comments[0]["line"], 206)
+        self.assertEqual(comments[1]["path"], "ctx/cli.py")
+        self.assertEqual(comments[1]["line"], "")
+
+    def test_address_review_fixes_and_commits(self) -> None:
+        from ctx import objects
+        from ctx import spec as specmod
+        self._set_repo(url="https://github.com/me/app")
+        _p, spec, body = objects.find(self.root, "contribution",
+                                      "contribution-me-app-issue-42")
+        doc = self.root / "context/documents" / "build-address.md"
+        doc.parent.mkdir(parents=True, exist_ok=True)
+        doc.write_text(frontmatter.dumps({
+            "id": "document-build-address", "type": "document",
+            "title": "Build: Add a name flag (published)",
+            "created": "2026-11-23", "updated": "2026-11-23",
+            "status": "active", "tags": ["build-record"],
+            "outcome": "published",
+            "contribution": "contribution-me-app-issue-42",
+            "spec_sha": specmod.body_hash(body),
+            "pr_url": "https://github.com/me/app/pull/7",
+        }, "# Build\n"), encoding="utf-8")
+        branch = agent.branch_for(spec)
+        _git(self.code, "branch", branch)
+
+        calls = []
+
+        def responder(prompt):
+            calls.append(prompt)
+            n = len(calls)
+            if n == 1:
+                return json.dumps({"action": "read", "path": "app.py"})
+            if n == 2:
+                return json.dumps({"action": "write", "path": "app.py",
+                                   "content": "print('bye')\n"})
+            if n == 3:
+                return json.dumps({"action": "finish", "summary": "Done."})
+            raise AssertionError("too many calls")
+
+        result = agent.address_review(self.root, "contribution-me-app-issue-42",
+                                      responder=responder, push=False,
+                                      comments=[{"path": "app.py", "line": 1,
+                                                 "body": "Use a real greeting"}])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["files"], ["app.py"])
+        self.assertFalse(result["pushed"])
+        self.assertEqual(_git(self.code, "show", f"{branch}:app.py").strip(),
+                         "print('bye')")
+
     def test_checks_get_a_scrubbed_environment(self) -> None:
         import os
         import unittest.mock as mock
