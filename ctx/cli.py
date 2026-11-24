@@ -297,7 +297,8 @@ def cmd_contribution_add(root: Path, title: str, repo: str, kind: str, number: i
 
 
 def cmd_contribution_list(root: Path, repo: str | None = None, kind: str | None = None,
-                          role: str | None = None, state: str | None = None) -> int:
+                          role: str | None = None, state: str | None = None,
+                          json: bool = False) -> int:
     db.require_db(root)
     query = "SELECT id, repo, kind, number, role, state, ci, title FROM contributions"
     clauses, params = [], []
@@ -319,6 +320,13 @@ def cmd_contribution_list(root: Path, repo: str | None = None, kind: str | None 
         conn.close()
     if not rows:
         print("no contributions match")
+        return 0
+    if json:
+        import json as _json
+        print(_json.dumps([
+            {"id": r["id"], "repo": r["repo"], "kind": r["kind"], "number": r["number"],
+             "role": r["role"], "state": r["state"], "ci": r["ci"], "title": r["title"]}
+            for r in rows], indent=2))
         return 0
     width = max(len(r["id"]) for r in rows)
     for r in rows:
@@ -716,6 +724,7 @@ def build_parser() -> argparse.ArgumentParser:
     cl.add_argument("--kind", choices=CONTRIB_KINDS)
     cl.add_argument("--role", choices=CONTRIB_ROLES)
     cl.add_argument("--state", choices=CONTRIB_STATES)
+    cl.add_argument("--json", action="store_true", help="machine-readable list")
     cs = contrib.add_parser("set", help="update contribution fields (file + index)")
     cs.add_argument("id")
     cs.add_argument("--state", choices=CONTRIB_STATES)
@@ -1086,7 +1095,8 @@ def main(argv: list[str] | None = None) -> int:
                                         args.state, args.ci, args.review,
                                         args.method)
         if args.sub == "list":
-            return cmd_contribution_list(root, args.repo, args.kind, args.role, args.state)
+            return cmd_contribution_list(root, args.repo, args.kind, args.role, args.state,
+                                         json=bool(args.json))
         if args.sub == "set":
             return cmd_contribution_set(root, args.id, args.state, args.ci,
                                         args.review, args.role, args.method)
