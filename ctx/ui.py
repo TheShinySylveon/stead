@@ -543,6 +543,15 @@ def _model_view(root: Path) -> dict:
                 "key_set": False, "key_from": "", "key_env": "STEAD_MODEL_API_KEY"}
 
 
+def _profiles_view(root: Path) -> dict:
+    from ctx.models import MODEL_ROLES, profiles_view
+    try:
+        return profiles_view(root)
+    except Exception:
+        return {"profiles": {}, "roles": {r: "" for r in MODEL_ROLES},
+                "legacy_build": False, "legacy_reviewer": False}
+
+
 def _deployment_view(root: Path, port: int | None = None) -> dict:
     from ctx.config import ConfigError, public_view
     try:
@@ -610,6 +619,7 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
         "first_run": _needs_welcome(root),
         "deployment": _deployment_view(root, port),
         "model": _model_view(root),
+        "model_profiles": _profiles_view(root),
         "factory": _factory_defaults(root),
         "actor": _current_actor(root),
         "signed_in": session_actor,
@@ -1825,6 +1835,9 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         if method == "GET" and path == "/api/search":
             return 200, _json(search_objects(root, query.get("q", ""), query.get("repo", ""))), \
                 "application/json; charset=utf-8"
+        if method == "GET" and path == "/api/model/profiles":
+            from ctx.models import profiles_view
+            return 200, _json(profiles_view(root)), "application/json; charset=utf-8"
         if method == "GET" and path == "/api/build/lock":
             return 200, _json(build_lock(root, query.get("contribution", ""))), \
                 "application/json; charset=utf-8"
@@ -1967,6 +1980,35 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             from ctx.models import ModelError, list_models
             try:
                 result = list_models(root)
+                result["ok"] = True
+            except ModelError as exc:
+                raise UiError(str(exc)) from exc
+        elif path == "/api/model/add":
+            from ctx.models import ModelError, add_model
+            try:
+                result = add_model(
+                    root, payload.get("profile") or "",
+                    provider=payload.get("provider") or "",
+                    name=payload.get("name") or "",
+                    base_url=payload.get("base_url") or "",
+                    api_key=payload.get("api_key"),
+                    api_key_env=payload.get("api_key_env") or "STEAD_MODEL_API_KEY",
+                    call_timeout=_opt_int(payload, "call_timeout"))
+                result["ok"] = True
+            except ModelError as exc:
+                raise UiError(str(exc)) from exc
+        elif path == "/api/model/remove":
+            from ctx.models import ModelError, remove_model
+            try:
+                result = remove_model(root, payload.get("profile") or "")
+                result["ok"] = True
+            except ModelError as exc:
+                raise UiError(str(exc)) from exc
+        elif path == "/api/model/role":
+            from ctx.models import ModelError, set_role
+            try:
+                result = set_role(root, payload.get("role") or "",
+                                  payload.get("profile") or "")
                 result["ok"] = True
             except ModelError as exc:
                 raise UiError(str(exc)) from exc

@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.request
@@ -43,6 +44,12 @@ ANTHROPIC_VERSION = "2023-06-01"
 ANTHROPIC_MAX_TOKENS = 8192
 _LOOPBACK = {"127.0.0.1", "localhost", "::1"}
 _REQUIRED = ("id", "title", "input", "pass_criteria")
+
+# The jobs a model can be bound to. build runs the implementation loop;
+# draft writes specs/plans; review is the independent reviewer; address fixes
+# review comments. Each falls back to the legacy `model` (or `reviewer`) block
+# when no profile is bound.
+MODEL_ROLES = ("build", "draft", "review", "address")
 
 
 class ModelError(Exception):
@@ -85,15 +92,14 @@ def public_model(root: Path) -> dict:
     }
 
 
-def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
-              api_key: str | None = None, api_key_env: str = ENV_KEY,
-              block: str = "model", input_price: float | None = None,
-              output_price: float | None = None,
-              call_timeout: int | None = None) -> dict:
+def _build_model(current: dict, provider: str, name: str, base_url: str,
+                 api_key, api_key_env, input_price, output_price,
+                 call_timeout) -> dict:
+    """Validate and assemble one model dict (no writes). `current` holds the
+    previous settings for the same block/profile, so a stored key follows its
+    endpoint and prices/timeout persist unless overridden."""
     if provider not in PROVIDERS:
         raise ModelError(f"invalid provider {provider!r}")
-    if block not in {"model", "reviewer"}:
-        raise ModelError(f"invalid model block {block!r}")
     name = (name or "").strip()
     if not name or len(name) > 200 or any(c in name for c in "\r\n"):
         raise ModelError("a model needs a name")
@@ -106,7 +112,6 @@ def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
     if not url:
         raise ModelError("a custom provider needs a base URL")
     url = _check_url(url)
-    current = _block(root, block)
     stored = current.get("api_key") or ""
     if api_key:
         stored = api_key.strip()
@@ -135,19 +140,143 @@ def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
     timeout = int(call_timeout) if call_timeout is not None else current.get("call_timeout")
     if timeout is not None and _call_timeout(timeout) != DEFAULT_CALL_TIMEOUT:
         model["call_timeout"] = _call_timeout(timeout)
+    return model
+
+
+def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
+              api_key: str | None = None, api_key_env: str = ENV_KEY,
+              block: str = "model", input_price: float | None = None,
+              output_price: float | None = None,
+              call_timeout: int | None = None) -> dict:
+    if block not in {"model", "reviewer"}:
+        raise ModelError(f"invalid model block {block!r}")
+    current = _block(root, block)
+    model = _build_model(current, provider, name, base_url, api_key, api_key_env,
+                         input_price, output_price, call_timeout)
     config.save_model(root, model, block=block)
     return public_model(root)
 
 
-def resolve(root: Path, block: str = "model") -> dict:
+def _public_profile(model: dict) -> dict:
+    key_env = model.get("api_key_env") or ENV_KEY
+    return {
+        "provider": model.get("provider") or "",
+        "name": model.get("name") or "",
+        "base_url": model.get("base_url") or "",
+        "key_set": bool(os.environ.get(key_env, "").strip()) or bool(model.get("api_key")),
+        "key_env": key_env,
+        "input_price_per_mtok": _price(model.get("input_price_per_mtok")),
+        "output_price_per_mtok": _price(model.get("output_price_per_mtok")),
+        "call_timeout": _call_timeout(model.get("call_timeout")),
+    }
+
+
+def profiles_view(root: Path) -> dict:
+    """What the Models panel may show. Never includes keys."""
+    raw = config.read_raw(root)
+    models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+    roles = raw.get("roles") if isinstance(raw.get("roles"), dict) else {}
+    return {
+        "profiles": {name: _public_profile(m) for name, m in models.items()
+                     if isinstance(m, dict)},
+        "roles": {role: str(roles.get(role) or "") for role in MODEL_ROLES},
+        "legacy_build": bool((raw.get("model") or {}).get("name"))
+        if isinstance(raw.get("model"), dict) else False,
+        "legacy_reviewer": bool((raw.get("reviewer") or {}).get("name"))
+        if isinstance(raw.get("reviewer"), dict) else False,
+    }
+
+
+def add_model(root: Path, profile: str, *, provider: str, name: str,
+              base_url: str = "", api_key: str | None = None,
+              api_key_env: str = ENV_KEY, input_price: float | None = None,
+              output_price: float | None = None,
+              call_timeout: int | None = None) -> dict:
+    profile = (profile or "").strip()
+    if not re.match(r"^[A-Za-z0-9_-]{1,50}$", profile):
+        raise ModelError("a profile name may only use letters, digits, dash, underscore")
+    raw = config.read_raw(root)
+    models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+    prev = models.get(profile) if isinstance(models.get(profile), dict) else {}
+    models[profile] = _build_model(prev, provider, name, base_url, api_key,
+                                   api_key_env, input_price, output_price,
+                                   call_timeout)
+    raw["models"] = models
+    config.save_blocks(root, models=models, roles=(raw.get("roles") if isinstance(raw.get("roles"), dict) else {}))
+    return profiles_view(root)
+
+
+def remove_model(root: Path, profile: str) -> dict:
+    profile = (profile or "").strip()
+    raw = config.read_raw(root)
+    models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+    roles = raw.get("roles") if isinstance(raw.get("roles"), dict) else {}
+    models.pop(profile, None)
+    for role in list(roles):
+        if roles[role] == profile:
+            del roles[role]
+    config.save_blocks(root, models=models, roles=roles)
+    return profiles_view(root)
+
+
+def set_role(root: Path, role: str, profile: str) -> dict:
+    if role not in MODEL_ROLES:
+        raise ModelError(f"invalid role {role!r} (choose {', '.join(MODEL_ROLES)})")
+    profile = (profile or "").strip()
+    raw = config.read_raw(root)
+    models = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+    if profile and profile not in models:
+        raise ModelError(f"unknown model profile {profile!r}. Add it with `stead model add`.")
+    roles = raw.get("roles") if isinstance(raw.get("roles"), dict) else {}
+    if profile:
+        roles[role] = profile
+    else:
+        roles.pop(role, None)
+    config.save_blocks(root, models=models, roles=roles)
+    return profiles_view(root)
+
+
+def _profile_for_role(root: Path, role: str) -> dict:
+    """The raw profile dict for a role: `models[roles[role]]`, else the legacy
+    `model` (build/draft) or `reviewer`-then-`model` (review/address) blocks."""
+    raw = config.read_raw(root)
+    profiles = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+    roles = raw.get("roles") if isinstance(raw.get("roles"), dict) else {}
+    name = roles.get(role)
+    if name and isinstance(profiles.get(name), dict):
+        return profiles[name]
+    if role in ("review", "address"):
+        block = raw.get("reviewer") or raw.get("model")
+    else:
+        block = raw.get("model")
+    return block if isinstance(block, dict) else {}
+
+
+def role_configured(root: Path, role: str) -> bool:
+    """True when `role` resolves to its own profile/block, not the builder."""
+    if role not in MODEL_ROLES:
+        return False
+    raw = config.read_raw(root)
+    roles = raw.get("roles") if isinstance(raw.get("roles"), dict) else {}
+    profiles = raw.get("models") if isinstance(raw.get("models"), dict) else {}
+    name = roles.get(role)
+    if name and isinstance(profiles.get(name), dict):
+        return True
+    if role in ("review", "address"):
+        block = raw.get("reviewer")
+        return isinstance(block, dict) and bool(block.get("name") and block.get("base_url"))
+    return False
+
+
+def resolve(root: Path, role: str = "build") -> dict:
     """Settings for one call. Includes the key. Do not print or store this.
 
-    `block="reviewer"` reads the optional independent-reviewer endpoint and
-    falls back to the builder model when none is configured.
-    """
-    raw = _block(root, block)
-    if block == "reviewer" and not (raw.get("name") and raw.get("base_url")):
-        raw = _block(root, "model")
+    `role` is one of MODEL_ROLES (build, draft, review, address); "reviewer" is
+    accepted as an alias for "review". Unbound roles fall back to the legacy
+    `model`/`reviewer` blocks."""
+    if role == "reviewer":
+        role = "review"
+    raw = _profile_for_role(root, role)
     if not raw.get("name") or not raw.get("base_url"):
         raise ModelError(
             "no model configured. Set one with `stead model set` or in Settings.")
@@ -195,7 +324,7 @@ def draft(root: Path, prompt: str, *, transport=None, timeout: float | None = No
     """One drafting call. The timeout defaults to the model's call_timeout."""
     if not (prompt or "").strip():
         raise ModelError("there is no prompt to send")
-    settings = resolve(root)
+    settings = resolve(root, "draft")
     return complete(prompt, settings, transport=transport,
                     timeout=_call_timeout(settings.get("call_timeout")) if timeout is None else timeout)
 

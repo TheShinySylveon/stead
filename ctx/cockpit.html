@@ -1142,6 +1142,7 @@ function renderSettings() {
   const d = state.snap.deployment || {deployment: "single", token_set: false, bind: "127.0.0.1", port: 8765};
   const m = state.snap.model || {configured: false, key_set: false, provider: "", name: "", base_url: "", key_env: "STEAD_MODEL_API_KEY"};
   const actors = (state.snap.actors || []).filter(match);
+  const pv = state.snap.model_profiles || {profiles: {}, roles: {}, legacy_build: false, legacy_reviewer: false};
   const shown = state.settingsToken ? `<div class="banner">New access token, shown once: ${esc(state.settingsToken)}</div>` : "";
   const accountShown = state.accountPassword ? `<div class="banner">Password for ${esc(state.accountName)}, shown once: ${esc(state.accountPassword)}</div>` : "";
   const opt = (value, label) => `<option value="${value}" ${m.provider === value ? "selected" : ""}>${label}</option>`;
@@ -1165,6 +1166,30 @@ function renderSettings() {
         <button type="button" class="quiet" data-model-list>List models</button>
       </div>
       <div class="meta" id="model-test-result" style="margin-top:6px"></div>
+    </div>
+    <div class="section-title">Model profiles</div>
+    <div class="panel" style="padding:14px 16px;margin-bottom:16px">
+      <p class="meta">Bind jobs to saved connections. A blank binding uses the model above. build = implementation loop · draft = spec/plan · review = independent reviewer · address = review-fixing.</p>
+      <div class="stack" style="margin-top:8px">
+        ${Object.keys(pv.roles || {}).map(role => `
+          <div class="inline" style="margin:0">
+            <span class="meta" style="min-width:72px">${esc(role)}</span>
+            <select data-model-role="${esc(role)}" aria-label="Role ${esc(role)}">
+              <option value="">default</option>
+              ${Object.keys(pv.profiles || {}).map(p => `<option value="${esc(p)}" ${(pv.roles || {})[role] === p ? "selected" : ""}>${esc(p)}</option>`).join("")}
+            </select>
+          </div>`).join("")}
+      </div>
+      <div class="chips" style="margin:8px 0">
+        ${Object.entries(pv.profiles || {}).map(([name, p]) => `<span class="chip">${esc(name)} · ${esc(p.provider)} ${esc(p.name)} <button type="button" class="quiet" data-model-remove="${esc(name)}" aria-label="Remove ${esc(name)}">remove</button></span>`).join("") || `<span class="meta">No saved profiles.</span>`}
+      </div>
+      <form class="inline fields" id="add-model">
+        <input type="text" name="profile" placeholder="profile name (e.g. local)" required aria-label="Profile name" style="max-width:150px">
+        <select name="provider" aria-label="Provider">${(state.snap.choices.model_provider || []).map(p => `<option value="${esc(p.id)}">${esc(p.label)}</option>`).join("")}</select>
+        <input type="text" name="name" placeholder="model name" required aria-label="Model name" style="max-width:160px">
+        <input type="text" name="base_url" placeholder="base URL (optional)" aria-label="Base URL">
+        <button class="quiet" type="submit">Add profile</button>
+      </form>
     </div>
     <div class="section-title">Factory</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
@@ -1947,6 +1972,16 @@ document.body.addEventListener("click", async (event) => {
     } catch (err) { if (out) out.textContent = err.message; toast(err.message); }
     return;
   }
+  const modelRemove = event.target.closest("[data-model-remove]");
+  if (modelRemove) {
+    if (!confirm("Remove the profile " + modelRemove.dataset.modelRemove + "?")) return;
+    try {
+      await api("/api/model/remove", {method: "POST", body: JSON.stringify({profile: modelRemove.dataset.modelRemove})});
+      toast("Profile removed");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
   const evals = event.target.closest("[data-evals]");
   if (evals) {
     try {
@@ -2215,6 +2250,11 @@ document.body.addEventListener("change", async (event) => {
       await api("/api/repo", {method: "POST", body: JSON.stringify({id: repo.dataset.id, [repo.dataset.field]: repo.value})});
       toast(repo.dataset.field === "code_path" ? "Code path saved" : "Default branch saved");
       await load();
+    } else if (event.target.closest("[data-model-role]")) {
+      const sel = event.target.closest("[data-model-role]");
+      await api("/api/model/role", {method: "POST", body: JSON.stringify({role: sel.dataset.modelRole, profile: sel.value})});
+      toast("Role binding saved");
+      await load();
     } else if (event.target.closest("[data-set-project]")) {
       const project = event.target.closest("[data-set-project]");
       await api("/api/project/status", {method: "POST", body: JSON.stringify({id: project.dataset.id, status: project.value})});
@@ -2237,6 +2277,7 @@ document.body.addEventListener("submit", async (event) => {
     || form.id === "save-body" || form.id === "save-title" || form.id === "save-spec"
     || form.id === "add-spec" || form.id === "onboard" || form.id === "welcome"
     || form.id === "add-actor" || form.id === "use-actor" || form.id === "add-account" || form.id === "set-model" || form.id === "set-factory"
+    || form.id === "add-model"
     || form.id === "new-factory" || form.id === "import-inbox" || form.dataset.promote
     || form.id === "wiki-request"
     || form.dataset.factory || form.dataset.triage;
@@ -2276,6 +2317,10 @@ document.body.addEventListener("submit", async (event) => {
       if (data.call_timeout) body.call_timeout = Number(data.call_timeout);
       await api("/api/model", {method: "POST", body: JSON.stringify(body)});
       toast("Model saved");
+    } else if (form.id === "add-model") {
+      const body = {profile: data.profile, provider: data.provider, name: data.name, base_url: data.base_url || ""};
+      await api("/api/model/add", {method: "POST", body: JSON.stringify(body)});
+      toast("Profile saved");
     } else if (form.id === "use-actor") {
       await api("/api/actor/use", {method: "POST", body: JSON.stringify({id: data.id})});
       toast("Writing as " + data.id);

@@ -75,7 +75,7 @@ def save(root: Path, data: dict) -> None:
         "port": int(data.get("port") or 8765),
         "access_token": token,
     }
-    for key in ("model", "factory", "actor", "sync"):
+    for key in ("model", "reviewer", "models", "roles", "factory", "actor", "sync"):
         value = data[key] if key in data else current.get(key)
         if isinstance(value, dict) and value:
             payload[key] = value
@@ -177,6 +177,22 @@ def save_model(root: Path, model: dict, block: str = "model") -> None:
     """Write one model block without dropping the other settings."""
     current = read_raw(root)
     current[block] = model
+    current.setdefault("deployment", "single")
+    current.setdefault("bind", "127.0.0.1")
+    current.setdefault("port", 8765)
+    current.setdefault("access_token", "")
+    config_path(root).write_text(json.dumps(current, indent=2) + "\n", encoding="utf-8")
+
+
+def save_blocks(root: Path, **blocks) -> None:
+    """Write (or, with an empty value, remove) top-level blocks such as `models`
+    and `roles`, without dropping the other settings."""
+    current = read_raw(root)
+    for key, value in blocks.items():
+        if value is None or (isinstance(value, (dict, list)) and not value):
+            current.pop(key, None)
+        else:
+            current[key] = value
     current.setdefault("deployment", "single")
     current.setdefault("bind", "127.0.0.1")
     current.setdefault("port", 8765)
