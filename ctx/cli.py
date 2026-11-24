@@ -800,6 +800,10 @@ def build_parser() -> argparse.ArgumentParser:
                           "Defaults to the install default.")
     rev = sub.add_parser("review", help="independent reviewer pass on a build branch. Approve or reject.")
     rev.add_argument("--contribution", required=True)
+    adr = sub.add_parser("address", help="address the review comments on a published PR: fix, commit, push")
+    adr.add_argument("--contribution", required=True)
+    adr.add_argument("--no-push", action="store_true",
+                     help="commit the fix locally; do not push to the PR")
 
     sp = sub.add_parser("spec", help="approve a feature spec by its body hash").add_subparsers(dest="sub", required=True)
     spa = sp.add_parser("approve", help="approve the current body of a contribution as a build spec")
@@ -1275,6 +1279,19 @@ def main(argv: list[str] | None = None) -> int:
         if result.get("record"):
             print(f"record: {result['record']['path']}")
         return 0 if result["verdict"] == "approve" else 1
+    if args.command == "address":
+        from ctx.agent import BuildError, address_review
+        from ctx.models import ModelError
+        try:
+            result = address_review(root, args.contribution, push=not args.no_push,
+                                    progress=lambda line: print(line, file=sys.stderr, flush=True))
+        except (BuildError, ModelError) as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"committed {result['commit'][:12]} on {result['branch']}"
+              + (" and pushed" if result["pushed"] else " (not pushed)"))
+        print(f"files: {', '.join(result['files']) or '(none)'}")
+        print(f"pr: {result['pr_url']}")
+        return 0
     if args.command == "build":
         from ctx.agent import BuildError, build as run_build
         from ctx.models import ModelError

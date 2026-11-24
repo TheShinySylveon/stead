@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **Address PR review comments.** New `stead address --contribution ID` (and an
+  **Address review** button on a published PR) fetches the PR's review comments
+  and runs the model in a focused loop to fix each one, committing on the PR
+  branch and pushing so the reviewer re-runs. `--no-push` commits locally only.
 - **A published PR no longer shows twice in the pipeline.** A Stead PR that
   collapses onto its spec (via the build record's `pr_url`) is now hidden from
   the Repos pipeline, so it appears once on the source issue/spec card instead

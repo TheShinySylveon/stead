@@ -675,7 +675,7 @@ class PipelineStageTest(unittest.TestCase):
                      pr_url="https://github.com/me/app/pull/7")
         row = self._row()
         self.assertEqual(row["stage"], "published")
-        self.assertEqual([a["key"] for a in row["actions"]], ["merge", "comment"])
+        self.assertEqual([a["key"] for a in row["actions"]], ["merge", "comment", "address"])
 
     def test_published_without_comment_offers_merge_only(self):
         from ctx import spec
@@ -687,7 +687,7 @@ class PipelineStageTest(unittest.TestCase):
                      pr_url="https://github.com/me/app/pull/7")
         row = self._row()
         self.assertEqual(row["stage"], "published")
-        self.assertEqual([a["key"] for a in row["actions"]], ["merge"])
+        self.assertEqual([a["key"] for a in row["actions"]], ["merge", "address"])
 
     def test_merged_build_shows_merged(self):
         from ctx import spec
@@ -729,4 +729,4 @@ class PipelineStageTest(unittest.TestCase):
                      pr_url="https://github.com/me/app/pull/7", commented=True)
         row = self._row()
         self.assertEqual(row["stage"], "published")
-        self.assertEqual([a["key"] for a in row["actions"]], ["merge"])
+        self.assertEqual([a["key"] for a in row["actions"]], ["merge", "address"])
