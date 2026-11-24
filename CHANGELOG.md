@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **A published PR no longer shows twice in the pipeline.** A Stead PR that
+  collapses onto its spec (via the build record's `pr_url`) is now hidden from
+  the Repos pipeline, so it appears once on the source issue/spec card instead
+  of also as a separate "PR open" card.
 - **Comment on issue no longer asks for the PR URL.** Both the cockpit and the
   CLI (`stead factory comment`) now resolve the pull request URL from the build
   record when it isn't given, so the comment action posts the link directly

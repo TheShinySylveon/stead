@@ -179,7 +179,8 @@ def _build_records(root: Path) -> dict[str, dict]:
 
 def _pipeline_contribs(root: Path) -> list[dict]:
     """One flow card per build target (a source issue, an authored spec, or a
-    PR), with the drafted spec collapsed into its source issue."""
+    PR), with the drafted spec collapsed into its source issue and a Stead PR
+    collapsed onto the spec it delivered."""
     records = _build_records(root)
     objs = list(objects.iter_objects(root, "contribution"))
     drafts = {str(meta["drafted_from"]): (meta, body)
@@ -187,6 +188,10 @@ def _pipeline_contribs(root: Path) -> list[dict]:
     out = []
     for path, meta, body in objs:
         if meta.get("drafted_from"):
+            continue
+        # A PR that collapses onto a spec (via its build record's pr_url) is
+        # already represented by that spec's card; don't show it twice.
+        if str(meta.get("kind") or "") == "pr" and _spec_for_pr(meta, records):
             continue
         summary = _summary(root, "contribution", path, meta)
         summary.update(_flow_for(root, meta, body, drafts, records))
