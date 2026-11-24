@@ -22,6 +22,14 @@ only when the cockpit does not offer the operation (for example `stead doctor`,
 `stead metrics`, `stead factory merge`, `stead build --publish --wait`) or when
 a script or a scheduled job needs it.
 
+**CLI ↔ GUI parity — always.** Every feature, flag, and behavior ships in both
+the cockpit and the CLI in the same change. When you add or change something,
+implement it on both sides: a cockpit control has a matching CLI flag/command,
+and a CLI capability has a cockpit control. Do not leave one side behind (for
+example a cockpit action that auto-resolves a value while its CLI command still
+requires the flag). Both sides share the same handlers and helpers — never
+duplicate logic that should resolve identically.
+
 ## What this system is
 
 A local **context system** plus **factories**, covering both your

@@ -413,6 +413,19 @@ def mark_commented(root: Path, contribution_ref: str) -> None:
         _patch(root, "document", str(best[1].get("id") or ""), {"commented": "true"})
 
 
+def contribution_pr_url(root: Path, contribution_ref: str) -> str:
+    """The PR URL on the newest build record for a contribution, or ""."""
+    best = None
+    for path, meta, _body in objects.iter_objects(root, "document"):
+        if RECORD_TAG not in {str(t).lower() for t in (meta.get("tags") or [])}:
+            continue
+        if str(meta.get("contribution") or "") != contribution_ref:
+            continue
+        if best is None or str(meta.get("updated") or "") >= str(best.get("updated") or ""):
+            best = meta
+    return str(best.get("pr_url") or "") if best else ""
+
+
 def _git_out(code: Path, args: list[str], stdin: str | None = None) -> str | None:
     """stdout of one local git command, or None when it fails."""
     try:

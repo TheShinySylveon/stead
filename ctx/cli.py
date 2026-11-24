@@ -921,7 +921,7 @@ def build_parser() -> argparse.ArgumentParser:
     fmerge.add_argument("--contribution", required=True)
     fcomment = fr.add_parser("comment", help="comment on the issue linking the PR. Gated: allow_comment + kind own.")
     fcomment.add_argument("--contribution", required=True)
-    fcomment.add_argument("--pr-url", required=True, help="the pull request URL to link")
+    fcomment.add_argument("--pr-url", help="the pull request URL to link; defaults to the build record's")
     fdef = fr.add_parser("defaults", help="install factory preference. Cannot be merge.")
     fdef.add_argument("--trigger", choices=("on-demand", "watch"))
     fdef.add_argument("--reach", choices=("ghost", "shadow", "draft-pr", "pr"))
@@ -1419,8 +1419,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "factory" and args.sub == "comment":
         from ctx.comment import CommentError, comment
+        from ctx import writeback
+        pr_url = args.pr_url or writeback.contribution_pr_url(root, args.contribution)
+        if not pr_url:
+            raise SystemExit("no pull request URL to link; publish first or pass --pr-url")
         try:
-            result = comment(root, args.contribution, args.pr_url)
+            result = comment(root, args.contribution, pr_url)
         except CommentError as exc:
             raise SystemExit(str(exc)) from exc
         verb = "updated" if result.get("updated") else "created"
