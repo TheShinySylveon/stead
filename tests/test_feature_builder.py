@@ -124,6 +124,29 @@ class TestSpecParsing(unittest.TestCase):
         self.assertIn("large-spec", factory.spec_flags("word " * 30, criteria))
         self.assertIn("large-spec", factory.spec_flags("word " * 401, [(False, "one")]))
 
+    def test_flags_fabricated_value_criterion(self) -> None:
+        desc = "word " * 30
+        for bad in (
+            "asserting it returns a non-zero float",
+            "prints the score",
+            "returns an accuracy value",
+            "the baseline must be a number greater than zero",
+            "reports a percentage",
+            "returns a value",
+        ):
+            flags = factory.spec_flags(desc, [(False, bad)])
+            self.assertIn("fabricated-value", flags, bad)
+
+    def test_flags_do_not_fire_on_real_behavior(self) -> None:
+        desc = "word " * 30
+        for good in (
+            "the command prints the matched records",
+            "returns the number of items in the list",
+            "the exit code is non-zero on a missing file",
+        ):
+            flags = factory.spec_flags(desc, [(False, good)])
+            self.assertNotIn("fabricated-value", flags, good)
+
 
 # --- assembly -------------------------------------------------------------------
 

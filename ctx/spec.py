@@ -51,6 +51,12 @@ def readiness_problems(body: str) -> list[str]:
         if words > factory._MAX_DESCRIPTION_WORDS:
             problems.append(f"the description is {words} words; a build accepts at most "
                             f"{factory._MAX_DESCRIPTION_WORDS}")
+    if "fabricated-value" in flags:
+        problems.append(
+            "an acceptance criterion asks for a value a hardcoded number could "
+            "satisfy (a score, accuracy, baseline, \"a non-zero float\", "
+            "\"<value>\"). Rewrite it as a concrete, testable behavior — never a "
+            "measurement the build would invent.")
     return problems
 
 
@@ -158,11 +164,13 @@ def draft_prompt(title: str, body: str, tree: str = "") -> str:
         "criteria, each on a `- [ ]` line and each verifiable by a test or a "
         "specific before/after behavior. Aim for 1-3 criteria; 8 is the hard "
         "maximum. Never write a criterion like \"improve correctness\" or "
-        "\"score Set B\" — name the exact behavior or test that proves the "
+        "\"score the result\" — name the exact behavior or test that proves the "
         "change works, so a build can finish unambiguously. Never write a "
-        "criterion a hardcoded value can satisfy (like \"prints `Set B score: "
-        "<value>`\" — a fake number passes that): require a real, measured, or "
-        "test-asserted behavior.\n"
+        "criterion a hardcoded value can satisfy (like \"prints a score\" or "
+        "\"returns a non-zero float\" — a fake number passes that): require a "
+        "real, measured, or test-asserted behavior. A measurement the build "
+        "cannot actually compute is not a criterion; describe the behavior that "
+        "would make it measurable instead.\n"
         "3. `## Plan` — a short code plan naming the real files to change. Do "
         "not plan to edit CI config (`.github/**`), existing tests, or the "
         "checks definition: those paths are protected and a build that touches "

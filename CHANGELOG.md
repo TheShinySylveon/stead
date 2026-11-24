@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Fabricated-value acceptance criteria are refused deterministically.** A spec
+  whose acceptance criterion a hardcoded number could satisfy (a score, an
+  accuracy, a "non-zero float", "prints a score") is now flagged
+  `fabricated-value` at build/approve time, so the model cannot invent a
+  measurement instead of implementing a testable behavior. The check is
+  shape-based and repo-agnostic, not tied to any benchmark. The spec-draft and
+  feature-builder prompts also say so generically.
 - **Addressing a review works on models without structured output.** The address
   loop now retries once without `response_format` when a server rejects it with
   a 400 naming `response_format` (the same fallback the build loop already had),
