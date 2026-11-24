@@ -1852,6 +1852,52 @@ class ReadAndEditTest(BuildFixture):
             agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
         self.assertIn("edit before a plan", str(caught.exception))
 
+    def test_repeated_failed_edits_require_a_fresh_read(self) -> None:
+        # Three failed edits on one file (stale `old`) block a fourth edit
+        # until the model re-reads the file, so it stops churning. The fixture
+        # already tracks app.py with `print('hi')`.
+        prompts: list[str] = []
+        queue = [
+            {"action": "plan", "summary": "Change it."},
+            # Three edits with `old` text that does not exist.
+            {"action": "edit", "path": "app.py", "old": "nope", "new": "x"},
+            {"action": "edit", "path": "app.py", "old": "nope", "new": "x"},
+            {"action": "edit", "path": "app.py", "old": "nope", "new": "x"},
+            # The fourth edit is refused until a read happens.
+            {"action": "edit", "path": "app.py", "old": "nope", "new": "x"},
+            {"action": "read", "path": "app.py"},
+            # After the read, the edit is allowed again.
+            {"action": "edit", "path": "app.py", "old": "print('hi')", "new": "print('bye')"},
+            {"action": "finish", "summary": "Done."},
+        ]
+
+        def responder(prompt: str) -> str:
+            prompts.append(prompt)
+            return json.dumps(queue.pop(0))
+
+        result = agent.build(self.root, "contribution-me-app-issue-42", responder=responder)
+        self.assertTrue(result["ok"])
+        # The fourth edit was refused with the re-read instruction.
+        self.assertTrue(any("Read app.py again" in p for p in prompts))
+        self.assertIn("print('bye')",
+                      self._branch_file("stead/42-add-a-name-flag", "app.py"))
+
+    def test_check_failure_summary_names_the_failing_test_and_error(self) -> None:
+        output = (".....\n"
+                  "======================================================================\n"
+                  "ERROR: test_thing (test_mod.Test.test_thing)\n"
+                  "----------------------------------------------------------------------\n"
+                  "Traceback (most recent call last):\n"
+                  "  File \"test_mod.py\", line 3, in test_thing\n"
+                  "    raise SystemExit(\"repo not found: 'repo-own'\")\n"
+                  "SystemExit: repo not found: 'repo-own'\n"
+                  "\n"
+                  "Ran 5 tests in 0.1s\n"
+                  "FAILED (errors=1)\n")
+        summary = agent._check_summary(output)
+        self.assertIn("test_thing", summary)
+        self.assertIn("repo not found", summary)
+
     def test_edit_of_an_existing_test_is_refused_like_write(self) -> None:
         (self.code / "tests").mkdir()
         (self.code / "tests/test_app.py").write_text("assert True\n", encoding="utf-8")

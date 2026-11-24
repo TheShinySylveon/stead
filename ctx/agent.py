@@ -62,6 +62,10 @@ _REPEAT_WARN_AT = 3
 # A model re-editing the same file this many times gets a reminder to finish or
 # move on.
 _EDIT_WARN_AT = 5
+# A model whose edit keeps failing ("old was not found") this many times on the
+# same file is editing against a stale view. Refuse further edits on that file
+# until it reads it fresh, so it stops churning on dead `old` snippets.
+_EDIT_FAIL_AT = 3
 
 # Structured output for the model call: pin the reply to one action object.
 # JSON-schema form (not `json_object`): LM Studio enforces `json_schema`/`text`,
@@ -362,6 +366,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         search_warned: set[str] = set()
         edit_counts: dict[str, int] = {}
         edit_warned: set[str] = set()
+        edit_fails: dict[str, int] = {}
+        fresh_reads: set[str] = set()
         checks_mode = "none" if ghost or not checks else "host"
         for _step in range(max_steps):
             _remain_running(root, deadline)
@@ -435,6 +441,10 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 actions.append({"action": "read", "path": rel})
                 transcript.append(_read_view(rel, text, action.get("start"), action.get("end")))
                 read_counts[rel] = read_counts.get(rel, 0) + 1
+                # A read refreshes the model's view, so its next edit's `old`
+                # is no longer stale.
+                fresh_reads.add(rel)
+                edit_fails[rel] = 0
                 if read_counts[rel] >= _REPEAT_WARN_AT and rel not in read_warned:
                     transcript.append(
                         f"Note: you have read {rel} {read_counts[rel]} times already. "
@@ -519,12 +529,24 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     if _ignored(target, code) or not target.is_file():
                         transcript.append(f"edit: no file at {rel}. Use write to create a new file.")
                         continue
+                    if edit_fails.get(rel, 0) >= _EDIT_FAIL_AT and rel not in fresh_reads:
+                        transcript.append(
+                            f"Your last {_EDIT_FAIL_AT} edits on {rel} failed because "
+                            f"the `old` text did not match. Read {rel} again and copy "
+                            "the current text exactly before the next edit. Do not "
+                            "edit it again until you have re-read it.")
+                        continue
                     current = target.read_text(encoding="utf-8", errors="replace")
                     try:
                         text, note = _apply_edit(current, action.get("old"), action.get("new"))
                     except ValueError as exc:
+                        edit_fails[rel] = edit_fails.get(rel, 0) + 1
+                        fresh_reads.discard(rel)
                         transcript.append(f"edit {rel}: {exc}")
                         continue
+                if kind == "edit":
+                    edit_fails[rel] = 0
+                    fresh_reads.discard(rel)
                 data = text.encode("utf-8")
                 if len(data) > MAX_FILE_BYTES:
                     transcript.append(f"{kind}: {rel} would be over {MAX_FILE_BYTES} bytes")
@@ -610,8 +632,11 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 ok, output, checks_mode = _run_checks(code, checks, repo_meta, deadline)
                 progress_log("checks " + ("passed" if ok else "failed"))
                 actions.append({"action": "check", "ok": ok})
-                transcript.append(("checks passed" if ok else "checks failed") + ":\n" +
-                                  (output[-4000:] or "(no output)"))
+                if ok:
+                    transcript.append("checks passed")
+                else:
+                    transcript.append("checks failed:\n" + _check_summary(output) +
+                                      "\n" + (output[-2000:] or "(no output)"))
                 continue
             if kind == "propose":
                 if not plan:
@@ -720,12 +745,14 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         failures += 1
                         if failures > repair_rounds:
                             raise BuildError("checks kept failing after repair attempts:\n" +
-                                             (output[-4000:] or "(no output)"),
+                                             _check_summary(output) + "\n" +
+                                             (output[-2000:] or "(no output)"),
                                              reason="checks")
                         actions.append({"action": "finish", "checks": "fail"})
                         transcript.append(
                             "checks failed. Read the failure, fix it, and finish again:\n" +
-                            (output[-4000:] or "(no output)"))
+                            _check_summary(output) + "\n" +
+                            (output[-2000:] or "(no output)"))
                         continue
                 commit = ""
                 changed_actual: list[str] = []
@@ -1331,6 +1358,8 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
         files: set[str] = set()
         edited = False
         premature = 0
+        edit_fails: dict[str, int] = {}
+        fresh_reads: set[str] = set()
         for _step in range(max_steps):
             _remain_running(root, deadline)
             full_prompt = prompt + "\n\n" + "\n\n".join(_fit_budget(prompt, transcript))
@@ -1362,6 +1391,8 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
                     continue
                 text = target.read_text(encoding="utf-8", errors="replace")
                 transcript.append(_read_view(rel, text, action.get("start"), action.get("end")))
+                fresh_reads.add(rel)
+                edit_fails[rel] = 0
                 continue
             if kind == "search":
                 query = str(action.get("query") or "").strip()
@@ -1395,12 +1426,24 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
                     if _ignored(target, code) or not target.is_file():
                         transcript.append(f"edit: no file at {rel}. Use write to create a new file.")
                         continue
+                    if edit_fails.get(rel, 0) >= _EDIT_FAIL_AT and rel not in fresh_reads:
+                        transcript.append(
+                            f"Your last {_EDIT_FAIL_AT} edits on {rel} failed because "
+                            f"the `old` text did not match. Read {rel} again and copy "
+                            "the current text exactly before the next edit. Do not "
+                            "edit it again until you have re-read it.")
+                        continue
                     current = target.read_text(encoding="utf-8", errors="replace")
                     try:
                         text, note = _apply_edit(current, action.get("old"), action.get("new"))
                     except ValueError as exc:
+                        edit_fails[rel] = edit_fails.get(rel, 0) + 1
+                        fresh_reads.discard(rel)
                         transcript.append(f"edit {rel}: {exc}")
                         continue
+                if kind == "edit":
+                    edit_fails[rel] = 0
+                    fresh_reads.discard(rel)
                 data = text.encode("utf-8")
                 if len(data) > MAX_FILE_BYTES:
                     transcript.append(f"{kind}: {rel} would be over {MAX_FILE_BYTES} bytes")
@@ -1420,8 +1463,12 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
                 if not checks:
                     transcript.append("check: this repo has no checks command")
                     continue
-                ok, _output, _mode = _run_checks(code, checks, repo_meta, deadline)
-                transcript.append("checks passed" if ok else "checks FAILED")
+                ok, output, _mode = _run_checks(code, checks, repo_meta, deadline)
+                if ok:
+                    transcript.append("checks passed")
+                else:
+                    transcript.append("checks failed:\n" + _check_summary(output) +
+                                      "\n" + (output[-2000:] or "(no output)"))
                 progress_log("checks " + ("passed" if ok else "FAILED"))
                 continue
             if kind == "finish":
@@ -1960,6 +2007,30 @@ def _read_view(rel: str, text: str, start=None, end=None) -> str:
     elif stop < total:
         footer = f"[the file continues to line {total}.]"
     return f"read {rel} lines {first}-{stop} of {total}:\n{body}{footer}".rstrip("\n")
+
+
+_FAIL_HEAD = re.compile(r"^(?:ERROR|FAIL):\s*(\S+)", re.MULTILINE)
+_FAIL_TAIL = re.compile(r"^(\w+(?:Error|Exception|Interrupt|Exit|Failure)):\s*(.+)$",
+                        re.MULTILINE)
+
+
+def _check_summary(output: str) -> str:
+    """The signal from a failed check run, in a form the model can act on.
+
+    A full `unittest` run is mostly `.` characters with the real failure buried
+    at the end. Extract the failing test names and the last exception line, so
+    the model fixes the right thing instead of re-reading the dot-wall.
+    """
+    names = sorted({m.group(1).split("(")[0] for m in _FAIL_HEAD.finditer(output)})
+    tails = [f"{m.group(1)}: {m.group(2)}" for m in _FAIL_TAIL.finditer(output)]
+    lines: list[str] = []
+    if names:
+        lines.append("failing: " + ", ".join(names[:8]))
+    if tails:
+        lines.append("error: " + tails[-1][:500])
+    if not lines:
+        return "(no traceback; see the raw output below)"
+    return "\n".join(lines)
 
 
 def _apply_edit(current: str, old, new) -> tuple[str, str]:
