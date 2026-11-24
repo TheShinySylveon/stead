@@ -258,6 +258,13 @@ portable. The files are the source; the index is a cache.
 8. Cross-repo context graph queries and related-work suggestions.
 9. Multi-writer server storage (Postgres) with the same file truth.
 10. Policy: per-repo and per-person read scopes on a shared server.
+11. Stronger code isolation for checks — a `checks_isolation: vm` seam so
+    native code (C/C++/Rust/Go) can be built, mocked, and verified in a
+    near-VM boundary instead of the docker ceiling. Locally this would back
+    onto gVisor (`runsc`); a remote sandbox (e.g. Boat.dev) is a possible
+    optional, opt-in backend. **Deferred, not near-term** — the docker + scrubbed
+    environment + the repo's own linter/toolchain (`cppcheck`, `clang-tidy`,
+    `cargo test`, `go test`) cover the common case today.
 
 ## Open decisions
 
