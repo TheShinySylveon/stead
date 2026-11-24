@@ -354,6 +354,32 @@ _FABRICATED_VALUE = re.compile(
     re.IGNORECASE,
 )
 
+# A parenthesized enumeration in the description — "(id, repo, kind, ...)" or
+# "(`id`, `repo`, ...)" — reads as a concrete contract (a field list, a schema,
+# the exact terms the change must satisfy). When the description names such a
+# list but no acceptance criterion restates any of the terms, the contract lives
+# only in prose the build does not map to a test, so it is flagged.
+_ENUMERATED_LIST = re.compile(r"\(([^()]*,[^()]*)\)")
+_IDENT_TOKEN = re.compile(r"[A-Za-z_][A-Za-z0-9_.-]*")
+
+
+def _enumerated_terms(text: str) -> list[str]:
+    terms: list[str] = []
+    for group in _ENUMERATED_LIST.findall(text):
+        for part in group.split(","):
+            token = part.strip().strip("`\"'").strip()
+            if _IDENT_TOKEN.fullmatch(token):
+                terms.append(token)
+    return terms
+
+
+def _terms_restated(terms: list[str], criteria_text: str) -> bool:
+    """True when at least one enumerated term reappears in the criteria."""
+    for term in terms:
+        if re.search(r"\b" + re.escape(term) + r"\b", criteria_text, re.IGNORECASE):
+            return True
+    return False
+
 
 def split_spec(body: str) -> tuple[str, list[tuple[bool, str]]]:
     """Split a feature-spec body into (description, acceptance-criteria checklist).
@@ -403,6 +429,10 @@ def spec_flags(description: str, criteria: list[tuple[bool, str]]) -> list[str]:
         if _FABRICATED_VALUE.search(text):
             flags.append("fabricated-value")
             break
+    terms = _enumerated_terms(description)
+    criteria_text = " ".join(text for _done, text in criteria)
+    if len(terms) >= 2 and not _terms_restated(terms, criteria_text):
+        flags.append("vague-criterion")
     return flags
 
 

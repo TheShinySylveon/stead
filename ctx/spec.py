@@ -57,6 +57,12 @@ def readiness_problems(body: str) -> list[str]:
             "satisfy (a score, accuracy, baseline, \"a non-zero float\", "
             "\"<value>\"). Rewrite it as a concrete, testable behavior — never a "
             "measurement the build would invent.")
+    if "vague-criterion" in flags:
+        problems.append(
+            "the description names a concrete contract (an enumerated list such "
+            "as \"(id, repo, kind)\") that no acceptance criterion restates. "
+            "Fold those terms into a criterion, so a test asserts them without "
+            "reading the description.")
     return problems
 
 
@@ -163,7 +169,13 @@ def draft_prompt(title: str, body: str, tree: str = "") -> str:
         "2. `## Acceptance criteria` — a checklist of concrete, observable "
         "criteria, each on a `- [ ]` line and each verifiable by a test or a "
         "specific before/after behavior. Aim for 1-3 criteria; 8 is the hard "
-        "maximum. Never write a criterion like \"improve correctness\" or "
+        "maximum. Each criterion must be self-contained: restate the full "
+        "observable contract in its own text (exact field names, exact shape, "
+        "exact before/after behavior), so a test can assert the criterion "
+        "without reading the description. The description is context; the "
+        "criteria are the contract. If the description names a list of fields "
+        "(like \"(id, repo, kind)\"), put that list in a criterion, not only in "
+        "the description. Never write a criterion like \"improve correctness\" or "
         "\"score the result\" — name the exact behavior or test that proves the "
         "change works, so a build can finish unambiguously. Never write a "
         "criterion a hardcoded value can satisfy (like \"prints a score\" or "

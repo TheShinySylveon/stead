@@ -147,6 +147,21 @@ class TestSpecParsing(unittest.TestCase):
             flags = factory.spec_flags(desc, [(False, good)])
             self.assertNotIn("fabricated-value", flags, good)
 
+    def test_flags_vague_criterion_when_field_list_only_in_description(self) -> None:
+        # The description enumerates the contract; no criterion restates it.
+        desc = ("Add a --json flag that emits one object per item "
+                "(id, repo, kind, number, role, state, ci, title).")
+        criteria = [(False, "`list --json` emits one object per contribution"),
+                    (False, "the default table output is unchanged")]
+        self.assertIn("vague-criterion", factory.spec_flags(desc, criteria))
+
+    def test_flags_do_not_fire_when_criteria_restate_the_terms(self) -> None:
+        desc = ("Add a --json flag that emits one object per item "
+                "(id, repo, kind).")
+        criteria = [(False, "`list --json` emits id, repo, and kind per item"),
+                    (False, "the default table output is unchanged")]
+        self.assertNotIn("vague-criterion", factory.spec_flags(desc, criteria))
+
 
 # --- assembly -------------------------------------------------------------------
 
