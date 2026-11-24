@@ -41,9 +41,11 @@ def _line(pattern: str) -> re.Pattern:
 
 _UNIVERSAL: list[_Rule] = [
     # A run of three or more consecutive full-line comments that look like
-    # code (they end in a punctuation or assignment) is dead code left behind.
+    # code — they carry an assignment (`=`), a statement terminator (`;`), or
+    # a block brace — is dead code left behind. Deliberately narrow: a prose
+    # doc-comment is full of `:`, `,`, `(`, `)`, which must NOT read as code.
     ("commented-out-code",
-     _line(r"(?:^\s*(?:#|//|;).*[=;:{}\[\]()][^\n]*$\n?){3,}"),
+     _line(r"(?:^\s*(?:#|//|;).*[=;{}][^\n]*$\n?){3,}"),
      "a block of commented-out code; delete it instead of leaving it", True),
     # More than five TODO/FIXME/HACK markers in one file is debt accumulation.
     ("todo-accumulation",
@@ -65,8 +67,9 @@ _LANG: dict[str, list[_Rule]] = {
          "a bare `except:` swallows every error; catch the specific exception",
          True),
         ("except-pass",
-         _line(r"^\s*except[^:]*:\s*\n\s*pass\b"),
-         "an `except` that silently passes; handle it or narrow the catch", True),
+         _line(r"^\s*except\s+(?:Exception|BaseException)\b[^:]*:\s*\n\s*pass\b"),
+         "an `except Exception` that silently passes; catch the specific "
+         "exception", True),
         ("percent-format",
          _line(r'"[^"\n]*%[sd]\b[^"\n]*"\s*%'),
          "`%`-style string formatting; use an f-string", True),
