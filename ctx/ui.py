@@ -1503,6 +1503,13 @@ def merge_contribution(root: Path, contribution: str) -> dict:
 
 def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
     _refuse_shared_remote(root)
+    if not pr_url:
+        # The PR URL is already on the build record after publish; use it
+        # instead of asking the person to paste it.
+        record = _build_records(root).get(contribution)
+        pr_url = str(record.get("pr_url") or "") if record else ""
+    if not pr_url:
+        raise UiError("no pull request URL to link; publish first")
     from ctx.comment import CommentError, comment
     try:
         result = comment(root, contribution, pr_url)
