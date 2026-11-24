@@ -140,6 +140,40 @@ class BuildTest(BuildFixture):
                         responder=responder, merge=True)
         self.assertIn("--merge needs --publish", str(caught.exception))
 
+    def test_new_file_with_hard_slop_finding_is_refused(self) -> None:
+        # A NEW file with a bare `except:` is a hard anti-slop finding; the
+        # gate refuses it (after the repair rounds, mirroring fail-before).
+        responder = self._responder([
+            {"action": "plan", "summary": "Add a helper."},
+            {"action": "write", "path": "helpers.py",
+             "content": "def run():\n    try:\n        x = 1\n    except:\n        pass\n"},
+            {"action": "finish", "summary": "Done."},
+            {"action": "finish", "summary": "Done."},
+            {"action": "finish", "summary": "Done."},
+        ])
+        with self.assertRaises(agent.BuildError) as caught:
+            agent.build(self.root, "contribution-me-app-issue-42",
+                        responder=responder, repair_rounds=1)
+        self.assertIn("anti-slop", str(caught.exception))
+
+    def test_edit_of_existing_file_is_not_gated_by_slop(self) -> None:
+        # Editing a tracked file that already has a bare except is NOT refused
+        # by the slop gate (only new files are); the repo's linter owns edits.
+        self._set_repo(require_tests="false")
+        (self.code / "app.py").write_text(
+            "def run():\n    try:\n        x = 1\n    except:\n        pass\n",
+            encoding="utf-8")
+        _git(self.code, "add", "-A")
+        _git(self.code, "commit", "-m", "pre-existing slop")
+        responder = self._responder([
+            {"action": "plan", "summary": "Tweak app.py."},
+            {"action": "write", "path": "app.py", "content": "print('ok')\n"},
+            {"action": "finish", "summary": "Done."},
+        ])
+        result = agent.build(self.root, "contribution-me-app-issue-42",
+                             responder=responder)
+        self.assertTrue(result["ok"])
+
     def test_publish_then_merge_when_reach_allows(self) -> None:
         import unittest.mock as mock
         from ctx import merge as merge_mod, publish as publish_mod

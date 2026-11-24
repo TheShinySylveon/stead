@@ -69,16 +69,18 @@ def cmd_init(root: Path) -> int:
     return 0
 
 
-def cmd_metrics_mark(root: Path, record: str, correct: bool) -> int:
+def cmd_metrics_mark(root: Path, record: str, correct: bool, rule: str = "") -> int:
     """`stead metrics mark`: record the hand-checked correctness verdict on one
     build record. 'Committed' is mechanical; 'correct' is the rubric check."""
     from ctx.writeback import WritebackError, mark_correct
     try:
-        marked = mark_correct(root, record, correct)
+        marked = mark_correct(root, record, correct, rule=rule)
     except WritebackError as exc:
         raise SystemExit(str(exc)) from exc
     print(f"recorded {marked['id']}: correct={marked['correct']} "
           "(hand-checked rubric verdict; local only, nothing posted)")
+    if marked.get("rule_note"):
+        print(f"proposed an anti-slop rule to inbox: {marked['rule_note']}")
     return 0
 
 
@@ -659,6 +661,9 @@ def build_parser() -> argparse.ArgumentParser:
     metmark.add_argument("record", help="build record id")
     metmark.add_argument("--correct", required=True, choices=("true", "false"),
                          help="the correctness-rubric verdict (criteria actually met)")
+    metmark.add_argument("--rule", default="",
+                         help="optional: the deterministic check that would have caught "
+                              "the failure (proposed to inbox as an anti-slop rule)")
 
     task = sub.add_parser("task", help="manage the task queue").add_subparsers(dest="sub", required=True)
     ta = task.add_parser("add", help="add a task (writes markdown + index)")
@@ -1015,7 +1020,8 @@ def main(argv: list[str] | None = None) -> int:
         return 1 if report["errors"] else 0
     if args.command == "metrics":
         if getattr(args, "metrics_sub", None) == "mark":
-            return cmd_metrics_mark(root, args.record, args.correct == "true")
+            return cmd_metrics_mark(root, args.record, args.correct == "true",
+                                    rule=getattr(args, "rule", ""))
         from ctx import metrics
         try:
             report = metrics.collect(root, repo=args.repo, since=args.since)

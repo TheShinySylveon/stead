@@ -190,6 +190,7 @@ daily watched-build budget (`0` means no cap) and the per-build wall clock.
 | `trust_checks: host` | Accept host checks for merge (explicit) |
 | `allow_test_edits: true` | Let the agent write test paths |
 | `require_tests: false` | Allow a code build with criteria to finish without adding a test (default on) |
+| `slop_gate: false` | Turn off the anti-slop gate on new files (default on) |
 | `allow_ci_edits: true` | Let the agent write `.github/` and CI config |
 | `protected_paths:` | Extra paths the agent may not write (comma list) |
 | `merge_without_required_checks: true` | Merge even when the default branch requires nothing |

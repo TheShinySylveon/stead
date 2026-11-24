@@ -127,6 +127,8 @@ def list_notes(root: Path) -> tuple[str, list[dict]]:
             kind = "decision"
         elif name.startswith("propose-glossary-"):
             kind = "glossary"
+        elif name.startswith("propose-rule-"):
+            kind = "rule"
         else:
             kind = "note"
         try:

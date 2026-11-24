@@ -2,6 +2,23 @@
 
 ## Unreleased
 
+- **Anti-slop gate (language-agnostic, deterministic).** Model-written code is
+  now checked for low-evidence patterns before commit: a new file the model
+  authored whole is refused if it carries a *hard* finding (bare `except:`,
+  `gets(`, `%`-format in Python 3, commented-out code blocks, dead branches),
+  while *advisory* findings (debug `print`/`console.log`/`printf`, `any` types,
+  TODO accumulation) are fed back as a nudge. Rules are shape-based and
+  registry-keyed by extension (`.py`, `.c`, `.h`, `.js`, `.ts`, `.go`, `.rs`),
+  not a single language; the repo's own linter via `checks:` stays the
+  authoritative gate. A repo can opt out with `slop_gate: false`.
+- **Mistake → rule loop.** `stead metrics mark ID --correct false --rule "..."` (and
+  the cockpit Incorrect button) now proposes the described check to the inbox as
+  a candidate anti-slop rule, so a hand-checked failure becomes a future
+  automated check instead of repeating.
+- **Visual-first plans.** The spec-draft and feature-builder prompts now ask for
+  a compact file-tree / `diff` / call-tree / Mermaid sketch over prose when the
+  plan spans files or data flow (the "show-me" idea), so a human reviews a shape
+  instead of a wall of text.
 - **Fabricated-value acceptance criteria are refused deterministically.** A spec
   whose acceptance criterion a hardcoded number could satisfy (a score, an
   accuracy, a "non-zero float", "prints a score") is now flagged

@@ -518,13 +518,17 @@ def human_edits(root: Path, meta: dict, head: str) -> str:
     return "false" if clean else "true"
 
 
-def mark_correct(root: Path, record_ref: str, correct: bool) -> dict:
+def mark_correct(root: Path, record_ref: str, correct: bool, rule: str = "") -> dict:
     """Record the hand-check verdict for one build record.
 
     ``committed`` is mechanical (a change was produced); ``correct`` is the
     correctness-rubric verdict — every acceptance criterion actually satisfied,
     fail-before/pass-after holds, CI green. It is set by a person, never by the
     build, so an unmarked build cannot masquerade as a success.
+
+    When ``rule`` is given (a description of the deterministic check that would
+    have caught the failure), it is proposed to the inbox as a candidate
+    anti-slop rule for a person to triage — the "mistake becomes a check" loop.
     """
     found = objects.find(root, "document", record_ref)
     if found is None:
@@ -535,7 +539,14 @@ def mark_correct(root: Path, record_ref: str, correct: bool) -> dict:
         raise WritebackError(f"{record_ref} is not a build record")
     verdict = "true" if correct else "false"
     _patch(root, "document", meta.get("id") or path.stem, {"correct": verdict})
-    return {"id": meta.get("id") or path.stem, "correct": verdict}
+    result = {"id": meta.get("id") or path.stem, "correct": verdict}
+    if rule and rule.strip():
+        note = propose_note(
+            root, "rule",
+            f"Anti-slop rule from {meta.get('id') or path.stem}",
+            rule.strip(), source=meta.get("id") or path.stem)
+        result["rule_note"] = note["path"]
+    return result
 
 
 def reconcile_records(root: Path, view_pr) -> dict:
@@ -746,8 +757,8 @@ def propose_note(root: Path, kind: str, title: str, text: str,
                  source: str = "") -> dict:
     """An interpretive proposal goes to the inbox, not into context/."""
     kind = (kind or "decision").strip().lower()
-    if kind not in {"decision", "glossary"}:
-        raise WritebackError("propose kind must be decision or glossary")
+    if kind not in {"decision", "glossary", "rule"}:
+        raise WritebackError("propose kind must be decision, glossary, or rule")
     title = (title or "").strip()
     text = (text or "").strip()
     if not title or not text:

@@ -175,7 +175,10 @@ def draft_prompt(title: str, body: str, tree: str = "") -> str:
         "not plan to edit CI config (`.github/**`), existing tests, or the "
         "checks definition: those paths are protected and a build that touches "
         "them fails. A brand-new test file is fine and expected when a "
-        "criterion needs one.\n"
+        "criterion needs one. When the change spans files or data flow, show a "
+        "compact file-tree or `diff`-shaped sketch (added/removed lines, a "
+        "call tree, or a short Mermaid diagram) instead of prose — a small "
+        "visual is faster to review than a wall of text.\n"
         "Do not write any code. Reply with only the spec Markdown.\n"
         + tree_part +
         f"\n# Issue: {title}\n\n{body}\n"
