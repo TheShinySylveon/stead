@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Addressing a review works on models without structured output.** The address
+  loop now retries once without `response_format` when a server rejects it with
+  a 400 naming `response_format` (the same fallback the build loop already had),
+  so a strong `address` profile that lacks `json_schema` support no longer fails
+  outright.
 - **Addressing a review resolves the thread.** After `stead address` pushes a
   fix, it now resolves each review thread it addressed (via the GraphQL
   `resolveReviewThread` mutation, with a REST reply as fallback), so review

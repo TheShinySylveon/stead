@@ -621,6 +621,56 @@ class BuildTest(BuildFixture):
         self.assertTrue(result["ok"])
         self.assertEqual(result["files"], ["app.py"])
 
+    def test_address_review_retries_without_response_format(self) -> None:
+        from ctx import models, objects
+        from ctx import spec as specmod
+        models.set_model(self.root, provider="ollama", name="llama3.2")
+        self._set_repo(url="https://github.com/me/app")
+        _p, spec, body = objects.find(self.root, "contribution",
+                                      "contribution-me-app-issue-42")
+        doc = self.root / "context/documents" / "build-address.md"
+        doc.parent.mkdir(parents=True, exist_ok=True)
+        doc.write_text(frontmatter.dumps({
+            "id": "document-build-address", "type": "document",
+            "title": "Build: Add a name flag (published)",
+            "created": "2026-11-23", "updated": "2026-11-23",
+            "status": "active", "tags": ["build-record"],
+            "outcome": "published",
+            "contribution": "contribution-me-app-issue-42",
+            "spec_sha": specmod.body_hash(body),
+            "pr_url": "https://github.com/me/app/pull/7",
+        }, "# Build\n"), encoding="utf-8")
+        branch = agent.branch_for(spec)
+        _git(self.code, "branch", branch)
+
+        formats: list = []
+        plain_calls = []
+
+        def fake_complete(_prompt, _settings, **kwargs):
+            formats.append(kwargs.get("response_format"))
+            if kwargs.get("response_format") is not None:
+                # A server without structured output rejects it by name.
+                raise models.ModelError(
+                    "400 response_format type is unavailable now")
+            plain_calls.append(_prompt)
+            n = len(plain_calls)
+            if n == 1:
+                return json.dumps({"action": "read", "path": "app.py"})
+            if n == 2:
+                return json.dumps({"action": "write", "path": "app.py",
+                                   "content": "print('bye')\n"})
+            return json.dumps({"action": "finish", "summary": "Done."})
+
+        with mock.patch("ctx.models.complete", side_effect=fake_complete):
+            result = agent.address_review(
+                self.root, "contribution-me-app-issue-42", push=False,
+                comments=[{"path": "app.py", "line": 1,
+                           "body": "Use a real greeting"}])
+        self.assertTrue(result["ok"])
+        # The first attempt carried the schema; the retry dropped it.
+        self.assertIsNotNone(formats[0])
+        self.assertIsNone(formats[1])
+
     def test_checks_get_a_scrubbed_environment(self) -> None:
         import os
         import unittest.mock as mock

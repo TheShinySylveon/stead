@@ -1266,9 +1266,24 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
             settings = models.resolve(root, "address")
 
             def responder(prompt):
-                return models.complete(prompt, settings,
-                                       timeout=settings["call_timeout"],
-                                       response_format=_ADDRESS_RESPONSE_FORMAT)
+                if responder._plain:
+                    return models.complete(prompt, settings,
+                                           timeout=settings["call_timeout"])
+                try:
+                    return models.complete(prompt, settings,
+                                           timeout=settings["call_timeout"],
+                                           response_format=_ADDRESS_RESPONSE_FORMAT)
+                except models.ModelError as exc:
+                    # A server that does not support structured output rejects
+                    # it with a 400 naming `response_format`. Retry once without
+                    # it and remember to skip it for the rest of the run.
+                    if "response_format" in str(exc):
+                        responder._plain = True
+                        return models.complete(prompt, settings,
+                                               timeout=settings["call_timeout"])
+                    raise
+
+            responder._plain = False
 
         tree = _tree(code)
         prompt = _address_prompt(comments, tree)
