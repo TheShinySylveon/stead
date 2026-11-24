@@ -879,6 +879,11 @@ function renderRepos() {
                   <select data-set-repo data-id="${esc(r.id)}" data-field="trigger" aria-label="Trigger for ${esc(r.title)}">${options(choices.factory_trigger, r.factory_trigger || "on-demand")}</select>
                   <select data-set-repo data-id="${esc(r.id)}" data-field="reach" aria-label="Ceiling for ${esc(r.title)}">${options(choices.factory_reach, r.factory_reach || "shadow")}</select>
                 </div>
+                <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
+                  <span class="meta">Auto-publish PR</span>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="auto_publish" aria-label="Auto-publish for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], r.auto_publish === "true" ? "on" : "off")}</select>
+                  <span class="meta">Build commits to a branch; only auto-publish opens the PR.</span>
+                </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
                   <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="code_path" value="${esc(r.code_path || "")}" placeholder="Local code path for publish" aria-label="Code path for ${esc(r.title)}">
                   <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="default_branch" value="${esc(r.default_branch || "")}" placeholder="Default branch" aria-label="Default branch for ${esc(r.title)}" style="max-width:170px">
@@ -1769,7 +1774,7 @@ document.body.addEventListener("click", async (event) => {
         await api("/api/spec/approve", {method: "POST", body: JSON.stringify({contribution: id})});
         toast("Spec approved");
       } else if (act === "build") {
-        if (!confirm("Build " + title + " with the model? It plans, runs checks, and commits locally.")) return;
+        if (!confirm("Build " + title + " with the model? It plans, runs checks, and commits to a branch. It opens a pull request only if this repo is set to auto-publish — otherwise use Publish.")) return;
         const payload = {contribution: id};
         const detail = actionBtn.closest(".contrib-detail");
         if (detail) {
@@ -1785,8 +1790,13 @@ document.body.addEventListener("click", async (event) => {
         }
         const result = await awaitTask("/api/build", payload, "Build", logFor(actionBtn));
         const where = result && result.branch ? "Built on " + result.branch : "Build finished";
-        state.results[id] = { ok: true, text: where + ". The log is below; publish when you are happy with it." };
-        toast(where);
+        if (result && result.published) {
+          state.results[id] = { ok: true, text: where + ". Pull request opened" + (result.pr_url ? ": " + result.pr_url : ".") };
+          toast("Built and published");
+        } else {
+          state.results[id] = { ok: true, text: where + " (committed). No pull request was opened — use Publish to open one." };
+          toast(where);
+        }
       } else if (act === "publish") {
         if (!confirm("Publish a pull request for this spec? This pushes a branch and opens a PR on GitHub.")) return;
         const published = await api("/api/factory/publish", {method: "POST", body: JSON.stringify({contribution: id, confirm: true})});
