@@ -333,6 +333,27 @@ _MIN_DESCRIPTION_WORDS = 25
 _MAX_DESCRIPTION_WORDS = 400
 _MAX_CRITERIA = 8
 
+# A criterion a hardcoded value can satisfy (a fabricated score, a "non-zero
+# float", "prints Set B score: <value>") is not verifiable: it asks the build
+# to invent a measurement instead of implementing a testable behavior. These
+# patterns flag such a criterion so a human decomposes it first. Deliberately
+# not specific to any repo or benchmark — the shape is the signal.
+_FABRICATED_VALUE = re.compile(
+    # "a non-zero float" / "non-zero score" — a fabricated magnitude.
+    r"\bnon-?zero\s+(?:float|number|value|int(?:eger)?|score|percentage)\b|"
+    # "returns a float/number/value/int" — a bare, uncomputed number.
+    r"\breturns?\s+an?\s+(?:non-?zero\s+)?(?:float|number|value|int(?:eger)?)\b|"
+    # A produce verb near a measurement noun (score/accuracy/baseline/…).
+    r"\b(?:returns?|prints?|reports?|emits?|outputs?|measures?|computes?)\b"
+    r"[^.!?\n]{0,30}\b(?:score|accuracy|baseline|benchmark|correctness|"
+    r"precision|recall|f-?1|rating|percentage)\b|"
+    # A measurement noun near "a number/value greater than zero" (a fabricated bar).
+    r"\b(?:score|accuracy|baseline|benchmark|correctness|precision|recall|"
+    r"f-?1|rating|percentage)\b[^.!?\n]{0,30}\b(?:greater\s+than\s+zero|positive|"
+    r"a\s+(?:number|value|float))\b",
+    re.IGNORECASE,
+)
+
 
 def split_spec(body: str) -> tuple[str, list[tuple[bool, str]]]:
     """Split a feature-spec body into (description, acceptance-criteria checklist).
@@ -378,6 +399,10 @@ def spec_flags(description: str, criteria: list[tuple[bool, str]]) -> list[str]:
         flags.append("vague-spec")
     if len(criteria) > _MAX_CRITERIA or words > _MAX_DESCRIPTION_WORDS:
         flags.append("large-spec")
+    for _done, text in criteria:
+        if _FABRICATED_VALUE.search(text):
+            flags.append("fabricated-value")
+            break
     return flags
 
 
