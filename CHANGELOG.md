@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **Addressing a review resolves the thread.** After `stead address` pushes a
+  fix, it now resolves each review thread it addressed (via the GraphQL
+  `resolveReviewThread` mutation, with a REST reply as fallback), so review
+  comments don't stay open forever. The address-review prompt also now tells
+  the model to update any test or caller that depended on the behavior it
+  changed.
 - **Named model profiles and role bindings.** Save multiple provider
   connections (`stead model add NAME …`) and bind each job to one:
   `build` (the implementation loop), `draft` (spec/plan — often a strong
