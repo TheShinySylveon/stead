@@ -2105,10 +2105,20 @@ document.body.addEventListener("click", async (event) => {
   const mark = event.target.closest("[data-mark]");
   if (mark) {
     try {
+      const incorrect = mark.dataset.correct !== "true";
+      let rule = "";
+      if (incorrect) {
+        rule = prompt(
+          "Optional: what deterministic check would have caught this? " +
+          "(proposed to inbox as an anti-slop rule)",
+          "",
+        ) || "";
+      }
       await api("/api/metrics/mark", {method: "POST", body: JSON.stringify({
         record: mark.dataset.mark, correct: mark.dataset.correct === "true",
+        rule,
       })});
-      toast("Verdict recorded");
+      toast("Verdict recorded" + (rule ? " + rule proposed" : ""));
     } catch (err) { toast(err.message); }
     return;
   }

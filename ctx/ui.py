@@ -1482,10 +1482,10 @@ def metrics_report(root: Path, repo: str = "", since: str = "") -> dict:
         raise UiError(str(exc)) from exc
 
 
-def metrics_mark(root: Path, record: str, correct: bool) -> dict:
+def metrics_mark(root: Path, record: str, correct: bool, rule: str = "") -> dict:
     from ctx.writeback import WritebackError, mark_correct
     try:
-        return {"ok": True, **mark_correct(root, record, correct)}
+        return {"ok": True, **mark_correct(root, record, correct, rule=rule)}
     except WritebackError as exc:
         raise UiError(str(exc)) from exc
 
@@ -2107,7 +2107,8 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                                          not bool(payload.get("no_push")), tasks)
         elif path == "/api/metrics/mark":
             result = metrics_mark(root, payload.get("record") or "",
-                                  str(payload.get("correct")).lower() == "true")
+                                  str(payload.get("correct")).lower() == "true",
+                                  rule=payload.get("rule") or "")
         elif path == "/api/factory/stop":
             result = set_stopped(root, True)
         elif path == "/api/factory/start":

@@ -225,6 +225,20 @@ class MetricsTest(unittest.TestCase):
         with self.assertRaises(writeback.WritebackError):
             writeback.mark_correct(self.root, "document-notes", True)
 
+    def test_mark_correct_proposes_a_rule_to_inbox(self) -> None:
+        rec = writeback.record_delivery(self.root, self._contrib(1), self._result())
+        marked = writeback.mark_correct(
+            self.root, rec["id"], False,
+            rule="reject a hardcoded score returned by a function that never measures")
+        self.assertIn("rule_note", marked)
+        notes = list((self.root / "inbox").glob("propose-rule-*.md"))
+        self.assertEqual(len(notes), 1)
+        self.assertIn("reject a hardcoded score", notes[0].read_text(encoding="utf-8"))
+        # No rule given -> no note.
+        marked2 = writeback.mark_correct(self.root, rec["id"], False)
+        self.assertNotIn("rule_note", marked2)
+        self.assertEqual(len(list((self.root / "inbox").glob("propose-rule-*.md"))), 1)
+
 
 class SourceIssueCloseTest(unittest.TestCase):
     """A merged drafted spec closes the raw issue it came from (own repos)."""

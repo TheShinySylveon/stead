@@ -29,7 +29,7 @@ import time
 from datetime import datetime, timezone
 from pathlib import Path
 
-from ctx import factory, objects, safety
+from ctx import factory, objects, safety, slop
 from ctx.autonomy import (AutonomyError, effective, factory_defaults, permit)
 
 IGNORE_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
@@ -354,6 +354,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         edits = 0
         failures = 0
         no_test = 0
+        slop_hits = 0
         nudged: set[int] = set()
         read_counts: dict[str, int] = {}
         search_counts: dict[str, int] = {}
@@ -543,6 +544,18 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 actions.append({"action": kind, "path": rel})
                 transcript.append(f"edited {rel}: {note}" if kind == "edit"
                                   else f"wrote {rel} ({len(data)} bytes)")
+                # Anti-slop: feed advisory findings back so the model can fix
+                # them itself. Hard findings on a NEW file are enforced at
+                # finish; here we only nudge.
+                findings = slop.slop_flags(rel, text)
+                if findings:
+                    slop_lines = "\n".join(
+                        f"- {f['rule']} ({f['count']}x): {f['message']}"
+                        for f in findings)
+                    transcript.append(
+                        f"Anti-slop on {rel}: these patterns look like leftover "
+                        f"scaffolding or low-evidence code. Fix them before "
+                        f"finishing, unless they are intentional:\n{slop_lines}")
                 edit_counts[rel] = edit_counts.get(rel, 0) + 1
                 if edit_counts[rel] >= _EDIT_WARN_AT and rel not in edit_warned:
                     transcript.append(
@@ -642,6 +655,33 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                             "change and passes with it, using the real file paths shown "
                             "in the repository tree — not an invented path. Then run "
                             "check and finish again. Do not finish yet.")
+                        continue
+                if not ghost and safety.truthy(repo_meta.get("slop_gate", "true")):
+                    # Anti-slop gate: a NEW file the model authored whole must
+                    # not carry a hard finding (bare except, gets(), %-format,
+                    # commented-out code, dead branch). Edited files are judged
+                    # by the repo's own linter via `checks:` instead — only
+                    # what the model created from scratch is in scope here.
+                    hard_hits: list[tuple[str, dict]] = []
+                    for rel, text in files.items():
+                        if rel.casefold() in base_tracked_cf:
+                            continue  # an edit, not a new file
+                        for h in slop.hard_flags(rel, text):
+                            hard_hits.append((rel, h))
+                    if hard_hits:
+                        slop_hits += 1
+                        lines = "\n".join(
+                            f"- {rel} {h['rule']} ({h['count']}x): {h['message']}"
+                            for rel, h in hard_hits)
+                        if slop_hits > repair_rounds:
+                            raise BuildError(
+                                "the new file has anti-slop findings:\n" + lines,
+                                reason="gate")
+                        transcript.append(
+                            "Your new file still has anti-slop findings. These "
+                            "are deterministic patterns that almost never belong "
+                            "in committed code. Fix them (or, if truly intentional, "
+                            "say so in your summary and finish again):\n" + lines)
                         continue
                 if checks and not ghost:
                     # (b) Fail-before: the new test must fail against the base
