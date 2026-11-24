@@ -577,6 +577,50 @@ class BuildTest(BuildFixture):
         self.assertEqual(_git(self.code, "show", f"{branch}:app.py").strip(),
                          "print('bye')")
 
+    def test_address_review_nudges_a_premature_finish(self) -> None:
+        from ctx import objects
+        from ctx import spec as specmod
+        self._set_repo(url="https://github.com/me/app")
+        _p, spec, body = objects.find(self.root, "contribution",
+                                      "contribution-me-app-issue-42")
+        doc = self.root / "context/documents" / "build-address.md"
+        doc.parent.mkdir(parents=True, exist_ok=True)
+        doc.write_text(frontmatter.dumps({
+            "id": "document-build-address", "type": "document",
+            "title": "Build: Add a name flag (published)",
+            "created": "2026-11-23", "updated": "2026-11-23",
+            "status": "active", "tags": ["build-record"],
+            "outcome": "published",
+            "contribution": "contribution-me-app-issue-42",
+            "spec_sha": specmod.body_hash(body),
+            "pr_url": "https://github.com/me/app/pull/7",
+        }, "# Build\n"), encoding="utf-8")
+        branch = agent.branch_for(spec)
+        _git(self.code, "branch", branch)
+
+        calls = []
+
+        def responder(prompt):
+            calls.append(prompt)
+            n = len(calls)
+            if n == 1:
+                return json.dumps({"action": "finish", "summary": "done"})
+            if n == 2:
+                return json.dumps({"action": "read", "path": "app.py"})
+            if n == 3:
+                return json.dumps({"action": "write", "path": "app.py",
+                                   "content": "print('bye')\n"})
+            if n == 4:
+                return json.dumps({"action": "finish", "summary": "Done."})
+            raise AssertionError("too many calls")
+
+        result = agent.address_review(self.root, "contribution-me-app-issue-42",
+                                      responder=responder, push=False,
+                                      comments=[{"path": "app.py", "line": 1,
+                                                 "body": "Use a real greeting"}])
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["files"], ["app.py"])
+
     def test_checks_get_a_scrubbed_environment(self) -> None:
         import os
         import unittest.mock as mock
