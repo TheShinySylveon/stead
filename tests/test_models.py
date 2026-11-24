@@ -104,6 +104,33 @@ class ModelTest(unittest.TestCase):
                          base_url="https://attacker.example/v1", api_key="sk-new")
         self.assertEqual(models.resolve(self.root)["api_key"], "sk-new")
 
+    def test_profiles_and_role_bindings(self) -> None:
+        models.set_model(self.root, provider="ollama", name="default-weak")
+        models.add_model(self.root, "strong", provider="openai",
+                         name="gpt-strong", api_key="sk-x")
+        view = models.profiles_view(self.root)
+        self.assertEqual(set(view["profiles"]), {"strong"})
+        self.assertEqual(view["roles"]["build"], "")
+        # Bind draft -> strong; build falls back to the default.
+        models.set_role(self.root, "draft", "strong")
+        self.assertEqual(models.resolve(self.root, "draft")["name"], "gpt-strong")
+        self.assertEqual(models.resolve(self.root, "build")["name"], "default-weak")
+        # review/address fall back to the default when no reviewer block is set.
+        self.assertEqual(models.resolve(self.root, "review")["name"], "default-weak")
+        self.assertEqual(models.resolve(self.root, "address")["name"], "default-weak")
+        # Removing the profile clears its role binding.
+        models.remove_model(self.root, "strong")
+        view = models.profiles_view(self.root)
+        self.assertEqual(view["profiles"], {})
+        self.assertEqual(view["roles"]["draft"], "")
+
+    def test_role_rejects_unknown_profile_or_role(self) -> None:
+        models.set_model(self.root, provider="ollama", name="default-weak")
+        with self.assertRaises(models.ModelError):
+            models.set_role(self.root, "build", "missing")
+        with self.assertRaises(models.ModelError):
+            models.set_role(self.root, "bogus", "")
+
     def test_usage_is_read_from_the_provider(self) -> None:
         models.set_model(self.root, provider="openai", name="gpt-test", api_key="k")
         settings = models.resolve(self.root)

@@ -324,7 +324,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                 "(repo frontmatter)", reason="precondition") from exc
         if responder is None:
             from ctx import models
-            settings = models.resolve(root)
+            settings = models.resolve(root, "build")
 
             def responder(prompt):
                 if responder._plain:
@@ -1203,7 +1203,7 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
 
         if responder is None:
             from ctx import models
-            settings = models.resolve(root)
+            settings = models.resolve(root, "address")
 
             def responder(prompt):
                 return models.complete(prompt, settings,

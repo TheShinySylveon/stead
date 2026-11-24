@@ -855,6 +855,22 @@ def build_parser() -> argparse.ArgumentParser:
     mt.add_argument("--prompt", default="Reply with exactly one word: ok")
     mt.add_argument("--timeout", type=int, default=60)
     model.add_parser("list", help="list model ids the endpoint offers")
+    model.add_parser("profiles", help="list saved model profiles and role bindings")
+    ma = model.add_parser("add", help="save a named provider connection (a profile)")
+    ma.add_argument("profile")
+    ma.add_argument("--provider", required=True, choices=tuple(PROVIDERS))
+    ma.add_argument("--name", required=True, help="model name, such as gpt-4.1-mini or llama3.2")
+    ma.add_argument("--base-url", help="defaults to the provider preset")
+    ma.add_argument("--key", help="stored in gitignored stead.json. Prefer an env var.")
+    ma.add_argument("--key-env", default="STEAD_MODEL_API_KEY")
+    ma.add_argument("--input-price", type=float, help="USD per 1M input tokens")
+    ma.add_argument("--output-price", type=float, help="USD per 1M output tokens")
+    ma.add_argument("--call-timeout", type=int, metavar="SECONDS")
+    mr = model.add_parser("remove", help="remove a saved profile")
+    mr.add_argument("profile")
+    mrole = model.add_parser("role", help="bind a job to a profile (build/draft/review/address)")
+    mrole.add_argument("role", choices=("build", "draft", "review", "address"))
+    mrole.add_argument("profile", help="profile name, or '-' to unbind and fall back to the default")
 
     ev = sub.add_parser("eval", help="factory eval cases").add_subparsers(dest="sub", required=True)
     er = ev.add_parser("run", help="check eval files. No model, no network.")
@@ -1125,6 +1141,36 @@ def main(argv: list[str] | None = None) -> int:
                           "It falls back to the builder model when unset.")
                     return 0
                 print("model saved in stead.json (gitignored). The key was not printed.")
+            if args.sub == "profiles":
+                view = models.profiles_view(root)
+                for role in models.MODEL_ROLES:
+                    print(f"{role}: {view['roles'][role] or '(default)'}")
+                for name, p in view["profiles"].items():
+                    key = "set" if p["key_set"] else "not set"
+                    print(f"profile {name}: {p['provider']} {p['name']} "
+                          f"@ {p['base_url'] or '(preset)'} (key {key})")
+                if not view["profiles"]:
+                    print("(no saved profiles)")
+                return 0
+            if args.sub == "add":
+                models.add_model(root, args.profile, provider=args.provider,
+                                 name=args.name, base_url=args.base_url or "",
+                                 api_key=args.key, api_key_env=args.key_env,
+                                 input_price=args.input_price,
+                                 output_price=args.output_price,
+                                 call_timeout=args.call_timeout)
+                print(f"profile {args.profile} saved in stead.json (gitignored). "
+                      "Bind it with `stead model role <job> <profile>`.")
+                return 0
+            if args.sub == "remove":
+                models.remove_model(root, args.profile)
+                print(f"profile {args.profile} removed")
+                return 0
+            if args.sub == "role":
+                profile = "" if args.profile == "-" else args.profile
+                models.set_role(root, args.role, profile)
+                print(f"{args.role} -> {profile or '(default)'}")
+                return 0
             else:
                 shown = models.public_model(root)
         except models.ModelError as exc:

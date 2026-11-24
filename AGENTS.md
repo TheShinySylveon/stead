@@ -137,6 +137,10 @@ python -m stead version                       # print 0.1.0
 python -m stead doctor                        # lint frontmatter, ids, dates, relations
 python -m stead model show                    # configured endpoint; never prints the key
 python -m stead model set --provider openai|anthropic|grok|openrouter|ollama|custom --name NAME [--review] [--input-price X --output-price Y]
+python -m stead model add PROFILE --provider P --name NAME [--base-url U] [--key-env E] [--call-timeout S]  # save a named provider connection
+python -m stead model profiles                 # list saved profiles and role bindings
+python -m stead model role ROLE PROFILE        # bind build|draft|review|address to a profile (PROFILE "-" = unbind)
+python -m stead model remove PROFILE
 python -m stead eval run [--factory F]        # structural check, no model
 python -m stead repo set ID --trigger on-demand|watch --reach ghost|shadow|draft-pr|pr|merge
 python -m stead repo set ID --set checks_isolation=docker --set checks_image=python:3.12-slim

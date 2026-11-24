@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Named model profiles and role bindings.** Save multiple provider
+  connections (`stead model add NAME …`) and bind each job to one:
+  `build` (the implementation loop), `draft` (spec/plan — often a strong
+  model), `review` (independent reviewer), and `address` (review-fixing).
+  `stead model profiles/role/remove` and a cockpit **Model profiles** panel
+  manage them; unbound roles fall back to the default model. The CLI and the
+  cockpit are at parity.
 - **Address PR review comments.** New `stead address --contribution ID` (and an
   **Address review** button on a published PR) fetches the PR's review comments
   and runs the model in a focused loop to fix each one, committing on the PR

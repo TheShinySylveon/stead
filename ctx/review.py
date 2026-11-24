@@ -146,8 +146,8 @@ def review(root: Path, contribution_ref: str, *, responder=None,
         model_name = ""
         if responder is None:
             from ctx import models
-            settings = models.resolve(root, "reviewer")
-            independent = models.reviewer_configured(root)
+            settings = models.resolve(root, "review")
+            independent = models.role_configured(root, "review")
             model_name = settings.get("name") or ""
             responder = lambda p: models.complete(
                 p, settings, timeout=settings["call_timeout"], temperature=0)
