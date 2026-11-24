@@ -30,8 +30,9 @@ behind one container.
 > → tested change → PR loop, reviewed by a human. The loop runs end to end on a
 > local 27B model: Stead built [#20](https://github.com/TheShinySylveon/stead/pull/20),
 > [#30](https://github.com/TheShinySylveon/stead/pull/30), and [#34](https://github.com/TheShinySylveon/stead/pull/34), all passed
-> CI and were merged by a person with no edits. It is not measured yet; the scored run
-> ([Dogfood](docs/dogfood.md)) comes next, and everything else waits until it passes.
+> CI and were merged by a person with no edits. The scored run
+> ([Dogfood](docs/dogfood.md)) is the next milestone; the ledger reports what
+> happened, and everything else waits until it passes.
 
 ## Quick start
 
@@ -65,6 +66,49 @@ project and you're in. No browser? `python -m stead welcome --title "My Project"
   and glossary terms are only *proposed* to the inbox, never quietly written.
 - **A browser cockpit or the CLI.** The same actions either way, plus an
   optional shared Docker server ([deploy](docs/deploy.md)).
+
+## Quality and consistency, built in
+
+An agent that can edit code and open PRs can ship slop just as fast as it can
+ship the good stuff. Stead puts the back-pressure *in the pipeline*, so the
+model has to make its own work pass deterministic gates before a human ever
+looks at it:
+
+- **Planning before code, always.** A build refuses to start without a spec and
+  an approved plan; autonomy changes what the agent may produce, never whether
+  it plans.
+- **Spec quality is enforced, not vibes.** A spec is refused if it's too vague,
+  too large, has no acceptance criteria, or asks for a value a hardcoded number
+  could satisfy — a "score" or "non-zero float" gets flagged `fabricated-value`
+  before any code is written.
+- **Fail-before, pass-after tests.** Every acceptance criterion maps to a test
+  that must fail without the change and pass with it. A test that passes anyway
+  proves nothing, so it's sent back.
+- **Anti-slop gate on new code.** Deterministic, language-agnostic rules refuse
+  a new file that carries a hard finding (bare `except:`, `gets(`, `%`-format,
+  commented-out code, dead branches) and nudge on advisory ones (debug `print`,
+  `console.log`, `any` types). The repo's own linter via `checks:` stays the
+  authoritative gate — Stead layers on top, it doesn't replace it.
+- **Honest CI.** The build runs the repo's checks and reports them truthfully.
+  Nothing is claimed green that wasn't checked.
+
+None of this is a prompt asking the model to *please be careful*. Each gate is a
+deterministic, model-free check that refuses bad work outright.
+
+## The self-improvement loop
+
+The context outlives the model, and the system gets stricter over time. Every
+build — success or failure — writes a versioned `build-record` into the same
+graph. A human marks each one against the correctness rubric, and when a build
+is wrong, that verdict feeds back two ways:
+
+- **Mistake → rule.** Mark a build incorrect with
+  `stead metrics mark ID --correct false --rule "…"`, and the described check
+  is proposed to the inbox as a candidate anti-slop rule. A failure becomes a
+  future automated check instead of a repeat.
+- **The ledger.** `stead metrics` reports what actually happened — builds,
+  failure rate, share merged after review, hand-checked correct vs. committed —
+  so the number you ship is real, never invented.
 
 ## Safety
 
