@@ -2,9 +2,10 @@
 
 ## Unreleased
 
-- **Comment on issue no longer asks for the PR URL.** The cockpit resolves the
-  pull request URL from the build record, so the comment action posts the link
-  directly instead of prompting for a URL to paste.
+- **Comment on issue no longer asks for the PR URL.** Both the cockpit and the
+  CLI (`stead factory comment`) now resolve the pull request URL from the build
+  record when it isn't given, so the comment action posts the link directly
+  instead of requiring a URL to paste. (`--pr-url` remains an override.)
 - **Per-repo auto-publish, and the cockpit says so.** A repo can set
   `auto_publish: true` to have a successful build open a pull request
   automatically (when its reach is `draft-pr`/`pr`/`merge`); default off. The

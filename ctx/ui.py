@@ -1503,11 +1503,11 @@ def merge_contribution(root: Path, contribution: str) -> dict:
 
 def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
     _refuse_shared_remote(root)
+    from ctx import writeback
     if not pr_url:
         # The PR URL is already on the build record after publish; use it
         # instead of asking the person to paste it.
-        record = _build_records(root).get(contribution)
-        pr_url = str(record.get("pr_url") or "") if record else ""
+        pr_url = writeback.contribution_pr_url(root, contribution)
     if not pr_url:
         raise UiError("no pull request URL to link; publish first")
     from ctx.comment import CommentError, comment
@@ -1516,7 +1516,6 @@ def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
     except CommentError as exc:
         raise UiError(str(exc)) from exc
     # Record that the comment is done, so the pipeline stops offering it.
-    from ctx import writeback
     writeback.mark_commented(root, contribution)
     return {"ok": True, **result}
 
