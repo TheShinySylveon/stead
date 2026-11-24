@@ -142,6 +142,15 @@ class TestSnapshot(UiTestCase):
         repo = __import__("ctx").objects.find(self.root, "repo", "repo-testuser-my-app")
         self.assertEqual(repo[1]["status"], "paused")
         self.assertEqual(repo[1]["notes"], "local")
+        # Build-quality booleans round-trip through the cockpit handler.
+        ui.set_repo(self.root, "repo-testuser-my-app",
+                    {"require_tests": "off", "slop_gate": "off"})
+        repo = __import__("ctx").objects.find(self.root, "repo", "repo-testuser-my-app")
+        self.assertEqual(repo[1]["require_tests"], "false")
+        self.assertEqual(repo[1]["slop_gate"], "false")
+        ui.set_repo(self.root, "repo-testuser-my-app", {"slop_gate": "on"})
+        repo = __import__("ctx").objects.find(self.root, "repo", "repo-testuser-my-app")
+        self.assertEqual(repo[1]["slop_gate"], "true")
         ui.set_title(self.root, "project", "project-demo", "Demo renamed")
         project = __import__("ctx").objects.find(self.root, "project", "project-demo")
         self.assertEqual(project[1]["title"], "Demo renamed")
