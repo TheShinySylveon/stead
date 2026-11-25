@@ -375,3 +375,32 @@ real loop as #25, on the first attempt:
 
 Three tuning builds are not a success rate. The first published score is Set B,
 on a single first attempt each.
+
+## Set B on LFM3-1.7B (2026-11-24/25) — not a pass
+
+Set B is the first *scored* run, on the cheap local model the `build` role is
+bound to. The role split was draft/review/address = strong, build = weak, on the
+theory that a weak model can follow a plan it did not write. Set B tested that
+theory and refuted it for this model.
+
+| # | Spec | Mechanically | Spec actually met? | Notes |
+|---|---|---|---|---|
+| 1 | `contribution list --json` | committed, checks red (broken fixture) | **No — hand-finished** | The implementation was correct (the `--json` flag + 8 fields), but the test called `cmd_contribution_add` with a repo that was never created, so checks stayed red and the model churned 26 stale `edit`s on `cli.py` without converging. |
+| 2 | `doctor` flags unapproved `stead-build` | committed, checks red (import error) | **No — hand-finished** | Twice. First, the model re-nested the existing `body_sha` check inside its new block. Second, it wrote a *top-level* block referencing `root` (a function parameter) so `doctor.py` failed to import. Both times it churned on `doctor.py`/its test without noticing. |
+
+**Finding: a 1.7B model can produce correct-looking code but not
+correct-structure code.** Every failure was structural — a broken fixture, a
+nested block, a top-level reference to a parameter — not a wrong algorithm. No
+amount of plan precision fixed it: the plans were rewritten to be mechanical
+(PR #149: additive-only edits, explicit boundary constraints, a `vague-plan`
+gate), and the model still could not reliably place code *inside* a function vs.
+at module top level.
+
+The harness changes made during these runs (failed-edit coercion, check-failure
+summaries, anti-slop gate) are real improvements, but they compensate for a
+model that cannot be steered, not one that can.
+
+**Next: re-run Set B on a 27B model.** The 27B (Arete) built Set A correctly on
+2026-11-22; Set B on 27B is the fair test of the harness, holding the model
+constant at a level that has already been shown to work. The 1.7B result is
+recorded here as data, not as the final score.
