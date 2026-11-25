@@ -77,3 +77,36 @@ class DoctorTest(unittest.TestCase):
         report = doctor.run(self.root)
         self.assertTrue(any("changed after" in w["message"]
                            for w in report["warnings"]))
+
+    def _stead_build(self, name: str, spec_sha: str | None) -> Path:
+        meta = {"id": f"contribution-x-issue-{name}", "type": "contribution",
+                "title": "X", "created": "2026-11-21", "updated": "2026-11-21",
+                "repo": "repo-x", "kind": "issue", "number": int(name),
+                "role": "author", "state": "open", "visibility": "public",
+                "tags": ["stead-build"]}
+        if spec_sha is not None:
+            meta["spec_sha"] = spec_sha
+        return self._write("contributions", f"issue-{name}.md", meta, body="approved body\n")
+
+    def test_stead_build_missing_spec_sha_warns(self) -> None:
+        (self.root / "context/contributions").mkdir(parents=True, exist_ok=True)
+        self._stead_build("1", None)
+        report = doctor.run(self.root)
+        self.assertTrue(any("no spec_sha" in w["message"] for w in report["warnings"]))
+
+    def test_stead_build_changed_body_warns(self) -> None:
+        (self.root / "context/contributions").mkdir(parents=True, exist_ok=True)
+        from ctx import spec as spec_mod
+        wrong = spec_mod.body_hash("different body\n")
+        self._stead_build("2", wrong)
+        report = doctor.run(self.root)
+        self.assertTrue(any("spec_sha mismatch" in w["message"]
+                           for w in report["warnings"]))
+
+    def test_stead_build_approved_is_silent(self) -> None:
+        (self.root / "context/contributions").mkdir(parents=True, exist_ok=True)
+        from ctx import spec as spec_mod
+        good = spec_mod.body_hash("approved body\n")
+        self._stead_build("3", good)
+        report = doctor.run(self.root)
+        self.assertFalse(any("spec_sha" in w["message"] for w in report["warnings"]))

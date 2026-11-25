@@ -81,6 +81,13 @@ def run(root: Path) -> dict:
                     warnings.append(_issue(
                         relative, "the synced issue changed after it was stored "
                                   "(body_sha != upstream_body_sha)"))
+                if "stead-build" in {str(t).lower() for t in (meta.get("tags") or [])}:
+                    spec_sha = str(meta.get("spec_sha") or "")
+                    if not spec_sha:
+                        warnings.append(_issue(relative, "no spec_sha (unapproved)"))
+                    elif spec_sha != _body_hash(body):
+                        warnings.append(_issue(
+                            relative, "body changed (spec_sha mismatch)"))
     return {"checked": checked, "errors": errors, "warnings": warnings}
 
 
@@ -109,6 +116,14 @@ def _is_date(value: str) -> bool:
 
 def _issue(path: str, message: str) -> dict:
     return {"path": path, "message": message}
+
+
+def _body_hash(body: str) -> str:
+    """The approval hash `spec_sha` stores: SHA-256 of the stripped body. Reuses
+    the same rule as `ctx.spec.body_hash` so doctor flags exactly what approval
+    would flag."""
+    import hashlib
+    return hashlib.sha256(body.strip().encode("utf-8")).hexdigest()
 
 
 def render(report: dict) -> str:
