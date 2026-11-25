@@ -442,6 +442,32 @@ def cmd_status(root: Path, project: str) -> int:
     print(f"# {meta.get('title', project_id)}  [{meta.get('status', '?')}]")
     print(f"id: {project_id}  updated: {meta.get('updated', '?')}")
 
+    import re
+    repo_meta = {}
+    for _rp, rmeta, _rb in objects.iter_objects(root, "repo"):
+        if str(rmeta.get("project") or "") == project_id:
+            repo_meta = rmeta
+            break
+    repo_id = str(repo_meta.get("id") or "")
+    build_line = "build: none"
+    if repo_id:
+        best_key = None
+        best_meta = None
+        for dp, dmeta, _db in objects.iter_objects(root, "document"):
+            tags = {str(t) for t in dmeta.get("tags") or []}
+            if "build-record" not in tags or f"repo:{repo_id}" not in tags:
+                continue
+            m = re.search(r"(\d{8}T\d{6}Z)", dp.name)
+            stamp = m.group(1) if m else ""
+            key = (str(dmeta.get("created") or ""), stamp)
+            if best_key is None or key > best_key:
+                best_key = key
+                best_meta = dmeta
+        if best_meta is not None:
+            build_line = (f"build: {best_meta.get('outcome', '?')} "
+                          f"({best_meta.get('reason', '')}) {best_meta.get('created', '?')}")
+    print(build_line)
+
     # Counts come from the markdown source of truth, not the index.
     counts = {s: 0 for s in TASK_STATUSES}
     tasks = objects.linked(root, "task", project_id)
