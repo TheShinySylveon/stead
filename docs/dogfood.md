@@ -404,3 +404,30 @@ model that cannot be steered, not one that can.
 2026-11-22; Set B on 27B is the fair test of the harness, holding the model
 constant at a level that has already been shown to work. The 1.7B result is
 recorded here as data, not as the final score.
+
+## Set B on Arete 27B (2026-11-25) — first autonomous pass
+
+| Field | Value |
+|---|---|
+| model | `NousResearch_Arete-27B-GGUF` via LM Studio |
+| context window | 40,000 tokens (per-model `context`, PR #152) |
+| harness commit | `e0112ea` (#152) + the #102 spec |
+| call timeout | 1,200 s |
+
+| # | Spec | Mechanically | Spec actually met? | Notes |
+|---|---|---|---|---|
+| 3 | `stead status --project P` prints a build-record summary | committed, checks passed, fail-before held, CI green, PR #153 merged by a human | **Yes** | 31 minutes, 13 model steps, 0 repair rounds, 0 human edits. The plan named the real data model (build records are markdown documents, not a SQL table) and the model followed it. |
+
+**Finding: the 1.7B failures were model capability, not harness.** Holding the
+same pipeline constant and swapping the model to 27B produced a clean,
+first-attempt pass. The difference was the model's ability to follow a precise
+plan and reconcile code with its own test — which the 1.7B could not do.
+
+One caveat, recorded honestly: the #102 *spec* needed a human correction before
+the build — the strong drafter invented a `build_records` SQL table that does not
+exist (records are documents). So this is an autonomous *build*, not an
+autonomous *spec→PR*. The draft step still needs human review. That is the next
+frontier, not a regression: the weak-model-build question is answered.
+
+Set B total so far: #1 and #2 hand-finished, #3 autonomous. Set C and the
+hold-out are not yet run.
