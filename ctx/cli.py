@@ -865,6 +865,10 @@ def build_parser() -> argparse.ArgumentParser:
                     help="seconds one model call may take during a build or "
                          "review (default 300, 30 to 7200). Raise it for a large "
                          "local model.")
+    ms.add_argument("--context", type=int, metavar="TOKENS",
+                    help="the model's context window in tokens (0 = unset). "
+                         "Local models vary wildly; set this so the build trims "
+                         "its prompt instead of overflowing the window.")
     mt = model.add_parser("test", help="one live call to prove the model works. Never prints the key.")
     mt.add_argument("--prompt", default="Reply with exactly one word: ok")
     mt.add_argument("--timeout", type=int, default=60)
@@ -880,6 +884,8 @@ def build_parser() -> argparse.ArgumentParser:
     ma.add_argument("--input-price", type=float, help="USD per 1M input tokens")
     ma.add_argument("--output-price", type=float, help="USD per 1M output tokens")
     ma.add_argument("--call-timeout", type=int, metavar="SECONDS")
+    ma.add_argument("--context", type=int, metavar="TOKENS",
+                    help="the model's context window in tokens (0 = unset)")
     mr = model.add_parser("remove", help="remove a saved profile")
     mr.add_argument("profile")
     mrole = model.add_parser("role", help="bind a job to a profile (build/draft/review/address)")
@@ -1151,7 +1157,8 @@ def main(argv: list[str] | None = None) -> int:
                     block="reviewer" if args.review else "model",
                     input_price=args.input_price,
                     output_price=args.output_price,
-                    call_timeout=args.call_timeout)
+                    call_timeout=args.call_timeout,
+                    context=getattr(args, "context", None))
                 if args.review:
                     print("reviewer model saved in stead.json (gitignored). "
                           "It falls back to the builder model when unset.")
@@ -1174,7 +1181,8 @@ def main(argv: list[str] | None = None) -> int:
                                  api_key=args.key, api_key_env=args.key_env,
                                  input_price=args.input_price,
                                  output_price=args.output_price,
-                                 call_timeout=args.call_timeout)
+                                 call_timeout=args.call_timeout,
+                                 context=getattr(args, "context", None))
                 print(f"profile {args.profile} saved in stead.json (gitignored). "
                       "Bind it with `stead model role <job> <profile>`.")
                 return 0

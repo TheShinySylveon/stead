@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **Per-model context window.** `stead model set/add` and the cockpit gain a
+  `context` field (the model's context window in tokens, 0 = unset). The build
+  and address loops now trim the transcript to that window (4 chars/token, 10%
+  margin) instead of a fixed 1M-char budget, so a small-window local model no
+  longer silently overflows and loses the beginning of the prompt.
 - **Anti-slop gate (language-agnostic, deterministic).** Model-written code is
   now checked for low-evidence patterns before commit: a new file the model
   authored whole is refused if it carries a *hard* finding (bare `except:`,

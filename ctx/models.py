@@ -60,6 +60,22 @@ class ModelError(Exception):
 DEFAULT_CALL_TIMEOUT = 300
 CALL_TIMEOUT_RANGE = (30, 7200)
 
+# The context window, in tokens. 0 means "not set": the build uses a large
+# default and never trims. Local models vary wildly (4k to 128k and beyond), so
+# this is per-model, like call_timeout. A stored value outside the range is
+# treated as 0 (unset) rather than silently clamping to something wrong.
+DEFAULT_CONTEXT = 0
+CONTEXT_RANGE = (0, 1_000_000)
+
+
+def _context(value) -> int:
+    try:
+        tokens = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_CONTEXT
+    low, high = CONTEXT_RANGE
+    return tokens if low <= tokens <= high else DEFAULT_CONTEXT
+
 
 def _call_timeout(value) -> int:
     """Seconds one model call may take. A large local model reading a big file
@@ -89,12 +105,13 @@ def public_model(root: Path) -> dict:
         "input_price_per_mtok": _price(raw.get("input_price_per_mtok")),
         "output_price_per_mtok": _price(raw.get("output_price_per_mtok")),
         "call_timeout": _call_timeout(raw.get("call_timeout")),
+        "context": _context(raw.get("context")),
     }
 
 
 def _build_model(current: dict, provider: str, name: str, base_url: str,
                  api_key, api_key_env, input_price, output_price,
-                 call_timeout) -> dict:
+                 call_timeout, context) -> dict:
     """Validate and assemble one model dict (no writes). `current` holds the
     previous settings for the same block/profile, so a stored key follows its
     endpoint and prices/timeout persist unless overridden."""
@@ -108,6 +125,11 @@ def _build_model(current: dict, provider: str, name: str, base_url: str,
         if not low <= int(call_timeout) <= high:
             raise ModelError(
                 f"call timeout must be {low} to {high} seconds, not {call_timeout}")
+    if context is not None:
+        low, high = CONTEXT_RANGE
+        if not low <= int(context) <= high:
+            raise ModelError(
+                f"context window must be {low} to {high} tokens, not {context}")
     url = (base_url or PROVIDERS[provider] or "").strip()
     if not url:
         raise ModelError("a custom provider needs a base URL")
@@ -140,6 +162,9 @@ def _build_model(current: dict, provider: str, name: str, base_url: str,
     timeout = int(call_timeout) if call_timeout is not None else current.get("call_timeout")
     if timeout is not None and _call_timeout(timeout) != DEFAULT_CALL_TIMEOUT:
         model["call_timeout"] = _call_timeout(timeout)
+    ctx = int(context) if context is not None else current.get("context")
+    if ctx is not None and _context(ctx):
+        model["context"] = _context(ctx)
     return model
 
 
@@ -147,12 +172,13 @@ def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
               api_key: str | None = None, api_key_env: str = ENV_KEY,
               block: str = "model", input_price: float | None = None,
               output_price: float | None = None,
-              call_timeout: int | None = None) -> dict:
+              call_timeout: int | None = None,
+              context: int | None = None) -> dict:
     if block not in {"model", "reviewer"}:
         raise ModelError(f"invalid model block {block!r}")
     current = _block(root, block)
     model = _build_model(current, provider, name, base_url, api_key, api_key_env,
-                         input_price, output_price, call_timeout)
+                         input_price, output_price, call_timeout, context)
     config.save_model(root, model, block=block)
     return public_model(root)
 
@@ -168,6 +194,7 @@ def _public_profile(model: dict) -> dict:
         "input_price_per_mtok": _price(model.get("input_price_per_mtok")),
         "output_price_per_mtok": _price(model.get("output_price_per_mtok")),
         "call_timeout": _call_timeout(model.get("call_timeout")),
+        "context": _context(model.get("context")),
     }
 
 
@@ -191,7 +218,8 @@ def add_model(root: Path, profile: str, *, provider: str, name: str,
               base_url: str = "", api_key: str | None = None,
               api_key_env: str = ENV_KEY, input_price: float | None = None,
               output_price: float | None = None,
-              call_timeout: int | None = None) -> dict:
+              call_timeout: int | None = None,
+              context: int | None = None) -> dict:
     profile = (profile or "").strip()
     if not re.match(r"^[A-Za-z0-9_-]{1,50}$", profile):
         raise ModelError("a profile name may only use letters, digits, dash, underscore")
@@ -200,7 +228,7 @@ def add_model(root: Path, profile: str, *, provider: str, name: str,
     prev = models.get(profile) if isinstance(models.get(profile), dict) else {}
     models[profile] = _build_model(prev, provider, name, base_url, api_key,
                                    api_key_env, input_price, output_price,
-                                   call_timeout)
+                                   call_timeout, context)
     raw["models"] = models
     config.save_blocks(root, models=models, roles=(raw.get("roles") if isinstance(raw.get("roles"), dict) else {}))
     return profiles_view(root)
@@ -290,6 +318,7 @@ def resolve(root: Path, role: str = "build") -> dict:
         "input_price_per_mtok": _price(raw.get("input_price_per_mtok")),
         "output_price_per_mtok": _price(raw.get("output_price_per_mtok")),
         "call_timeout": _call_timeout(raw.get("call_timeout")),
+        "context": _context(raw.get("context")),
     }
     if _needs_key(settings) and not key:
         raise ModelError(

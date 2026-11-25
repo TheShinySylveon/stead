@@ -1898,6 +1898,13 @@ class ReadAndEditTest(BuildFixture):
         self.assertIn("test_thing", summary)
         self.assertIn("repo not found", summary)
 
+    def test_prompt_budget_scales_with_the_context_window(self) -> None:
+        self.assertEqual(agent._prompt_budget(None), agent.MAX_PROMPT_CHARS)
+        self.assertEqual(agent._prompt_budget({}), agent.MAX_PROMPT_CHARS)
+        self.assertEqual(agent._prompt_budget({"context": 0}), agent.MAX_PROMPT_CHARS)
+        # 40000 tokens * 4 chars/token * 0.9 margin.
+        self.assertEqual(agent._prompt_budget({"context": 40000}), 144000)
+
     def test_edit_of_an_existing_test_is_refused_like_write(self) -> None:
         (self.code / "tests").mkdir()
         (self.code / "tests/test_app.py").write_text("assert True\n", encoding="utf-8")
