@@ -163,7 +163,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     "the source issue no longer carries the stead-build label",
                     reason="precondition")
     description, criteria = factory.split_spec(body)
-    flags = factory.spec_flags(description, criteria)
+    flags = factory.spec_flags(description, criteria, plan=factory.spec_plan(body))
     if flags:
         raise BuildError("spec is not buildable yet: " + ", ".join(flags),
                          reason="precondition")
@@ -2208,6 +2208,11 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         "it unique. write replaces the whole file, so use it for new files or small "
         "files you have read in full. A long file is shown in parts: search for a "
         "name to get its line number, then read that line range. "
+        "Make additive edits: ADD your new code; do not re-indent, re-nest, or "
+        "rewrite existing code, and do not fold an existing block into a new one. "
+        "Leave every existing line exactly where and how it is, unless the plan "
+        "explicitly says to change it. When a check fails, fix the smallest thing "
+        "the failure names — do not rewrite a file to make the symptom go away. "
         "Read a file before changing it, and use the "
         "exact paths from the repository tree below — do not invent filenames. "
         "Stay inside the repository. Do not touch .git. "

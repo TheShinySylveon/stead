@@ -35,7 +35,7 @@ def readiness_problems(body: str) -> list[str]:
     The same rules as the build's `factory.spec_flags`; empty when buildable."""
     from ctx import factory
     description, criteria = factory.split_spec(body)
-    flags = factory.spec_flags(description, criteria)
+    flags = factory.spec_flags(description, criteria, plan=factory.spec_plan(body))
     words = len(factory._HEADING_LINE.sub("", description).split())
     problems: list[str] = []
     if "missing-acceptance-criteria" in flags:
@@ -63,6 +63,11 @@ def readiness_problems(body: str) -> list[str]:
             "as \"(id, repo, kind)\") that no acceptance criterion restates. "
             "Fold those terms into a criterion, so a test asserts them without "
             "reading the description.")
+    if "vague-plan" in flags:
+        problems.append(
+            "the `## Plan` names no file to edit. A build executes the plan "
+            "mechanically, so name the exact file (e.g. `ctx/doctor.py`) and the "
+            "function, and state what NOT to touch.")
     return problems
 
 
@@ -187,7 +192,13 @@ def draft_prompt(title: str, body: str, tree: str = "") -> str:
         "not plan to edit CI config (`.github/**`), existing tests, or the "
         "checks definition: those paths are protected and a build that touches "
         "them fails. A brand-new test file is fine and expected when a "
-        "criterion needs one. When the change spans files or data flow, show a "
+        "criterion needs one. The plan is executed by a weak model, so make it "
+        "mechanical: name the exact file and function to edit; state boundary "
+        "constraints explicitly (\"add the new block ABOVE the existing X check; "
+        "do NOT modify or re-indent the existing body_sha check\"); and spell out "
+        "any setup order a test needs (\"create the repo with cmd_repo_add first, "
+        "then add the two contributions\"). A plan that only says \"add a check\" "
+        "is too vague to execute. When the change spans files or data flow, show a "
         "compact file-tree or `diff`-shaped sketch (added/removed lines, a "
         "call tree, or a short Mermaid diagram) instead of prose — a small "
         "visual is faster to review than a wall of text.\n"

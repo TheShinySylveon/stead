@@ -333,6 +333,11 @@ _MIN_DESCRIPTION_WORDS = 25
 _MAX_DESCRIPTION_WORDS = 400
 _MAX_CRITERIA = 8
 
+# A plan executed by a weak model must name a concrete file to edit (a path
+# token like `ctx/doctor.py` or a `.py` filename). A plan that names no file
+# ("add a check", "improve it") is too vague to execute mechanically.
+_PLAN_NAMES_FILE = re.compile(r"[A-Za-z0-9_./-]+\.py\b")
+
 # A criterion a hardcoded value can satisfy (a fabricated score, a "non-zero
 # float", "prints Set B score: <value>") is not verifiable: it asks the build
 # to invent a measurement instead of implementing a testable behavior. These
@@ -414,7 +419,8 @@ def spec_plan(body: str) -> str:
     return section.strip()
 
 
-def spec_flags(description: str, criteria: list[tuple[bool, str]]) -> list[str]:
+def spec_flags(description: str, criteria: list[tuple[bool, str]],
+               plan: str = "") -> list[str]:
     """Deterministic quality flags; any flag means the spec needs decomposition
     or clarification BEFORE an agent is allowed to build it."""
     flags: list[str] = []
@@ -433,6 +439,8 @@ def spec_flags(description: str, criteria: list[tuple[bool, str]]) -> list[str]:
     criteria_text = " ".join(text for _done, text in criteria)
     if len(terms) >= 2 and not _terms_restated(terms, criteria_text):
         flags.append("vague-criterion")
+    if plan and not _PLAN_NAMES_FILE.search(plan):
+        flags.append("vague-plan")
     return flags
 
 
@@ -581,7 +589,7 @@ def assemble_feature_build(root: Path, contribution_ref: str,
                          f"choose from {CONTRIB_METHODS}")
 
     description, criteria = split_spec(spec_body)
-    flags = spec_flags(description, criteria)
+    flags = spec_flags(description, criteria, plan=spec_plan(spec_body))
 
     related_refs = spec_meta.get("related") or []
     if isinstance(related_refs, str):
@@ -925,7 +933,7 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
         if policy["trigger"] != "watch":
             continue
         description, criteria = split_spec(body)
-        flags = spec_flags(description, criteria)
+        flags = spec_flags(description, criteria, plan=spec_plan(body))
         if flags:
             skipped.append({"id": meta.get("id"), "reason": ", ".join(flags)})
             continue

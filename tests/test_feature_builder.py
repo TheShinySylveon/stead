@@ -162,6 +162,20 @@ class TestSpecParsing(unittest.TestCase):
                     (False, "the default table output is unchanged")]
         self.assertNotIn("vague-criterion", factory.spec_flags(desc, criteria))
 
+    def test_flags_vague_plan_when_no_file_is_named(self) -> None:
+        desc = "word " * 30
+        criteria = [(False, "the command prints the records")]
+        self.assertIn("vague-plan",
+                      factory.spec_flags(desc, criteria, plan="Add a check to doctor."))
+
+    def test_flags_do_not_fire_when_plan_names_a_file(self) -> None:
+        desc = "word " * 30
+        criteria = [(False, "the command prints the records")]
+        plan = ("Edit ctx/doctor.py: add the check above the existing body_sha "
+                "check, without modifying it.")
+        self.assertNotIn("vague-plan",
+                         factory.spec_flags(desc, criteria, plan=plan))
+
 
 # --- assembly -------------------------------------------------------------------
 
