@@ -1976,6 +1976,7 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     base_url=payload.get("base_url") or "",
                     api_key=payload.get("api_key"),
                     call_timeout=_opt_int(payload, "call_timeout"),
+                    context=_opt_int(payload, "context"),
                 )
                 result["ok"] = True
             except ModelError as exc:
@@ -2003,7 +2004,8 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     base_url=payload.get("base_url") or "",
                     api_key=payload.get("api_key"),
                     api_key_env=payload.get("api_key_env") or "STEAD_MODEL_API_KEY",
-                    call_timeout=_opt_int(payload, "call_timeout"))
+                    call_timeout=_opt_int(payload, "call_timeout"),
+                    context=_opt_int(payload, "context"))
                 result["ok"] = True
             except ModelError as exc:
                 raise UiError(str(exc)) from exc

@@ -319,6 +319,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         custom_responder = responder is not None
         usage = {"prompt_tokens": 0, "completion_tokens": 0,
                  "estimated": custom_responder}
+        prompt_budget = MAX_PROMPT_CHARS
         try:
             prices = (float(repo_meta.get("input_price_per_mtok") or 0),
                       float(repo_meta.get("output_price_per_mtok") or 0))
@@ -329,6 +330,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         if responder is None:
             from ctx import models
             settings = models.resolve(root, "build")
+            prompt_budget = _prompt_budget(settings)
 
             def responder(prompt):
                 if responder._plain:
@@ -377,7 +379,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         transcript.append(message)
                         nudged.add(threshold)
                         break
-            full_prompt = prompt + "\n\n" + "\n\n".join(_fit_budget(prompt, transcript))
+            full_prompt = prompt + "\n\n" + "\n\n".join(_fit_budget(prompt, transcript, budget=prompt_budget))
             chars_sent += len(full_prompt)
             _step_start = time.monotonic()
             reply = responder(full_prompt)
@@ -1328,9 +1330,11 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
         code = wt
         progress_log(f"worktree ready on {branch}")
 
+        prompt_budget = MAX_PROMPT_CHARS
         if responder is None:
             from ctx import models
             settings = models.resolve(root, "address")
+            prompt_budget = _prompt_budget(settings)
 
             def responder(prompt):
                 if responder._plain:
@@ -1362,7 +1366,7 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
         fresh_reads: set[str] = set()
         for _step in range(max_steps):
             _remain_running(root, deadline)
-            full_prompt = prompt + "\n\n" + "\n\n".join(_fit_budget(prompt, transcript))
+            full_prompt = prompt + "\n\n" + "\n\n".join(_fit_budget(prompt, transcript, budget=prompt_budget))
             reply = responder(full_prompt)
             action = _parse(reply)
             progress_log(f"step {_step + 1}/{max_steps}  {_describe(action)}")
@@ -1844,6 +1848,17 @@ def _resolved_rel(target: Path, code: Path) -> str:
         return target.resolve().relative_to(code.resolve()).as_posix()
     except ValueError:
         raise BuildError(f"path leaves the repository: {target}")
+
+
+def _prompt_budget(settings: dict | None) -> int:
+    """The character budget for the whole prompt, from the model's context
+    window. `context` is in tokens; ~4 chars per token is a safe estimate, with
+    a 10% margin so the model's own output also fits. No context set -> the
+    large default (effectively untrimmed)."""
+    tokens = (settings or {}).get("context") or 0
+    if not tokens:
+        return MAX_PROMPT_CHARS
+    return int(tokens * 4 * 0.9)
 
 
 def _fit_budget(prompt: str, transcript: list[str],

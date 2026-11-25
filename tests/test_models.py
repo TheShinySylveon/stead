@@ -174,6 +174,24 @@ class ModelTest(unittest.TestCase):
         models.set_model(self.root, provider="ollama", name="qwen")
         self.assertEqual(models.resolve(self.root)["call_timeout"], 1200)
 
+    def test_context_window_is_zero_by_default_and_can_be_set(self) -> None:
+        models.set_model(self.root, provider="ollama", name="llama3.2")
+        self.assertEqual(models.resolve(self.root)["context"], 0)
+        self.assertEqual(models.public_model(self.root)["context"], 0)
+        models.set_model(self.root, provider="ollama", name="llama3.2", context=40000)
+        self.assertEqual(models.resolve(self.root)["context"], 40000)
+        # Re-saving without the option keeps it.
+        models.set_model(self.root, provider="ollama", name="qwen")
+        self.assertEqual(models.resolve(self.root)["context"], 40000)
+
+    def test_context_window_out_of_range_is_refused(self) -> None:
+        with self.assertRaises(models.ModelError):
+            models.set_model(self.root, provider="ollama", name="llama3.2",
+                             context=-1)
+        with self.assertRaises(models.ModelError):
+            models.set_model(self.root, provider="ollama", name="llama3.2",
+                             context=2_000_000)
+
     def test_drafting_uses_the_configured_call_timeout(self) -> None:
         models.set_model(self.root, provider="ollama", name="llama3.2",
                          call_timeout=900)
