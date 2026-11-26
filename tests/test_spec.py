@@ -229,6 +229,17 @@ class SpecApprovalTest(unittest.TestCase):
         self.assertIn("made_up_helper", messages)
         self.assertNotIn("cmd_list", messages)  # a real symbol is not flagged
 
+    def test_stdlib_and_test_data_are_not_flagged(self) -> None:
+        code = self._seed_repo_with_code()
+        (code / "ctx/cli.py").write_text("def cmd_list():\n    pass\n", encoding="utf-8")
+        draft = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
+                 "- Edit `ctx/cli.py`: call `json.dumps`, `re.match`, and "
+                 "`os.path.join`; use `ctx.cli.cmd_list`; seed data named "
+                 "`alpha` and `beta`.\n")
+        result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                 responder=lambda _p: draft)
+        self.assertEqual(result["warnings"], [])
+
 
     LONG = ("Add a small command-line flag so a caller can change the greeting "
             "without editing the source; the default output stays the same when "
