@@ -300,6 +300,18 @@ def plan_symbol_warnings(plan: str, code: Path) -> list[str]:
                 target = module  # the module itself is invented
             else:
                 target = parts[-1]  # module is real; check the member symbol
+                # Location check: `module.symbol` must have that symbol defined
+                # IN that module, not just anywhere. `config.public_list` when
+                # public_list is in accounts, not config, is still a guess.
+                module_paths = [p for p in symbols if Path(p).stem == module]
+                if not any(target in symbols[p] for p in module_paths):
+                    where = flat.get(target)
+                    hint = (f" (it is in {where})" if where and where not in module_paths
+                            else "")
+                    warnings.append(
+                        f"the plan names `{name}`, but `{target}` is not "
+                        f"defined in `{module}`{hint}. Name the real module.")
+                    continue
         else:
             target = parts[0]
         if target in seen or not re.match(r"^[A-Za-z_]\w*$", target):
@@ -395,7 +407,7 @@ def _clean_draft(text: str) -> str:
 # to read.
 
 _DRAFT_MAX_READ_CHARS = 20_000
-_DRAFT_RESEARCH_TURNS = 8
+_DRAFT_RESEARCH_TURNS = 16
 _DRAFT_IGNORE_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
                       ".specify", "dist", "build", ".next", "target"}
 
@@ -541,9 +553,31 @@ def _draft_with_research(code, tree: str, symbols: str, title: str, body: str,
             continue
         history.append(f"(unknown action {kind!r}; use read, search, or finish)")
         prompt = draft_research_nudge("\n\n".join(history))
-    # Ran out of turns without a finish: ask once more, unfenced.
-    final = _clean_draft(responder(draft_research_nudge("\n\n".join(history))))
-    return final
+    # Research turns exhausted: a distinct, forced write turn. Ask for the spec
+    # and only the spec — not another action. If the model still returns an
+    # action or an empty reply, the caller will report the failure.
+    final_prompt = draft_write_prompt(title, body, tree, symbols, "\n\n".join(history))
+    return _clean_draft(responder(final_prompt))
+
+
+def draft_write_prompt(title: str, body: str, tree: str, symbols: str,
+                       research: str) -> str:
+    """The closing turn: write the spec, using the research already gathered."""
+    return (
+        "You have finished researching. Now write the full feature spec.\n"
+        "Do not issue any more read/search actions — just return the spec "
+        "Markdown, with exactly these sections in order:\n"
+        "1. A description of the ONE concrete code change.\n"
+        "2. `## Acceptance criteria` — a `- [ ]` checklist of concrete, "
+        "testable criteria (self-contained, no invented values).\n"
+        "3. `## Plan` — the real files/functions to edit, with boundary "
+        "constraints and the data source you actually traced.\n\n"
+        "What you read:\n"
+        + research + "\n\n"
+        + (f"Repository tree:\n{tree}\n\n" if tree else "")
+        + (f"Symbols by file:\n{symbols}\n\n" if symbols else "")
+        + f"# Issue: {title}\n\n{body}\n"
+    )
 
 
 def _looks_like_spec(text: str) -> bool:

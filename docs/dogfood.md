@@ -483,3 +483,25 @@ it skips straight to a spec, the deterministic symbol gate still applies.
 
 This is the mistake→rule loop applied to the draft step itself, and the finding
 is recorded here so the next bundle and future evals can cite it.
+
+### The read step helped, but the drafter still invents the source (2026-11-25)
+
+With the read/search research phase live, #104 was re-drafted. The structure was
+now correct (description + criteria + plan, with a "Data source traced" note),
+and the model did read `cmd_repo_list`. But it still wrote the source as
+`config.public_list()` — three errors at once:
+
+1. `public_list` is defined in `ctx/accounts.py`, not `ctx/config.py` (location
+   error — the symbol exists, in the wrong module).
+2. Neither is the data source for `repo list`, which reads the `repos` SQL index
+   via `db.connect` (flow error — the model read `cmd_repo_list` and still
+   guessed).
+3. The symbol gate passed, because it checks "does `public_list` exist anywhere"
+   and the answer is yes (in accounts) — it does not check "is it in the file the
+   plan claims".
+
+**Finding: a model can read the right file and still pattern-match to a
+plausible-but-wrong answer.** The next tightening is a *location* check: a plan
+that names `module.symbol` must have that symbol defined in that module, not just
+anywhere. That is a deterministic rule (the symbol map already records file ->
+symbols), and it would have flagged `config.public_list` immediately.
