@@ -261,6 +261,37 @@ def _flat_symbols(symbols: dict[str, list[str]]) -> dict[str, str]:
     return seen
 
 
+_SCHEMA_TABLE_RE = re.compile(
+    r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\((.*?)\);",
+    re.IGNORECASE | re.DOTALL)
+_CONSTRAINT_KEYWORDS = {"CHECK", "PRIMARY", "UNIQUE", "KEY", "FOREIGN"}
+
+
+def _schema_tables(code: Path) -> list[tuple[str, list[str]]]:
+    """[(table_name, [column, ...])] parsed from ``ctx/schema.sql``, or ``[]``.
+
+    This is the single derived source of truth for "what SQL tables exist";
+    both the drafter facts and the verification gate read it, so they cannot
+    disagree."""
+    schema = code / "ctx" / "schema.sql"
+    if not schema.is_file():
+        return []
+    try:
+        text = schema.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: list[tuple[str, list[str]]] = []
+    for m in _SCHEMA_TABLE_RE.finditer(text):
+        name = m.group(1)
+        cols: list[str] = []
+        for col in re.findall(r"^\s*(\w+)", m.group(2), re.MULTILINE):
+            if col.upper() in _CONSTRAINT_KEYWORDS or col in cols:
+                continue
+            cols.append(col)
+        out.append((name, cols))
+    return out
+
+
 def data_model_facts(code: Path) -> str:
     """A compact, derived description of Stead's own data model, so the drafter
     does not guess where data lives. Derived (not hand-written) from the schema
@@ -272,27 +303,10 @@ def data_model_facts(code: Path) -> str:
     """
     facts: list[str] = []
 
-    # SQL tables + columns from schema.sql.
-    schema = code / "ctx" / "schema.sql"
-    if schema.is_file():
-        try:
-            text = schema.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            text = ""
-        tables: list[str] = []
-        for m in re.finditer(
-                r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\((.*?)\);",
-                text, re.IGNORECASE | re.DOTALL):
-            name = m.group(1)
-            cols = []
-            for col in re.findall(r"^\s*(\w+)", m.group(2), re.MULTILINE):
-                if col.upper() in {"CHECK", "PRIMARY", "UNIQUE", "KEY", "FOREIGN"}:
-                    continue
-                if col not in cols:
-                    cols.append(col)
-            tables.append(f"{name}({', '.join(cols[:14])})")
-        if tables:
-            facts.append("SQL tables (via `db.connect`): " + "; ".join(tables))
+    tables = _schema_tables(code)
+    if tables:
+        facts.append("SQL tables (via `db.connect`): "
+                     + "; ".join(f"{n}({', '.join(c[:14])})" for n, c in tables))
 
     # Markdown object types + folders.
     from ctx.objects import TYPE_DIRS
@@ -426,6 +440,66 @@ def plan_path_warnings(plan: str, code: Path) -> list[str]:
             continue
         warnings.append(f"the plan names {name}, but {target.parent.relative_to(code).as_posix()}/ "
                         "is not in the repo")
+    return warnings
+
+
+def plan_data_warnings(plan: str, code: Path) -> list[str]:
+    """A plan's data-model claim that contradicts the derived schema.
+
+    Grounded in ``schema.sql`` + ``TYPE_DIRS`` (the same facts the drafter sees),
+    not hand-tuned prose patterns. Flags:
+
+    - a SQL table the plan names that the checkout does not define — the
+      invented ``build_records`` table failure;
+    - a ``config.<key>`` / ``config.load()[...]`` claim whose key is actually a
+      SQL table or markdown object type — the ``config.load()["repos"]`` failure
+      (repos live in the index/files, not in config).
+    """
+    from ctx.objects import TYPE_DIRS
+    tables = {name.lower() for name, _cols in _schema_tables(code)}
+    known_data = tables | {t.lower() for t in TYPE_DIRS}
+    warnings: list[str] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(name: str, reason: str, message: str) -> None:
+        key = (name.lower(), reason)
+        if key in seen:
+            return
+        seen.add(key)
+        warnings.append(message)
+
+    # Real SQL verbs are uppercase: `INSERT INTO build_records`, `FROM foo`.
+    # Lowercase "from" is prose ("data comes from ...") and is ignored.
+    for m in re.finditer(r"\b(?:FROM|INTO|JOIN|UPDATE)\s+`?([A-Za-z_]\w*)`?",
+                         plan or ""):
+        name = m.group(1)
+        if name.lower() not in tables:
+            add(name, "sql",
+                f"the plan reads/writes a `{name}` table, but schema.sql has no "
+                "such table. Say explicitly that you will add it, or read the "
+                "real table.")
+
+    # "the `X` table" / "a `X` table" — a backticked name claimed to be a table.
+    for m in re.finditer(r"`([A-Za-z_]\w*)`\s+table\b", plan or "", re.IGNORECASE):
+        name = m.group(1)
+        if name.lower() not in tables:
+            add(name, "table",
+                f"the plan calls `{name}` a table, but it is not in schema.sql "
+                "(there is no such table). Name the real table or say you will "
+                "add it.")
+
+    # `config.<key>` / `config.load()["<key>"]` where the key is data that
+    # actually lives in the SQL index or markdown files.
+    for m in re.finditer(
+            r"config\.(?:load\(\)\s*\[\s*[\"'](\w+)[\"']\s*\]|(\w+))", plan or ""):
+        key = (m.group(1) or m.group(2) or "").lower()
+        if key in known_data:
+            add(key, "config",
+                f"the plan reads `{key}` from config, but `{key}` is a markdown "
+                "object / SQL table, not a config key. Read it from the real "
+                "source (db.connect for the index, objects.iter_objects for the "
+                "files).")
+
     return warnings
 
 
@@ -719,6 +793,7 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
         raise SpecError("the draft has no `## Plan` section")
     warnings = plan_path_warnings(plan, code) if code is not None else []
     warnings += plan_symbol_warnings(plan, code) if code is not None else []
+    warnings += plan_data_warnings(plan, code) if code is not None else []
     warnings += [f"a build would refuse this draft: {p}" for p in readiness_problems(text)]
 
     today = date.today().isoformat()

@@ -9,6 +9,13 @@
   names the real data source instead of inventing one (`build_records` table,
   `config.load()["repos"]`, `list_tasks`). The full design is in
   `context/documents/draft-spec-system.md`.
+- **Stead now verifies a plan's data-model claims against the schema.** A new
+  `plan_data_warnings` gate (grounded in the same derived `schema.sql` +
+  `TYPE_DIRS` facts, not prose patterns) flags a plan that names a SQL table the
+  checkout does not define (the `build_records` failure) or reads a markdown
+  object / SQL table from `config` (the `config.load()["repos"]` failure). A
+  real table and a plain config key pass; uppercase SQL verbs only, so prose
+  "from" is not flagged.
 - **The draft step now traces real code, not guesses.** `spec draft` gains a
   bounded, read-only research phase: before writing the plan, the drafter can
   issue `read`/`search` actions against the checkout, so it names the real data

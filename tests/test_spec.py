@@ -252,6 +252,43 @@ class SpecApprovalTest(unittest.TestCase):
         self.assertIn("repos(id, title, kind)", facts)
         self.assertNotIn("CHECK", facts)  # constraint keywords are not columns
 
+    def test_fabricated_sql_table_is_flagged(self) -> None:
+        code = self._seed_repo_with_code()
+        (code / "ctx/schema.sql").write_text(
+            "CREATE TABLE repos (id TEXT, title TEXT);\n"
+            "CREATE TABLE tasks (id TEXT, title TEXT);\n", encoding="utf-8")
+        plan = "query the `build_records` table and `INSERT INTO build_records`.\n"
+        messages = "\n".join(spec.plan_data_warnings(plan, code))
+        self.assertIn("build_records", messages)
+        self.assertIn("no such table", messages)
+
+    def test_config_claim_for_data_is_flagged(self) -> None:
+        code = self._seed_repo_with_code()
+        (code / "ctx/schema.sql").write_text(
+            "CREATE TABLE repos (id TEXT);\n", encoding="utf-8")
+        plan = "read the repos from `config.load()[\"repos\"]`.\n"
+        messages = "\n".join(spec.plan_data_warnings(plan, code))
+        self.assertIn("repos", messages)
+        self.assertIn("not a config key", messages)
+
+    def test_real_table_and_plain_config_key_are_not_flagged(self) -> None:
+        code = self._seed_repo_with_code()
+        (code / "ctx/schema.sql").write_text(
+            "CREATE TABLE repos (id TEXT);\n", encoding="utf-8")
+        plan = "query the `repos` table and read `config.timeout`.\n"
+        self.assertEqual(spec.plan_data_warnings(plan, code), [])
+
+    def test_draft_spec_records_data_model_warnings(self) -> None:
+        code = self._seed_repo_with_code()
+        (code / "ctx/schema.sql").write_text(
+            "CREATE TABLE repos (id TEXT);\n", encoding="utf-8")
+        (code / "ctx/config.py").write_text("def load():\n    pass\n", encoding="utf-8")
+        draft = ("Add a small flag.\n\n## Acceptance criteria\n\n- [ ] it works\n\n"
+                 "## Plan\n\nRead the repos from `config.load()[\"repos\"]`.\n")
+        result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                 responder=lambda _p: draft)
+        self.assertIn("not a config key", "\n".join(result["warnings"]))
+
     def test_stdlib_and_test_data_are_not_flagged(self) -> None:
         code = self._seed_repo_with_code()
         (code / "ctx/cli.py").write_text("def cmd_list():\n    pass\n", encoding="utf-8")
