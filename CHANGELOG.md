@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+- **A non-Stead eval corpus keeps the data model working for any repo.** Three
+  committed fixture repos (`tests/fixtures/repos/` — a Prisma repo, a SQLAlchemy
+  repo, and a schema-less "declared-only" repo) plus a deterministic gate runner
+  (`spec.check_gate_cases`) are wired into `stead eval run`, so the spec gates
+  are now checked against non-Stead repos, not just Stead. `eval run` reports
+  `spec gates N/M` alongside the factory eval files, and a unit test pins the
+  corpus.
+- **Schema derivation now reads ORM models too.** `_schema_tables` detects
+  SQLAlchemy `__tablename__` in `*.py` files, in addition to `*.sql` and
+  `prisma/schema.prisma`, so a SQLAlchemy repo's tables are derived instead of
+  guessed.
+- **`plan_data_warnings` is a no-op when the repo has no schema artifact.** If
+  the checkout has no `*.sql`/Prisma/ORM schema, the gate has no ground truth to
+  contradict, so it returns cleanly instead of false-flagging every table name —
+  the declared-model channel is then the source of truth.
 - **The drafter's data model is now per-repo, not Stead's.** `data_model_facts`
   was generalized so it works for any repo: it surfaces what the repo *declares*
   (the `notes` field, a `## Data model` section of the repo body, and `related:`

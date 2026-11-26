@@ -290,6 +290,16 @@ class SpecApprovalTest(unittest.TestCase):
         facts = spec.data_model_facts(self.root, {"id": "repo-me-app"}, "", code)
         self.assertEqual(facts, "")
 
+    def test_spec_gate_corpus_passes_on_non_stead_fixtures(self) -> None:
+        # The committed non-Stead fixture corpus (Prisma, SQLAlchemy, declared-only)
+        # must pass the deterministic gates — this is what keeps the per-repo data
+        # model working for any repo, not just Stead.
+        repo = Path(__file__).parent.parent
+        result = spec.check_gate_cases(repo / "tests" / "fixtures" / "spec-gates.json",
+                                       repo / "tests" / "fixtures" / "repos")
+        self.assertTrue(result["ok"], "\n".join(result["problems"]))
+        self.assertEqual(result["passed"], 5)
+
     def test_fabricated_sql_table_is_flagged(self) -> None:
         code = self._seed_repo_with_code()
         (code / "ctx/schema.sql").write_text(

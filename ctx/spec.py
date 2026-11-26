@@ -268,13 +268,15 @@ _CONSTRAINT_KEYWORDS = {"CHECK", "PRIMARY", "UNIQUE", "KEY", "FOREIGN"}
 
 
 def _schema_tables(code: Path) -> list[tuple[str, list[str]]]:
-    """[(table_name, [column, ...])] from SQL/Prisma schema artifacts anywhere
-    in the checkout — not just Stead's own ``ctx/schema.sql``. A repo with no
-    schema artifact yields ``[]``, which is honest, not an error.
+    """[(table_name, [column, ...])] from schema artifacts anywhere in the
+    checkout — SQL (``*.sql``), Prisma (``schema.prisma``), and ORM models
+    (SQLAlchemy ``__tablename__``). A repo with no schema artifact yields
+    ``[]``, which is honest, not an error.
 
     This is the single derived source of truth for "what tables exist"; both the
     drafter facts and the verification gate read it, so they cannot disagree."""
     out: list[tuple[str, list[str]]] = []
+    seen: set[str] = set()
     for path in _schema_files(code):
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
@@ -282,37 +284,68 @@ def _schema_tables(code: Path) -> list[tuple[str, list[str]]]:
             continue
         if path.name == "schema.prisma":
             for m in re.finditer(r"^\s*model\s+(\w+)\s*\{", text, re.MULTILINE):
-                out.append((m.group(1), []))
+                if m.group(1) not in seen:
+                    seen.add(m.group(1))
+                    out.append((m.group(1), []))
             continue
         for m in _SCHEMA_TABLE_RE.finditer(text):
             name = m.group(1)
+            if name in seen:
+                continue
+            seen.add(name)
             cols: list[str] = []
             for col in re.findall(r"^\s*(\w+)", m.group(2), re.MULTILINE):
                 if col.upper() in _CONSTRAINT_KEYWORDS or col in cols:
                     continue
                 cols.append(col)
             out.append((name, cols))
+    # ORM models: SQLAlchemy `__tablename__ = "users"` in .py files.
+    for path in _py_files(code):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        for m in re.finditer(r"__tablename__\s*=\s*[\"'](\w+)[\"']", text):
+            name = m.group(1)
+            if name not in seen:
+                seen.add(name)
+                out.append((name, []))
     return out
 
 
 def _schema_files(code: Path) -> list[Path]:
-    """Schema artifacts in the checkout: every ``*.sql`` file plus
+    """SQL/Prisma schema artifacts: every ``*.sql`` file plus
     ``prisma/schema.prisma``. Skips vendored/dependency folders."""
-    ignored = {"node_modules", "venv", ".venv", "__pycache__", "dist", "build",
-               "target", ".next"}
     files: list[Path] = []
     for path in code.rglob("*.sql"):
-        try:
-            rel = path.relative_to(code)
-        except ValueError:
-            continue
-        if any(part.startswith(".") or part in ignored for part in rel.parts):
+        if _ignored_path(path, code):
             continue
         files.append(path)
     prisma = code / "prisma" / "schema.prisma"
     if prisma.is_file():
         files.append(prisma)
     return sorted(files)
+
+
+def _py_files(code: Path) -> list[Path]:
+    """Every ``*.py`` file, skipping vendored/dependency folders (for the ORM
+    ``__tablename__`` scan)."""
+    files: list[Path] = []
+    for path in code.rglob("*.py"):
+        if _ignored_path(path, code):
+            continue
+        files.append(path)
+    return sorted(files)
+
+
+def _ignored_path(path: Path, code: Path) -> bool:
+    ignored = {"node_modules", "venv", ".venv", "__pycache__", "dist", "build",
+               "target", ".next", ".git"}
+    try:
+        rel = path.relative_to(code)
+    except ValueError:
+        return True
+    return any(part.startswith(".") or part in ignored for part in rel.parts)
 
 
 _DATA_SECTION_HEADINGS = re.compile(
@@ -371,7 +404,7 @@ def data_model_facts(root: Path, repo_meta: dict, repo_body: str, code) -> str:
     if code is not None:
         tables = _schema_tables(code)
         if tables:
-            facts.append("SQL/Prisma tables (derived from the checkout): "
+            facts.append("Schema (derived from the checkout): "
                          + "; ".join(f"{n}({', '.join(c[:14])})" for n, c in tables))
 
         # Stead-specific bonus, detected from the target's own symbols — never
@@ -518,6 +551,10 @@ def plan_data_warnings(plan: str, code: Path) -> list[str]:
     no-op there — honest, not wrong.
     """
     tables = {name.lower() for name, _cols in _schema_tables(code)}
+    if not tables:
+        # No schema artifact in the checkout -> no ground truth to contradict.
+        # A no-op is honest: we cannot flag a "fabricated table" we cannot see.
+        return []
     warnings: list[str] = []
     seen: set[tuple[str, str]] = set()
 
@@ -560,6 +597,69 @@ def plan_data_warnings(plan: str, code: Path) -> list[str]:
                 "source, not config.")
 
     return warnings
+
+
+def check_gate_cases(cases_file: Path, fixtures_dir: Path) -> dict:
+    """Deterministic spec-gate eval: run the data-model/path/symbol gates against
+    fixture repos (non-Stead) and check the expected result. No model, no network.
+
+    ``cases_file`` is a JSON array of objects::
+
+        {"id", "title", "fixture" (dir name under ``fixtures_dir``), "plan",
+         "expect_clean": bool, "expect_count": int, "expect_contains": [substr],
+         "expect_tables": [name, ...]}
+
+    ``expect_tables`` asserts the checkout's schema is *derived* (so a Prisma
+    repo surfaces its models, a SQLAlchemy repo its ``__tablename__`` values).
+    Returns ``{"ok", "cases", "passed", "problems"}``."""
+    if not cases_file.is_file():
+        return {"ok": True, "cases": 0, "passed": 0, "problems": []}
+    try:
+        cases = json.loads(cases_file.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        return {"ok": False, "cases": 0, "passed": 0,
+                "problems": [f"{cases_file.name}: {exc}"]}
+    if not isinstance(cases, list):
+        return {"ok": False, "cases": 0, "passed": 0,
+                "problems": [f"{cases_file.name}: must be a JSON array"]}
+    problems: list[str] = []
+    passed = 0
+    for case in cases:
+        cid = case.get("id") or "?"
+        fixture = fixtures_dir / (case.get("fixture") or "")
+        if not fixture.is_dir():
+            problems.append(f"{cid}: fixture not found: {case.get('fixture')!r}")
+            continue
+        plan = case.get("plan") or ""
+        warnings = (plan_data_warnings(plan, fixture)
+                    + plan_path_warnings(plan, fixture)
+                    + plan_symbol_warnings(plan, fixture))
+        joined = "\n".join(warnings)
+        ok = True
+        if case.get("expect_clean"):
+            if warnings:
+                ok = False
+                problems.append(f"{cid}: expected no warnings, got: {joined}")
+        else:
+            want = int(case.get("expect_count") or 0)
+            if len(warnings) != want:
+                ok = False
+                problems.append(
+                    f"{cid}: expected {want} warnings, got {len(warnings)}: {joined}")
+            for sub in case.get("expect_contains") or []:
+                if sub not in joined:
+                    ok = False
+                    problems.append(f"{cid}: warnings missing {sub!r}: {joined}")
+        for name in case.get("expect_tables") or []:
+            derived = {n for n, _c in _schema_tables(fixture)}
+            if name not in derived:
+                ok = False
+                problems.append(
+                    f"{cid}: expected derived table {name!r}, got {sorted(derived)}")
+        if ok:
+            passed += 1
+    return {"ok": not problems, "cases": len(cases), "passed": passed,
+            "problems": problems}
 
 
 _CACHE_STUB = "Cached read-only from GitHub by `stead sync github`"
