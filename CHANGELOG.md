@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The draft step now traces real code, not guesses.** `spec draft` gains a
+  bounded, read-only research phase: before writing the plan, the drafter can
+  issue `read`/`search` actions against the checkout, so it names the real data
+  source instead of inventing one (the failure behind `kind` vs `tag`, the fake
+  `build_records` table, `list_tasks`, and `config.load()["repos"]`). The symbol
+  map and existence gate still apply, and a reply that skips straight to a spec
+  is still accepted and checked.
 - **The draft step now reads real symbols, not guessed ones.** The spec-draft
   prompt lists the functions/classes actually defined per file (an `ast`-derived
   symbol map), and a deterministic `plan_symbol_warnings` gate flags a plan that
