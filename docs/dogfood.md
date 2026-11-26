@@ -464,3 +464,22 @@ applied to the draft step itself.
 
 Set C remains unrun until the draft step is shown to stop inventing models; the
 frozen Set C specs are not spent on runs that need rescuing.
+
+### The draft step: from symbol map to a read step (2026-11-25)
+
+A fourth draft (#104) was still wrong *after* the symbol map: it wrote
+`config.load()["repos"]`, assuming repos live in a `stead.json` key, when
+`cmd_repo_list` actually queries the `repos` SQL index. The symbol gate passed it
+(`config.load` is a real function), which proved the limit: **a symbol map tells
+the drafter what exists, not how data flows.**
+
+The deeper rule: every draft failure so far — `kind` vs `tag`, the fake
+`build_records` table, `list_tasks`, `config.load()["repos"]` — was the same
+failure at a different layer: the drafter *guessed* where data lives instead of
+*tracing* it. So the draft step now has a **read/search research phase**: before
+writing the plan, the drafter can issue read/search actions against the real
+checkout (bounded, read-only) and must name the real data source it found. If
+it skips straight to a spec, the deterministic symbol gate still applies.
+
+This is the mistake→rule loop applied to the draft step itself, and the finding
+is recorded here so the next bundle and future evals can cite it.

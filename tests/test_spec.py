@@ -240,6 +240,35 @@ class SpecApprovalTest(unittest.TestCase):
                                  responder=lambda _p: draft)
         self.assertEqual(result["warnings"], [])
 
+    def test_drafter_can_read_and_search_before_finishing(self) -> None:
+        code = self._seed_repo_with_code()
+        (code / "ctx/cli.py").write_text(
+            "def cmd_repo_list(root, kind=None):\n"
+            "    query = 'SELECT id, kind, status, title FROM repos'\n",
+            encoding="utf-8")
+        import json as _json
+        replies = [
+            # First turn: read the command the issue names.
+            _json.dumps({"action": "read", "path": "ctx/cli.py"}),
+            # Second turn: trace the data source.
+            _json.dumps({"action": "search", "query": "FROM repos"}),
+            # Third turn: finish with a spec.
+            _json.dumps({"action": "finish", "spec": self.DRAFT}),
+        ]
+        prompts: list[str] = []
+
+        def respond(prompt: str) -> str:
+            prompts.append(prompt)
+            return replies.pop(0)
+
+        result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                 responder=respond)
+        self.assertEqual(result["path"].endswith("-spec.md"), True)
+        # The model saw the real file content it read.
+        self.assertTrue(any("SELECT id, kind, status, title FROM repos" in p
+                            for p in prompts))
+        self.assertTrue(any("cmd_repo_list" in p for p in prompts))
+
 
     LONG = ("Add a small command-line flag so a caller can change the greeting "
             "without editing the source; the default output stays the same when "
