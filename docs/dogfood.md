@@ -555,3 +555,27 @@ that citation against the code — the difference between "name real symbols"
 remaining frozen specs (#104, #106) are finished **by hand**, with each
 human edit recorded, because the honest metric is not "zero human edits" but
 "where exactly does the human step in, and is that shrinking."
+
+### Per-repo, not Stead's model (2026-11-26)
+
+The first `data_model_facts`/`plan_data_warnings` pass was built while dogfooding
+Stead-on-Stead, so it accidentally baked Stead in: it read `ctx/schema.sql` by
+path and imported `ctx.objects.TYPE_DIRS` from the *running* package, so any
+other repo would have been told Stead's object types as if they were the
+target's. The fix makes the data model **per-repo**:
+
+1. **Declared (human-owned, primary).** The repo's `notes` field, a
+   `## Data model` section of its markdown body, and its `related:` documents —
+   the same channel the build bundle already uses for repo conventions. The
+   Stead dogfood repo now declares its model this way ("repos are NOT a config
+   key"; "`public_list` is in `accounts.py`, not `config.py`").
+2. **Derived (generic).** SQL/Prisma schema artifacts anywhere in the checkout —
+   every `*.sql` file and `prisma/schema.prisma` — not just Stead's
+   `ctx/schema.sql`.
+3. **Stead-specific hints detected, not assumed.** "Build records are documents"
+   is keyed off the target's own `record_delivery` symbol.
+
+A repo that declares nothing and has no schema artifact gets an empty block, and
+the verification gate is a no-op — honest, not wrong. This is the answer to "how
+does Stead see the relevant info of *any* repo": it reads the repo's own declared
+context plus generic schema discovery, never its own self.
