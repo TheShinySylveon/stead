@@ -505,3 +505,53 @@ plausible-but-wrong answer.** The next tightening is a *location* check: a plan
 that names `module.symbol` must have that symbol defined in that module, not just
 anywhere. That is a deterministic rule (the symbol map already records file ->
 symbols), and it would have flagged `config.public_list` immediately.
+
+### Facts, not symbols: the drafter sees and is checked against the data model (2026-11-26)
+
+The location check was shipped (it flags `config.public_list` → "in accounts.py,
+not config"), but a fifth draft (#106) exposed the other failure mode of the
+*symbol* approach: the bare-name heuristic false-flagged `build_failures` and
+`infra_failures` — legitimate JSON keys the plan was *adding* — as invented
+functions. The symbol map tells the drafter what **functions** exist, but the
+drafter's real error all along was guessing where **data** lives, and that is
+not a symbol question at all.
+
+So the draft step was reworked around **facts, not symbols**:
+
+1. **The drafter now sees the data model, derived not written.** A
+   `data_model_facts` block (SQL tables + columns from `schema.sql`, markdown
+   object types from `TYPE_DIRS`, build-records-are-documents from `writeback`)
+   is derived at draft time and fed into both the research and write turns. It
+   cannot drift, because it is not a hand-written note.
+2. **Stead verifies the plan's data-model claims against that same schema.** A
+   new `plan_data_warnings` gate flags a plan that names a SQL table the
+   checkout does not define (the `build_records` failure) or reads a markdown
+   object / SQL table from `config` (the `config.load()["repos"]` failure). It
+   is grounded in the derived facts, not prose patterns, and is deliberate about
+   false positives (uppercase SQL verbs only, real tables and plain config keys
+   pass).
+3. **The bare-name symbol check was demoted to call-only.** A bare backticked
+   name is only flagged when written as a call (`list_tasks()`), because `(` is
+   the unambiguous marker of a function reference; a bare `build_failures` is a
+   field, not a function. This removed the #106 false positive. Dotted
+   location-check warnings were also deduplicated (five `config.public_list`
+   occurrences now warn once).
+
+**Finding, recorded honestly: the draft step is still human-gated.** Five
+drafts, five invented data models, each a different wrong answer. The gates now
+catch *gross* errors deterministically (invented tables, wrong modules, data
+claimed to live in config), but they do **not** guarantee a correct data flow —
+a model that reads `cmd_repo_list`, sees `SELECT … FROM repos`, and still writes
+`config.public_list()` will not be fixed by more rules. The deterministic gates
+are **defense in depth**, not a correctness proof.
+
+The honest framing of the product today: **Stead makes human review fast and
+structured, and deterministically refuses the obvious slop — it does not yet
+write correct specs unattended.** The next real investment is *cite-and-verify*
+drafting: the plan must say where it saw the data source ("repos come from
+`db.connect` querying `repos`, seen in `cmd_repo_list`"), and Stead verifies
+that citation against the code — the difference between "name real symbols"
+(done) and "prove your claim matches the code" (not done). Until then, the
+remaining frozen specs (#104, #106) are finished **by hand**, with each
+human edit recorded, because the honest metric is not "zero human edits" but
+"where exactly does the human step in, and is that shrinking."
