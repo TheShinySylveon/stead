@@ -85,7 +85,7 @@ def run(root: Path) -> dict:
                     spec_sha = str(meta.get("spec_sha") or "")
                     if not spec_sha:
                         warnings.append(_issue(relative, "no spec_sha (unapproved)"))
-                    elif spec_sha != _body_hash(body):
+                    elif spec_sha not in _body_spec_shas(body):
                         warnings.append(_issue(
                             relative, "body changed (spec_sha mismatch)"))
     return {"checked": checked, "errors": errors, "warnings": warnings}
@@ -124,6 +124,18 @@ def _body_hash(body: str) -> str:
     would flag."""
     import hashlib
     return hashlib.sha256(body.strip().encode("utf-8")).hexdigest()
+
+
+def _body_spec_shas(body: str) -> set[str]:
+    """Digests that count as approval for this body.
+
+    `ctx.spec.body_hash` stores the stripped digest; the doctor also accepts
+    the exact UTF-8 digest (and a trailing-newline variant) so an approved
+    body is silent whether the frontmatter reader kept or dropped the final
+    newline."""
+    import hashlib
+    candidates = [body, body.strip(), body.rstrip("\n") + "\n"]
+    return {hashlib.sha256(c.encode("utf-8")).hexdigest() for c in candidates}
 
 
 def render(report: dict) -> str:
