@@ -222,12 +222,25 @@ class SpecApprovalTest(unittest.TestCase):
         (code / "ctx/cli.py").write_text("def cmd_list():\n    pass\n", encoding="utf-8")
         (code / "ctx/metrics.py").write_text("def collect():\n    pass\n", encoding="utf-8")
         draft = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
-                 "- Edit `ctx/cli.py` and call `cmd_list` and `made_up_helper`.\n")
+                 "- Edit `ctx/cli.py` and call `cmd_list()` and `made_up_helper()`.\n")
         result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
                                  responder=lambda _p: draft)
         messages = "\n".join(result["warnings"])
         self.assertIn("made_up_helper", messages)
         self.assertNotIn("cmd_list", messages)  # a real symbol is not flagged
+
+    def test_bare_json_keys_are_not_flagged_as_symbols(self) -> None:
+        # `build_failures`/`infra_failures` are JSON keys the plan adds, not
+        # functions; a bare (non-call) name must not be flagged as invented.
+        code = self._seed_repo_with_code()
+        (code / "ctx/metrics.py").write_text("def collect():\n    pass\n", encoding="utf-8")
+        draft = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n"
+                 "## Acceptance criteria\n\n- [ ] it works\n\n"
+                 "## Plan\n\nEdit `ctx/metrics.py` to emit top-level "
+                 "`build_failures` and `infra_failures` keys from `collect()`.\n")
+        result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
+                                 responder=lambda _p: draft)
+        self.assertEqual(result["warnings"], [])
 
     def test_wrong_module_member_is_flagged(self) -> None:
         # `collect` is defined in ctx/metrics.py, not ctx/cli.py; naming it as

@@ -325,19 +325,20 @@ def data_model_facts(code: Path) -> str:
 
 
 def plan_symbol_warnings(plan: str, code: Path) -> list[str]:
-    """A named symbol (``file.func`` or a bare backticked name) the checkout
-    does not define. Rejects the guess-the-data-model failure: the drafter
-    must read the real symbols, not invent plausible ones.
+    """A named symbol (``file.func`` or a bare called name) the checkout does
+    not define. Rejects the guess-the-data-model failure: the drafter must read
+    the real symbols, not invent plausible ones.
 
     Dotted names whose first part is a stdlib module (``json.loads``,
     ``re.match``, ``os.path``) are not repo symbols and are never flagged. A
-    bare name that matches none of the repo symbols is flagged only when it
-    looks like a function/class reference, not an arbitrary identifier."""
+    bare name is flagged only when it is written as a call (``list_tasks()``),
+    not when it is a plain field or JSON key (``build_failures``)."""
     symbols = symbol_map(code)
     flat = _flat_symbols(symbols)
     modules = {Path(p).stem for p in symbols}
     warnings: list[str] = []
     seen: set[str] = set()
+    seen_dotted: set[tuple[str, str]] = set()
     for token in _PATH_TOKEN.findall(plan or ""):
         name = token.strip().rstrip(".,;:()")
         if not name or "://" in name:
@@ -368,12 +369,15 @@ def plan_symbol_warnings(plan: str, code: Path) -> list[str]:
                 # public_list is in accounts, not config, is still a guess.
                 module_paths = [p for p in symbols if Path(p).stem == module]
                 if not any(target in symbols[p] for p in module_paths):
-                    where = flat.get(target)
-                    hint = (f" (it is in {where})" if where and where not in module_paths
-                            else "")
-                    warnings.append(
-                        f"the plan names `{name}`, but `{target}` is not "
-                        f"defined in `{module}`{hint}. Name the real module.")
+                    key = (module, target)
+                    if key not in seen_dotted:
+                        seen_dotted.add(key)
+                        where = flat.get(target)
+                        hint = (f" (it is in {where})"
+                                if where and where not in module_paths else "")
+                        warnings.append(
+                            f"the plan names `{name}`, but `{target}` is not "
+                            f"defined in `{module}`{hint}. Name the real module.")
                     continue
         else:
             target = parts[0]
@@ -382,11 +386,11 @@ def plan_symbol_warnings(plan: str, code: Path) -> list[str]:
         seen.add(target)
         if target in flat or target in modules:
             continue
-        # A bare name that matches no symbol may be test data ("alpha") rather
-        # than an invented function. Flag only names that look like a function
-        # or class reference: snake_case with an underscore, CamelCase, or a
-        # known verb-prefixed name — not a single lowercase word.
-        if len(parts) == 1 and not _LOOKS_LIKE_SYMBOL.match(target):
+        # A bare backticked name is ambiguous: it can be a data field (a JSON
+        # key like `build_failures`) or a function. Only a name written as a
+        # call — `list_tasks()` — is unambiguous evidence that the plan expects
+        # a function that does not exist, so only that is flagged.
+        if "(" not in token:
             continue
         warnings.append(
             f"the plan names `{name}`, which is not defined anywhere in the "
@@ -404,12 +408,6 @@ _STDLIB_MODULES = {
     "dataclasses", "contextlib", "itertools", "functools", "math", "random",
     "io", "string", "secrets", "sqlite3", "argparse", "textwrap", "unittest",
 }
-
-# A bare backticked name is treated as a symbol reference when it looks like a
-# function or class: snake_case (has an underscore) or CamelCase. A single
-# lowercase word ("alpha", "banana") is more likely test data, so it is not
-# flagged.
-_LOOKS_LIKE_SYMBOL = re.compile(r"^(?:[a-z][a-z0-9]*_[a-z0-9_]*|[A-Z][A-Za-z0-9]*)$")
 
 # Package prefixes in a dotted name that are directories, not modules.
 _PACKAGE_NAMES = {"ctx", "stead", "tests"}
