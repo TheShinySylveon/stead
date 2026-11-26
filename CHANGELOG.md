@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The draft step now reads real symbols, not guessed ones.** The spec-draft
+  prompt lists the functions/classes actually defined per file (an `ast`-derived
+  symbol map), and a deterministic `plan_symbol_warnings` gate flags a plan that
+  names a symbol the checkout does not define — catching the "invented data
+  model" failure (a fake `build_records` table, a fake `list_tasks`, a fake db
+  helper) at draft time instead of human review.
 - **Per-model context window.** `stead model set/add` and the cockpit gain a
   `context` field (the model's context window in tokens, 0 = unset). The build
   and address loops now trim the transcript to that window (4 chars/token, 10%
