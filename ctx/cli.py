@@ -138,7 +138,7 @@ def cmd_task_list(root: Path, project: str | None = None, status: str | None = N
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
     if sort:
-        query += " ORDER BY title COLLATE NOCASE, status COLLATE NOCASE"
+        query += " ORDER BY title COLLATE NOCASE ASC, status COLLATE NOCASE ASC"
     else:
         query += " ORDER BY id"
 

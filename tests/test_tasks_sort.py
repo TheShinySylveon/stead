@@ -43,8 +43,9 @@ class TestTaskListSort(CtxTestCase):
         with redirect_stdout(buf):
             try:
                 parser.parse_args(["task", "list", "--help"])
-            except SystemExit:
-                pass
+                self.fail("--help should exit the parser")
+            except SystemExit as exc:
+                self.assertEqual(exc.code, 0)
         self.assertIn("--sort", buf.getvalue())
         self.assertIn("sort tasks by title, then status", buf.getvalue())
 
