@@ -1241,11 +1241,18 @@ def main(argv: list[str] | None = None) -> int:
         from ctx import models
         if args.sub == "run":
             checked = models.check_eval_files(root, args.factory)
-            if not checked["ok"]:
-                for problem in checked["problems"]:
+            from ctx import spec
+            fixtures = Path(__file__).parent.parent / "tests" / "fixtures"
+            gates = spec.check_gate_cases(fixtures / "spec-gates.json",
+                                          fixtures / "repos")
+            problems = list(checked["problems"]) + gates["problems"]
+            if problems:
+                for problem in problems:
                     print(problem)
                 return 1
-            print(f"eval files ok ({checked['cases']} cases)")
+            tail = (f", spec gates {gates['passed']}/{gates['cases']}"
+                    if gates["cases"] else "")
+            print(f"eval files ok ({checked['cases']} cases{tail})")
             return 0
         try:
             judged = models.judge(root, args.factory, args.case, args.output,

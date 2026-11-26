@@ -1,0 +1,43 @@
+[
+  {
+    "id": "prisma-fabricated-table",
+    "title": "Prisma repo: a plan naming a table not in schema.prisma is flagged",
+    "fixture": "prisma",
+    "plan": "Add an index over the `widgets` table.\n",
+    "expect_count": 1,
+    "expect_contains": ["widgets"],
+    "expect_tables": ["User", "Post"]
+  },
+  {
+    "id": "prisma-real-model-clean",
+    "title": "Prisma repo: a plan querying a real model is not flagged",
+    "fixture": "prisma",
+    "plan": "Read the `User` table and list its `Post` rows.\n",
+    "expect_clean": true,
+    "expect_tables": ["User", "Post"]
+  },
+  {
+    "id": "sqlalchemy-fabricated-table",
+    "title": "SQLAlchemy repo: a plan naming a table not in __tablename__ is flagged",
+    "fixture": "sqlalchemy",
+    "plan": "Add an index over the `widgets` table.\n",
+    "expect_count": 1,
+    "expect_contains": ["widgets"],
+    "expect_tables": ["users", "posts"]
+  },
+  {
+    "id": "sqlalchemy-real-table-clean",
+    "title": "SQLAlchemy repo: a plan querying a real __tablename__ is not flagged",
+    "fixture": "sqlalchemy",
+    "plan": "Read the `users` table and join its `posts`.\n",
+    "expect_clean": true,
+    "expect_tables": ["users", "posts"]
+  },
+  {
+    "id": "declared-no-schema-honest",
+    "title": "Schema-less repo: no schema artifact means the gate is a no-op, not a false alarm",
+    "fixture": "declared",
+    "plan": "Add an index over the `widgets` table (the data model is declared in repo notes, not code).\n",
+    "expect_clean": true
+  }
+]
