@@ -261,20 +261,84 @@ def _flat_symbols(symbols: dict[str, list[str]]) -> dict[str, str]:
     return seen
 
 
+_SCHEMA_TABLE_RE = re.compile(
+    r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\((.*?)\);",
+    re.IGNORECASE | re.DOTALL)
+_CONSTRAINT_KEYWORDS = {"CHECK", "PRIMARY", "UNIQUE", "KEY", "FOREIGN"}
+
+
+def _schema_tables(code: Path) -> list[tuple[str, list[str]]]:
+    """[(table_name, [column, ...])] parsed from ``ctx/schema.sql``, or ``[]``.
+
+    This is the single derived source of truth for "what SQL tables exist";
+    both the drafter facts and the verification gate read it, so they cannot
+    disagree."""
+    schema = code / "ctx" / "schema.sql"
+    if not schema.is_file():
+        return []
+    try:
+        text = schema.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return []
+    out: list[tuple[str, list[str]]] = []
+    for m in _SCHEMA_TABLE_RE.finditer(text):
+        name = m.group(1)
+        cols: list[str] = []
+        for col in re.findall(r"^\s*(\w+)", m.group(2), re.MULTILINE):
+            if col.upper() in _CONSTRAINT_KEYWORDS or col in cols:
+                continue
+            cols.append(col)
+        out.append((name, cols))
+    return out
+
+
+def data_model_facts(code: Path) -> str:
+    """A compact, derived description of Stead's own data model, so the drafter
+    does not guess where data lives. Derived (not hand-written) from the schema
+    and object layout, so it cannot drift.
+
+    - SQL tables + columns, from ``ctx/schema.sql``.
+    - Markdown object types + folders, from ``ctx/objects.py`` ``TYPE_DIRS``.
+    - Build records are documents, not rows.
+    """
+    facts: list[str] = []
+
+    tables = _schema_tables(code)
+    if tables:
+        facts.append("SQL tables (via `db.connect`): "
+                     + "; ".join(f"{n}({', '.join(c[:14])})" for n, c in tables))
+
+    # Markdown object types + folders.
+    from ctx.objects import TYPE_DIRS
+    types = ", ".join(f"{t} -> context/{d}/" for t, d in sorted(TYPE_DIRS.items()))
+    facts.append(
+        "Markdown object types (files are the source of truth): " + types)
+
+    # Build records are documents, not a table.
+    if any("record_delivery" in names for names in symbol_map(code).values()):
+        facts.append(
+            "Build records are `document` markdown tagged `build-record`, written "
+            "by `writeback.record_delivery`/`record_failure` — there is no "
+            "`build_records` SQL table.")
+
+    return "\n".join(f"- {f}" for f in facts)
+
+
 def plan_symbol_warnings(plan: str, code: Path) -> list[str]:
-    """A named symbol (``file.func`` or a bare backticked name) the checkout
-    does not define. Rejects the guess-the-data-model failure: the drafter
-    must read the real symbols, not invent plausible ones.
+    """A named symbol (``file.func`` or a bare called name) the checkout does
+    not define. Rejects the guess-the-data-model failure: the drafter must read
+    the real symbols, not invent plausible ones.
 
     Dotted names whose first part is a stdlib module (``json.loads``,
     ``re.match``, ``os.path``) are not repo symbols and are never flagged. A
-    bare name that matches none of the repo symbols is flagged only when it
-    looks like a function/class reference, not an arbitrary identifier."""
+    bare name is flagged only when it is written as a call (``list_tasks()``),
+    not when it is a plain field or JSON key (``build_failures``)."""
     symbols = symbol_map(code)
     flat = _flat_symbols(symbols)
     modules = {Path(p).stem for p in symbols}
     warnings: list[str] = []
     seen: set[str] = set()
+    seen_dotted: set[tuple[str, str]] = set()
     for token in _PATH_TOKEN.findall(plan or ""):
         name = token.strip().rstrip(".,;:()")
         if not name or "://" in name:
@@ -305,12 +369,15 @@ def plan_symbol_warnings(plan: str, code: Path) -> list[str]:
                 # public_list is in accounts, not config, is still a guess.
                 module_paths = [p for p in symbols if Path(p).stem == module]
                 if not any(target in symbols[p] for p in module_paths):
-                    where = flat.get(target)
-                    hint = (f" (it is in {where})" if where and where not in module_paths
-                            else "")
-                    warnings.append(
-                        f"the plan names `{name}`, but `{target}` is not "
-                        f"defined in `{module}`{hint}. Name the real module.")
+                    key = (module, target)
+                    if key not in seen_dotted:
+                        seen_dotted.add(key)
+                        where = flat.get(target)
+                        hint = (f" (it is in {where})"
+                                if where and where not in module_paths else "")
+                        warnings.append(
+                            f"the plan names `{name}`, but `{target}` is not "
+                            f"defined in `{module}`{hint}. Name the real module.")
                     continue
         else:
             target = parts[0]
@@ -319,11 +386,11 @@ def plan_symbol_warnings(plan: str, code: Path) -> list[str]:
         seen.add(target)
         if target in flat or target in modules:
             continue
-        # A bare name that matches no symbol may be test data ("alpha") rather
-        # than an invented function. Flag only names that look like a function
-        # or class reference: snake_case with an underscore, CamelCase, or a
-        # known verb-prefixed name — not a single lowercase word.
-        if len(parts) == 1 and not _LOOKS_LIKE_SYMBOL.match(target):
+        # A bare backticked name is ambiguous: it can be a data field (a JSON
+        # key like `build_failures`) or a function. Only a name written as a
+        # call — `list_tasks()` — is unambiguous evidence that the plan expects
+        # a function that does not exist, so only that is flagged.
+        if "(" not in token:
             continue
         warnings.append(
             f"the plan names `{name}`, which is not defined anywhere in the "
@@ -341,12 +408,6 @@ _STDLIB_MODULES = {
     "dataclasses", "contextlib", "itertools", "functools", "math", "random",
     "io", "string", "secrets", "sqlite3", "argparse", "textwrap", "unittest",
 }
-
-# A bare backticked name is treated as a symbol reference when it looks like a
-# function or class: snake_case (has an underscore) or CamelCase. A single
-# lowercase word ("alpha", "banana") is more likely test data, so it is not
-# flagged.
-_LOOKS_LIKE_SYMBOL = re.compile(r"^(?:[a-z][a-z0-9]*_[a-z0-9_]*|[A-Z][A-Za-z0-9]*)$")
 
 # Package prefixes in a dotted name that are directories, not modules.
 _PACKAGE_NAMES = {"ctx", "stead", "tests"}
@@ -377,6 +438,66 @@ def plan_path_warnings(plan: str, code: Path) -> list[str]:
             continue
         warnings.append(f"the plan names {name}, but {target.parent.relative_to(code).as_posix()}/ "
                         "is not in the repo")
+    return warnings
+
+
+def plan_data_warnings(plan: str, code: Path) -> list[str]:
+    """A plan's data-model claim that contradicts the derived schema.
+
+    Grounded in ``schema.sql`` + ``TYPE_DIRS`` (the same facts the drafter sees),
+    not hand-tuned prose patterns. Flags:
+
+    - a SQL table the plan names that the checkout does not define — the
+      invented ``build_records`` table failure;
+    - a ``config.<key>`` / ``config.load()[...]`` claim whose key is actually a
+      SQL table or markdown object type — the ``config.load()["repos"]`` failure
+      (repos live in the index/files, not in config).
+    """
+    from ctx.objects import TYPE_DIRS
+    tables = {name.lower() for name, _cols in _schema_tables(code)}
+    known_data = tables | {t.lower() for t in TYPE_DIRS}
+    warnings: list[str] = []
+    seen: set[tuple[str, str]] = set()
+
+    def add(name: str, reason: str, message: str) -> None:
+        key = (name.lower(), reason)
+        if key in seen:
+            return
+        seen.add(key)
+        warnings.append(message)
+
+    # Real SQL verbs are uppercase: `INSERT INTO build_records`, `FROM foo`.
+    # Lowercase "from" is prose ("data comes from ...") and is ignored.
+    for m in re.finditer(r"\b(?:FROM|INTO|JOIN|UPDATE)\s+`?([A-Za-z_]\w*)`?",
+                         plan or ""):
+        name = m.group(1)
+        if name.lower() not in tables:
+            add(name, "sql",
+                f"the plan reads/writes a `{name}` table, but schema.sql has no "
+                "such table. Say explicitly that you will add it, or read the "
+                "real table.")
+
+    # "the `X` table" / "a `X` table" — a backticked name claimed to be a table.
+    for m in re.finditer(r"`([A-Za-z_]\w*)`\s+table\b", plan or "", re.IGNORECASE):
+        name = m.group(1)
+        if name.lower() not in tables:
+            add(name, "table",
+                f"the plan calls `{name}` a table, but it is not in schema.sql "
+                "(there is no such table). Name the real table or say you will "
+                "add it.")
+
+    # `config.<key>` / `config.load()["<key>"]` where the key is data that
+    # actually lives in the SQL index or markdown files.
+    for m in re.finditer(
+            r"config\.(?:load\(\)\s*\[\s*[\"'](\w+)[\"']\s*\]|(\w+))", plan or ""):
+        key = (m.group(1) or m.group(2) or "").lower()
+        if key in known_data:
+            add(key, "config",
+                f"the plan reads `{key}` from config, but `{key}` is a markdown "
+                "object / SQL table, not a config key. Read it from the real "
+                "source (db.connect for the index, objects.iter_objects for the "
+                "files).")
+
     return warnings
 
 
@@ -468,7 +589,8 @@ def _draft_search(code: Path, query: str) -> str:
     return ("search {query!r}:\n" + "\n".join(hits)) if hits else f"search {query!r}: no matches"
 
 
-def draft_research_prompt(title: str, body: str, tree: str, symbols: str) -> str:
+def draft_research_prompt(title: str, body: str, tree: str, symbols: str,
+                          facts: str = "") -> str:
     """The first drafting turn: ground yourself in the real code, then plan.
     The model may issue read/search actions (one JSON action per reply) before
     it writes the spec, so its plan names real data flow, not a guess."""
@@ -482,6 +604,7 @@ def draft_research_prompt(title: str, body: str, tree: str, symbols: str) -> str
         "data (a SQL index? a markdown file? a config key?). Past drafts failed "
         "by inventing a data model that does not exist. Do not invent folders, "
         "files, functions, tables, or fields.\n\n"
+        + (f"Data model (the real shapes):\n{facts}\n\n" if facts else "")
         + (f"Repository tree (depth 2):\n{tree}\n\n" if tree else "")
         + (f"These are the functions and classes actually defined in each "
            f"file; read the ones the issue is about.\n{symbols}\n\n"
@@ -506,7 +629,7 @@ def draft_research_nudge(history: str) -> str:
 
 
 def _draft_with_research(code, tree: str, symbols: str, title: str, body: str,
-                         responder) -> str:
+                         responder, facts: str = "") -> str:
     """The research loop: the drafter may read/search before writing the spec.
 
     Returns the spec text. When ``code`` is None there is nothing to read, so
@@ -518,7 +641,7 @@ def _draft_with_research(code, tree: str, symbols: str, title: str, body: str,
         return _clean_draft(responder(prompt))
 
     history: list[str] = []
-    prompt = draft_research_prompt(title, body, tree, symbols)
+    prompt = draft_research_prompt(title, body, tree, symbols, facts)
     for _turn in range(_DRAFT_RESEARCH_TURNS):
         reply = _clean_draft(responder(prompt))
         action = _parse_action(reply)
@@ -556,12 +679,13 @@ def _draft_with_research(code, tree: str, symbols: str, title: str, body: str,
     # Research turns exhausted: a distinct, forced write turn. Ask for the spec
     # and only the spec — not another action. If the model still returns an
     # action or an empty reply, the caller will report the failure.
-    final_prompt = draft_write_prompt(title, body, tree, symbols, "\n\n".join(history))
+    final_prompt = draft_write_prompt(title, body, tree, symbols, "\n\n".join(history),
+                                      facts)
     return _clean_draft(responder(final_prompt))
 
 
 def draft_write_prompt(title: str, body: str, tree: str, symbols: str,
-                       research: str) -> str:
+                       research: str, facts: str = "") -> str:
     """The closing turn: write the spec, using the research already gathered."""
     return (
         "You have finished researching. Now write the full feature spec.\n"
@@ -572,7 +696,8 @@ def draft_write_prompt(title: str, body: str, tree: str, symbols: str,
         "testable criteria (self-contained, no invented values).\n"
         "3. `## Plan` — the real files/functions to edit, with boundary "
         "constraints and the data source you actually traced.\n\n"
-        "What you read:\n"
+        + (f"Data model (the real shapes):\n{facts}\n\n" if facts else "")
+        + "What you read:\n"
         + research + "\n\n"
         + (f"Repository tree:\n{tree}\n\n" if tree else "")
         + (f"Symbols by file:\n{symbols}\n\n" if symbols else "")
@@ -641,18 +766,20 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
 
     tree = ""
     symbols = ""
+    facts = ""
     if code is not None:
         from ctx.agent import _tree
         tree = _tree(code)
         symbols = "\n".join(
             f"- {path}: {', '.join(names)}"
             for path, names in sorted(symbol_map(code).items()))
+        facts = data_model_facts(code)
     if responder is None:
         from ctx import models
         responder = lambda p: models.draft(root, p)
     text = _draft_with_research(code, tree, symbols,
                                 source.get("title") or contribution_ref,
-                                source_body, responder)
+                                source_body, responder, facts)
     if not text:
         raise SpecError("the model returned an empty draft")
     from ctx import factory
@@ -664,6 +791,7 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
         raise SpecError("the draft has no `## Plan` section")
     warnings = plan_path_warnings(plan, code) if code is not None else []
     warnings += plan_symbol_warnings(plan, code) if code is not None else []
+    warnings += plan_data_warnings(plan, code) if code is not None else []
     warnings += [f"a build would refuse this draft: {p}" for p in readiness_problems(text)]
 
     today = date.today().isoformat()

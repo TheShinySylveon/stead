@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+- **The drafter now sees Stead's data model, derived not written.** A new
+  `data_model_facts` block (SQL tables from `schema.sql`, markdown object types
+  from `TYPE_DIRS`, build-records-are-documents from `writeback`) is derived at
+  draft time and fed into both the research and write turns, so the drafter
+  names the real data source instead of inventing one (`build_records` table,
+  `config.load()["repos"]`, `list_tasks`). The full design is in
+  `context/documents/draft-spec-system.md`.
+- **Stead now verifies a plan's data-model claims against the schema.** A new
+  `plan_data_warnings` gate (grounded in the same derived `schema.sql` +
+  `TYPE_DIRS` facts, not prose patterns) flags a plan that names a SQL table the
+  checkout does not define (the `build_records` failure) or reads a markdown
+  object / SQL table from `config` (the `config.load()["repos"]` failure). A
+  real table and a plain config key pass; uppercase SQL verbs only, so prose
+  "from" is not flagged.
+- **The symbol gate no longer flags bare data keys as invented functions.** A
+  bare backticked name is only flagged when it is written as a call
+  (`list_tasks()`), because `(` is the unambiguous marker of a function
+  reference; a bare `build_failures` / `infra_failures` (JSON keys a plan adds)
+  is a field, not a symbol. Dotted location-check warnings are now deduplicated
+  too, so `config.public_list` appearing five times warns once.
 - **The draft step now traces real code, not guesses.** `spec draft` gains a
   bounded, read-only research phase: before writing the plan, the drafter can
   issue `read`/`search` actions against the checkout, so it names the real data
