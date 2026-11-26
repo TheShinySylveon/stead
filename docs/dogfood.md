@@ -431,3 +431,36 @@ frontier, not a regression: the weak-model-build question is answered.
 
 Set B total so far: #1 and #2 hand-finished, #3 autonomous. Set C and the
 hold-out are not yet run.
+
+## Set C (2026-11-25) — in progress, and the draft step is the bottleneck
+
+Set C is the *fresh end-to-end* sign-off: `monitor → draft → approve → build →
+PR → comment → merge`, unattended. It is not runnable yet, and the reason is
+specific: **the draft step invents the data model.** Three consecutive drafts
+got the ontology wrong before any build ran:
+
+| Draft | Invented | Reality |
+|---|---|---|
+| #101 | `kind: stead-build` | `stead-build` is a *tag*, not the `kind` field |
+| #102 | a `build_records` SQL table + `get_latest_build_record` db helper | build records are *markdown documents* tagged `build-record`, read by `writeback` |
+| #103 | `ctx/tasks.py list_tasks()` | `ctx/tasks.py` is the cockpit's thread registry; the command is `cmd_task_list` in `ctx/cli.py` |
+
+Also, #103's acceptance criterion ("preserves insertion order") was *unrealizable*
+— the default is `ORDER BY id`, and ids are title-derived slugs, so insertion
+order is not what's preserved.
+
+**Finding: the drafter was shown a tree of filenames but not what is inside
+them, so it guessed plausible symbols instead of reading real ones.** A filename
+cannot tell it that `ctx/tasks.py` is a thread registry.
+
+**Rule added (this change): a symbol map + a deterministic symbol-existence
+gate.** The draft prompt now lists the real functions/classes per file (an
+`ast`-derived map), and `plan_symbol_warnings` refuses a plan that names a
+symbol the checkout does not define — the same family as `vague-plan` and
+`fabricated-value`, applied to the draft's data model. Verified against the
+three historical failures: it flags `build_records`, `get_latest_build_record`,
+and `list_tasks`, and passes the real symbols. This is the mistake→rule loop
+applied to the draft step itself.
+
+Set C remains unrun until the draft step is shown to stop inventing models; the
+frozen Set C specs are not spent on runs that need rescuing.
