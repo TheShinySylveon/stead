@@ -261,6 +261,55 @@ def _flat_symbols(symbols: dict[str, list[str]]) -> dict[str, str]:
     return seen
 
 
+def data_model_facts(code: Path) -> str:
+    """A compact, derived description of Stead's own data model, so the drafter
+    does not guess where data lives. Derived (not hand-written) from the schema
+    and object layout, so it cannot drift.
+
+    - SQL tables + columns, from ``ctx/schema.sql``.
+    - Markdown object types + folders, from ``ctx/objects.py`` ``TYPE_DIRS``.
+    - Build records are documents, not rows.
+    """
+    facts: list[str] = []
+
+    # SQL tables + columns from schema.sql.
+    schema = code / "ctx" / "schema.sql"
+    if schema.is_file():
+        try:
+            text = schema.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        tables: list[str] = []
+        for m in re.finditer(
+                r"CREATE\s+TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\w+)\s*\((.*?)\);",
+                text, re.IGNORECASE | re.DOTALL):
+            name = m.group(1)
+            cols = []
+            for col in re.findall(r"^\s*(\w+)", m.group(2), re.MULTILINE):
+                if col.upper() in {"CHECK", "PRIMARY", "UNIQUE", "KEY", "FOREIGN"}:
+                    continue
+                if col not in cols:
+                    cols.append(col)
+            tables.append(f"{name}({', '.join(cols[:14])})")
+        if tables:
+            facts.append("SQL tables (via `db.connect`): " + "; ".join(tables))
+
+    # Markdown object types + folders.
+    from ctx.objects import TYPE_DIRS
+    types = ", ".join(f"{t} -> context/{d}/" for t, d in sorted(TYPE_DIRS.items()))
+    facts.append(
+        "Markdown object types (files are the source of truth): " + types)
+
+    # Build records are documents, not a table.
+    if any("record_delivery" in names for names in symbol_map(code).values()):
+        facts.append(
+            "Build records are `document` markdown tagged `build-record`, written "
+            "by `writeback.record_delivery`/`record_failure` — there is no "
+            "`build_records` SQL table.")
+
+    return "\n".join(f"- {f}" for f in facts)
+
+
 def plan_symbol_warnings(plan: str, code: Path) -> list[str]:
     """A named symbol (``file.func`` or a bare backticked name) the checkout
     does not define. Rejects the guess-the-data-model failure: the drafter
@@ -468,7 +517,8 @@ def _draft_search(code: Path, query: str) -> str:
     return ("search {query!r}:\n" + "\n".join(hits)) if hits else f"search {query!r}: no matches"
 
 
-def draft_research_prompt(title: str, body: str, tree: str, symbols: str) -> str:
+def draft_research_prompt(title: str, body: str, tree: str, symbols: str,
+                          facts: str = "") -> str:
     """The first drafting turn: ground yourself in the real code, then plan.
     The model may issue read/search actions (one JSON action per reply) before
     it writes the spec, so its plan names real data flow, not a guess."""
@@ -482,6 +532,7 @@ def draft_research_prompt(title: str, body: str, tree: str, symbols: str) -> str
         "data (a SQL index? a markdown file? a config key?). Past drafts failed "
         "by inventing a data model that does not exist. Do not invent folders, "
         "files, functions, tables, or fields.\n\n"
+        + (f"Data model (the real shapes):\n{facts}\n\n" if facts else "")
         + (f"Repository tree (depth 2):\n{tree}\n\n" if tree else "")
         + (f"These are the functions and classes actually defined in each "
            f"file; read the ones the issue is about.\n{symbols}\n\n"
@@ -506,7 +557,7 @@ def draft_research_nudge(history: str) -> str:
 
 
 def _draft_with_research(code, tree: str, symbols: str, title: str, body: str,
-                         responder) -> str:
+                         responder, facts: str = "") -> str:
     """The research loop: the drafter may read/search before writing the spec.
 
     Returns the spec text. When ``code`` is None there is nothing to read, so
@@ -518,7 +569,7 @@ def _draft_with_research(code, tree: str, symbols: str, title: str, body: str,
         return _clean_draft(responder(prompt))
 
     history: list[str] = []
-    prompt = draft_research_prompt(title, body, tree, symbols)
+    prompt = draft_research_prompt(title, body, tree, symbols, facts)
     for _turn in range(_DRAFT_RESEARCH_TURNS):
         reply = _clean_draft(responder(prompt))
         action = _parse_action(reply)
@@ -556,12 +607,13 @@ def _draft_with_research(code, tree: str, symbols: str, title: str, body: str,
     # Research turns exhausted: a distinct, forced write turn. Ask for the spec
     # and only the spec — not another action. If the model still returns an
     # action or an empty reply, the caller will report the failure.
-    final_prompt = draft_write_prompt(title, body, tree, symbols, "\n\n".join(history))
+    final_prompt = draft_write_prompt(title, body, tree, symbols, "\n\n".join(history),
+                                      facts)
     return _clean_draft(responder(final_prompt))
 
 
 def draft_write_prompt(title: str, body: str, tree: str, symbols: str,
-                       research: str) -> str:
+                       research: str, facts: str = "") -> str:
     """The closing turn: write the spec, using the research already gathered."""
     return (
         "You have finished researching. Now write the full feature spec.\n"
@@ -572,7 +624,8 @@ def draft_write_prompt(title: str, body: str, tree: str, symbols: str,
         "testable criteria (self-contained, no invented values).\n"
         "3. `## Plan` — the real files/functions to edit, with boundary "
         "constraints and the data source you actually traced.\n\n"
-        "What you read:\n"
+        + (f"Data model (the real shapes):\n{facts}\n\n" if facts else "")
+        + "What you read:\n"
         + research + "\n\n"
         + (f"Repository tree:\n{tree}\n\n" if tree else "")
         + (f"Symbols by file:\n{symbols}\n\n" if symbols else "")
@@ -641,18 +694,20 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
 
     tree = ""
     symbols = ""
+    facts = ""
     if code is not None:
         from ctx.agent import _tree
         tree = _tree(code)
         symbols = "\n".join(
             f"- {path}: {', '.join(names)}"
             for path, names in sorted(symbol_map(code).items()))
+        facts = data_model_facts(code)
     if responder is None:
         from ctx import models
         responder = lambda p: models.draft(root, p)
     text = _draft_with_research(code, tree, symbols,
                                 source.get("title") or contribution_ref,
-                                source_body, responder)
+                                source_body, responder, facts)
     if not text:
         raise SpecError("the model returned an empty draft")
     from ctx import factory

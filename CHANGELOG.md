@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The drafter now sees Stead's data model, derived not written.** A new
+  `data_model_facts` block (SQL tables from `schema.sql`, markdown object types
+  from `TYPE_DIRS`, build-records-are-documents from `writeback`) is derived at
+  draft time and fed into both the research and write turns, so the drafter
+  names the real data source instead of inventing one (`build_records` table,
+  `config.load()["repos"]`, `list_tasks`). The full design is in
+  `context/documents/draft-spec-system.md`.
 - **The draft step now traces real code, not guesses.** `spec draft` gains a
   bounded, read-only research phase: before writing the plan, the drafter can
   issue `read`/`search` actions against the checkout, so it names the real data

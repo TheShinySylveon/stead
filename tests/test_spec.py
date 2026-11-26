@@ -242,6 +242,16 @@ class SpecApprovalTest(unittest.TestCase):
         messages = "\n".join(result["warnings"])
         self.assertIn("not defined in `cli`", messages)
 
+    def test_data_model_facts_derive_from_schema(self) -> None:
+        code = self._seed_repo_with_code()
+        (code / "ctx/schema.sql").write_text(
+            "CREATE TABLE repos (\n    id TEXT PRIMARY KEY,\n    title TEXT,\n"
+            "    kind TEXT NOT NULL CHECK (kind IN ('own','oss'))\n);\n",
+            encoding="utf-8")
+        facts = spec.data_model_facts(code)
+        self.assertIn("repos(id, title, kind)", facts)
+        self.assertNotIn("CHECK", facts)  # constraint keywords are not columns
+
     def test_stdlib_and_test_data_are_not_flagged(self) -> None:
         code = self._seed_repo_with_code()
         (code / "ctx/cli.py").write_text("def cmd_list():\n    pass\n", encoding="utf-8")
