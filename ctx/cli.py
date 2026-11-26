@@ -123,7 +123,8 @@ def cmd_task_add(root: Path, title: str, project: str, status: str = "to-do") ->
     return 0
 
 
-def cmd_task_list(root: Path, project: str | None = None, status: str | None = None) -> int:
+def cmd_task_list(root: Path, project: str | None = None, status: str | None = None,
+                  sort: bool = False) -> int:
     db.require_db(root)
     query = "SELECT id, status, project, title FROM tasks"
     clauses, params = [], []
@@ -136,7 +137,10 @@ def cmd_task_list(root: Path, project: str | None = None, status: str | None = N
         params.append(status)
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
-    query += " ORDER BY id"
+    if sort:
+        query += " ORDER BY title COLLATE NOCASE, status COLLATE NOCASE"
+    else:
+        query += " ORDER BY id"
 
     conn = db.connect(root)
     try:
@@ -707,6 +711,7 @@ def build_parser() -> argparse.ArgumentParser:
     tl = task.add_parser("list", help="list tasks")
     tl.add_argument("--project")
     tl.add_argument("--status", choices=TASK_STATUSES)
+    tl.add_argument("--sort", action="store_true", help="sort tasks by title, then status")
     ts = task.add_parser("set", help="set a task's status (file + index)")
     ts.add_argument("id")
     ts.add_argument("--status", required=True, choices=TASK_STATUSES)
@@ -1078,7 +1083,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.sub == "add":
             return cmd_task_add(root, args.title, args.project, args.status)
         if args.sub == "list":
-            return cmd_task_list(root, args.project, args.status)
+            return cmd_task_list(root, args.project, args.status, sort=args.sort)
         if args.sub == "set":
             return cmd_task_set(root, args.id, args.status)
     if args.command == "repo":
