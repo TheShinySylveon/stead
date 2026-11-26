@@ -268,58 +268,119 @@ _CONSTRAINT_KEYWORDS = {"CHECK", "PRIMARY", "UNIQUE", "KEY", "FOREIGN"}
 
 
 def _schema_tables(code: Path) -> list[tuple[str, list[str]]]:
-    """[(table_name, [column, ...])] parsed from ``ctx/schema.sql``, or ``[]``.
+    """[(table_name, [column, ...])] from SQL/Prisma schema artifacts anywhere
+    in the checkout — not just Stead's own ``ctx/schema.sql``. A repo with no
+    schema artifact yields ``[]``, which is honest, not an error.
 
-    This is the single derived source of truth for "what SQL tables exist";
-    both the drafter facts and the verification gate read it, so they cannot
-    disagree."""
-    schema = code / "ctx" / "schema.sql"
-    if not schema.is_file():
-        return []
-    try:
-        text = schema.read_text(encoding="utf-8", errors="replace")
-    except OSError:
-        return []
+    This is the single derived source of truth for "what tables exist"; both the
+    drafter facts and the verification gate read it, so they cannot disagree."""
     out: list[tuple[str, list[str]]] = []
-    for m in _SCHEMA_TABLE_RE.finditer(text):
-        name = m.group(1)
-        cols: list[str] = []
-        for col in re.findall(r"^\s*(\w+)", m.group(2), re.MULTILINE):
-            if col.upper() in _CONSTRAINT_KEYWORDS or col in cols:
-                continue
-            cols.append(col)
-        out.append((name, cols))
+    for path in _schema_files(code):
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        if path.name == "schema.prisma":
+            for m in re.finditer(r"^\s*model\s+(\w+)\s*\{", text, re.MULTILINE):
+                out.append((m.group(1), []))
+            continue
+        for m in _SCHEMA_TABLE_RE.finditer(text):
+            name = m.group(1)
+            cols: list[str] = []
+            for col in re.findall(r"^\s*(\w+)", m.group(2), re.MULTILINE):
+                if col.upper() in _CONSTRAINT_KEYWORDS or col in cols:
+                    continue
+                cols.append(col)
+            out.append((name, cols))
     return out
 
 
-def data_model_facts(code: Path) -> str:
-    """A compact, derived description of Stead's own data model, so the drafter
-    does not guess where data lives. Derived (not hand-written) from the schema
-    and object layout, so it cannot drift.
+def _schema_files(code: Path) -> list[Path]:
+    """Schema artifacts in the checkout: every ``*.sql`` file plus
+    ``prisma/schema.prisma``. Skips vendored/dependency folders."""
+    ignored = {"node_modules", "venv", ".venv", "__pycache__", "dist", "build",
+               "target", ".next"}
+    files: list[Path] = []
+    for path in code.rglob("*.sql"):
+        try:
+            rel = path.relative_to(code)
+        except ValueError:
+            continue
+        if any(part.startswith(".") or part in ignored for part in rel.parts):
+            continue
+        files.append(path)
+    prisma = code / "prisma" / "schema.prisma"
+    if prisma.is_file():
+        files.append(prisma)
+    return sorted(files)
 
-    - SQL tables + columns, from ``ctx/schema.sql``.
-    - Markdown object types + folders, from ``ctx/objects.py`` ``TYPE_DIRS``.
-    - Build records are documents, not rows.
-    """
+
+_DATA_SECTION_HEADINGS = re.compile(
+    r"^#{1,4}\s*(?:data model|where data lives|data layout|schema|storage)\b.*$",
+    re.IGNORECASE)
+
+
+def _extract_data_section(body: str) -> str:
+    """The text under a data-model-ish heading in a markdown body, or ``''``."""
+    lines = (body or "").splitlines()
+    for i, line in enumerate(lines):
+        if _DATA_SECTION_HEADINGS.match(line.strip()):
+            section = [line]
+            for later in lines[i + 1:]:
+                if later.lstrip().startswith("#"):
+                    break
+                section.append(later)
+            return "\n".join(section).strip()
+    return ""
+
+
+def _declared_data_model(root: Path, repo_meta: dict, repo_body: str) -> list[str]:
+    """What the repo itself declares about where its data lives: the ``notes``
+    field, the repo body (or its data-model section), and ``related:`` documents.
+    This is the human-owned channel that works for ANY repo, not just Stead."""
+    declared: list[str] = []
+    notes = (repo_meta.get("notes") or "").strip()
+    if notes:
+        declared.append(f"Notes: {notes}")
+    section = _extract_data_section(repo_body)
+    if section:
+        declared.append(section)
+    elif (repo_body or "").strip():
+        declared.append((repo_body or "").strip()[:1200])
+    for ref in (repo_meta.get("related") or [])[:3]:
+        doc = objects.find(root, "document", str(ref))
+        if doc is not None:
+            dpath, dmeta, dbody = doc
+            declared.append(f"{dmeta.get('title') or dpath.stem}: {dbody.strip()[:1500]}")
+    return declared
+
+
+def data_model_facts(root: Path, repo_meta: dict, repo_body: str, code) -> str:
+    """The data-model facts the drafter sees: what the repo *declares* (notes,
+    body, related docs) plus what is *mechanically derivable* from the checkout
+    (SQL/Prisma schema artifacts). Per-repo and derived at draft time, so a
+    non-Stead repo gets its own model — never Stead's. If the repo declares
+    nothing and has no schema artifact, the block is empty (honest, not wrong)."""
     facts: list[str] = []
 
-    tables = _schema_tables(code)
-    if tables:
-        facts.append("SQL tables (via `db.connect`): "
-                     + "; ".join(f"{n}({', '.join(c[:14])})" for n, c in tables))
+    declared = _declared_data_model(root, repo_meta, repo_body)
+    if declared:
+        facts.append("Repo-declared data model:\n"
+                     + "\n".join(f"  - {d}" for d in declared))
 
-    # Markdown object types + folders.
-    from ctx.objects import TYPE_DIRS
-    types = ", ".join(f"{t} -> context/{d}/" for t, d in sorted(TYPE_DIRS.items()))
-    facts.append(
-        "Markdown object types (files are the source of truth): " + types)
+    if code is not None:
+        tables = _schema_tables(code)
+        if tables:
+            facts.append("SQL/Prisma tables (derived from the checkout): "
+                         + "; ".join(f"{n}({', '.join(c[:14])})" for n, c in tables))
 
-    # Build records are documents, not a table.
-    if any("record_delivery" in names for names in symbol_map(code).values()):
-        facts.append(
-            "Build records are `document` markdown tagged `build-record`, written "
-            "by `writeback.record_delivery`/`record_failure` — there is no "
-            "`build_records` SQL table.")
+        # Stead-specific bonus, detected from the target's own symbols — never
+        # assumed. A repo without these symbols gets no such fact.
+        if any("record_delivery" in names for names in symbol_map(code).values()):
+            facts.append(
+                "Build records are `document` markdown tagged `build-record`, "
+                "written by `writeback.record_delivery`/`record_failure` — there "
+                "is no `build_records` SQL table.")
 
     return "\n".join(f"- {f}" for f in facts)
 
@@ -442,20 +503,21 @@ def plan_path_warnings(plan: str, code: Path) -> list[str]:
 
 
 def plan_data_warnings(plan: str, code: Path) -> list[str]:
-    """A plan's data-model claim that contradicts the derived schema.
+    """A plan's data-model claim that contradicts the checkout's own schema.
 
-    Grounded in ``schema.sql`` + ``TYPE_DIRS`` (the same facts the drafter sees),
-    not hand-tuned prose patterns. Flags:
+    Grounded in the SQL/Prisma tables derived from the checkout (the same facts
+    the drafter sees), not Stead's schema and not hand-tuned prose. Flags:
 
     - a SQL table the plan names that the checkout does not define — the
       invented ``build_records`` table failure;
     - a ``config.<key>`` / ``config.load()[...]`` claim whose key is actually a
-      SQL table or markdown object type — the ``config.load()["repos"]`` failure
-      (repos live in the index/files, not in config).
+      table in the checkout — the ``config.load()["repos"]`` failure (repos live
+      in a table/index, not in config).
+
+    A repo with no schema artifact has nothing to verify against, so this is a
+    no-op there — honest, not wrong.
     """
-    from ctx.objects import TYPE_DIRS
     tables = {name.lower() for name, _cols in _schema_tables(code)}
-    known_data = tables | {t.lower() for t in TYPE_DIRS}
     warnings: list[str] = []
     seen: set[tuple[str, str]] = set()
 
@@ -473,7 +535,7 @@ def plan_data_warnings(plan: str, code: Path) -> list[str]:
         name = m.group(1)
         if name.lower() not in tables:
             add(name, "sql",
-                f"the plan reads/writes a `{name}` table, but schema.sql has no "
+                f"the plan reads/writes a `{name}` table, but the checkout has no "
                 "such table. Say explicitly that you will add it, or read the "
                 "real table.")
 
@@ -482,21 +544,20 @@ def plan_data_warnings(plan: str, code: Path) -> list[str]:
         name = m.group(1)
         if name.lower() not in tables:
             add(name, "table",
-                f"the plan calls `{name}` a table, but it is not in schema.sql "
-                "(there is no such table). Name the real table or say you will "
-                "add it.")
+                f"the plan calls `{name}` a table, but it is not in the "
+                "checkout's schema (there is no such table). Name the real table "
+                "or say you will add it.")
 
-    # `config.<key>` / `config.load()["<key>"]` where the key is data that
-    # actually lives in the SQL index or markdown files.
+    # `config.<key>` / `config.load()["<key>"]` where the key is actually a table
+    # in the checkout — data lives in the table/index, not in config.
     for m in re.finditer(
             r"config\.(?:load\(\)\s*\[\s*[\"'](\w+)[\"']\s*\]|(\w+))", plan or ""):
         key = (m.group(1) or m.group(2) or "").lower()
-        if key in known_data:
+        if key in tables:
             add(key, "config",
-                f"the plan reads `{key}` from config, but `{key}` is a markdown "
-                "object / SQL table, not a config key. Read it from the real "
-                "source (db.connect for the index, objects.iter_objects for the "
-                "files).")
+                f"the plan reads `{key}` from config, but `{key}` is a table in "
+                "this repo's schema, not a config key. Read it from the real "
+                "source, not config.")
 
     return warnings
 
@@ -751,7 +812,8 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
     repo_found = objects.find(root, "repo", source.get("repo") or "")
     if repo_found is None:
         raise SpecError(f"repo not found: {source.get('repo')!r}")
-    code_path = str(repo_found[1].get("code_path") or "")
+    _repo_path, repo_meta, repo_body = repo_found
+    code_path = str(repo_meta.get("code_path") or "")
     code = Path(code_path) if code_path and Path(code_path).is_dir() else None
     if _CACHE_STUB in source_body:
         raise SpecError(
@@ -773,7 +835,7 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
         symbols = "\n".join(
             f"- {path}: {', '.join(names)}"
             for path, names in sorted(symbol_map(code).items()))
-        facts = data_model_facts(code)
+    facts = data_model_facts(root, repo_meta, repo_body, code)
     if responder is None:
         from ctx import models
         responder = lambda p: models.draft(root, p)

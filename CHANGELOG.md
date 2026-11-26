@@ -2,20 +2,23 @@
 
 ## Unreleased
 
-- **The drafter now sees Stead's data model, derived not written.** A new
-  `data_model_facts` block (SQL tables from `schema.sql`, markdown object types
-  from `TYPE_DIRS`, build-records-are-documents from `writeback`) is derived at
-  draft time and fed into both the research and write turns, so the drafter
-  names the real data source instead of inventing one (`build_records` table,
-  `config.load()["repos"]`, `list_tasks`). The full design is in
-  `context/documents/draft-spec-system.md`.
-- **Stead now verifies a plan's data-model claims against the schema.** A new
-  `plan_data_warnings` gate (grounded in the same derived `schema.sql` +
-  `TYPE_DIRS` facts, not prose patterns) flags a plan that names a SQL table the
-  checkout does not define (the `build_records` failure) or reads a markdown
-  object / SQL table from `config` (the `config.load()["repos"]` failure). A
-  real table and a plain config key pass; uppercase SQL verbs only, so prose
-  "from" is not flagged.
+- **The drafter's data model is now per-repo, not Stead's.** `data_model_facts`
+  was generalized so it works for any repo: it surfaces what the repo *declares*
+  (the `notes` field, a `## Data model` section of the repo body, and `related:`
+  documents) plus what is *mechanically derivable* (SQL/Prisma schema artifacts
+  — every `*.sql` file and `prisma/schema.prisma` — anywhere in the checkout).
+  The old hardcoded `ctx/schema.sql` + `ctx.objects.TYPE_DIRS` coupling is gone,
+  so a non-Stead repo no longer gets Stead's object types. The Stead-specific
+  "build records are documents" hint is now detected from the target's own
+  symbols, never assumed. A repo that declares nothing and has no schema
+  artifact gets an empty block — honest, not wrong.
+- **Stead now verifies a plan's data-model claims against the repo's schema.**
+  A new `plan_data_warnings` gate (grounded in the same derived schema artifacts,
+  not Stead's schema and not prose patterns) flags a plan that names a SQL table
+  the checkout does not define (the `build_records` failure) or reads a table
+  from `config` (the `config.load()["repos"]` failure). A real table and a plain
+  config key pass; uppercase SQL verbs only, so prose "from" is not flagged. No
+  schema artifact -> no-op, not a false alarm.
 - **The symbol gate no longer flags bare data keys as invented functions.** A
   bare backticked name is only flagged when it is written as a call
   (`list_tasks()`), because `(` is the unambiguous marker of a function

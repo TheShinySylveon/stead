@@ -261,9 +261,34 @@ class SpecApprovalTest(unittest.TestCase):
             "CREATE TABLE repos (\n    id TEXT PRIMARY KEY,\n    title TEXT,\n"
             "    kind TEXT NOT NULL CHECK (kind IN ('own','oss'))\n);\n",
             encoding="utf-8")
-        facts = spec.data_model_facts(code)
+        facts = spec.data_model_facts(self.root, {"id": "repo-me-app"}, "", code)
         self.assertIn("repos(id, title, kind)", facts)
         self.assertNotIn("CHECK", facts)  # constraint keywords are not columns
+
+    def test_schema_derives_from_any_sql_file_not_just_ctx(self) -> None:
+        # A non-Stead repo's schema (db/schema.sql) must still be derived.
+        code = self._seed_repo_with_code()
+        (code / "db").mkdir(parents=True, exist_ok=True)
+        (code / "db/schema.sql").write_text(
+            "CREATE TABLE users (\n    id TEXT,\n    email TEXT\n);\n",
+            encoding="utf-8")
+        facts = spec.data_model_facts(self.root, {"id": "repo-me-app"}, "", code)
+        self.assertIn("users(id, email)", facts)
+        self.assertNotIn("Markdown object types", facts)  # no Stead TYPE_DIRS leak
+
+    def test_declared_data_model_is_included(self) -> None:
+        code = self._seed_repo_with_code()
+        repo_meta = {"id": "repo-me-app",
+                     "notes": "repos come from the `repos` table, not config."}
+        body = "## Data model\n\nusers live in the `users` table.\n"
+        facts = spec.data_model_facts(self.root, repo_meta, body, code)
+        self.assertIn("repos come from", facts)
+        self.assertIn("users live in", facts)
+
+    def test_no_schema_no_declared_is_empty(self) -> None:
+        code = self._seed_repo_with_code()
+        facts = spec.data_model_facts(self.root, {"id": "repo-me-app"}, "", code)
+        self.assertEqual(facts, "")
 
     def test_fabricated_sql_table_is_flagged(self) -> None:
         code = self._seed_repo_with_code()
