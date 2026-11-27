@@ -30,6 +30,13 @@ example a cockpit action that auto-resolves a value while its CLI command still
 requires the flag). Both sides share the same handlers and helpers — never
 duplicate logic that should resolve identically.
 
+**Addressing PR review comments — always reply inline.** When addressing pull
+request review comments (from humans or review bots such as Greptile), do not
+stop at pushing the fix commit: reply inline to each actual review comment
+thread on GitHub (`gh api -X POST repos/<owner>/<repo>/pulls/<pr>/comments/<id>/replies`)
+referencing the fix commit SHA and briefly stating what changed (or why a
+suggestion was intentionally declined).
+
 ## What this system is
 
 A local **context system** plus **factories**, covering both your
