@@ -535,6 +535,61 @@ def plan_path_warnings(plan: str, code: Path) -> list[str]:
     return warnings
 
 
+_CLI_FLAG_DEF = re.compile(r'add_argument\([^)]*--([A-Za-z0-9][A-Za-z0-9_-]*)')
+_PLAN_FLAG = re.compile(r'(?<![\w-])--([A-Za-z0-9][A-Za-z0-9_-]*)')
+_FLAG_PROPOSED = re.compile(r'\b(add|introduce|new|create|implement|expose)\b')
+
+
+def _cli_flag_names(code: Path) -> set[str]:
+    'Long argparse flags defined in the checkout Python files.'
+    flags: set[str] = set()
+    for path in _py_files(code):
+        if _ignored_path(path, code):
+            continue
+        try:
+            text = path.read_text(encoding='utf-8', errors='replace')
+        except OSError:
+            continue
+        for name in _CLI_FLAG_DEF.findall(text):
+            flags.add(name)
+    return flags
+
+
+def _flag_treated_existing(window: str, flag: str) -> bool:
+    if _FLAG_PROPOSED.search(window):
+        return False
+    if re.search(r'\b(existing|reuse|already|current)\b', window):
+        return True
+    return bool(re.search(rf'the\s+{re.escape(flag)}\s+(flag|option)', window))
+
+
+def plan_flag_warnings(plan: str, code: Path) -> list[str]:
+    'A CLI flag the plan treats as already present that the checkout does not define.'
+    known = _cli_flag_names(code)
+    if not known:
+        return []
+    warnings: list[str] = []
+    seen: set[str] = set()
+    for match in _PLAN_FLAG.finditer(plan or ''):
+        name = match.group(1)
+        flag = f'--{name}'
+        if flag in seen:
+            continue
+        seen.add(flag)
+        start = max(0, match.start() - 80)
+        end = min(len(plan), match.end() + 80)
+        window = plan[start:end].lower()
+        if not _flag_treated_existing(window, flag.lower()):
+            continue
+        if name in known:
+            continue
+        warnings.append(
+            f'the plan treats `{flag}` as an existing CLI flag, but the '
+            'checkout does not define it. If you mean to add it, say so '
+            'explicitly; otherwise name a real flag.')
+    return warnings
+
+
 def plan_data_warnings(plan: str, code: Path) -> list[str]:
     """A plan's data-model claim that contradicts the checkout's own schema.
 
@@ -678,7 +733,8 @@ def _norm_ws(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "")).strip()
 
 
-def check_gate_cases(cases_file: Path, fixtures_dir: Path) -> dict:
+def check_gate_cases(cases_file: Path, fixtures_dir: Path,
+                     include_flag: bool = False) -> dict:
     """Deterministic spec-gate eval: run the data-model/path/symbol gates against
     fixture repos (non-Stead) and check the expected result. No model, no network.
 
@@ -710,9 +766,14 @@ def check_gate_cases(cases_file: Path, fixtures_dir: Path) -> dict:
             problems.append(f"{cid}: fixture not found: {case.get('fixture')!r}")
             continue
         plan = case.get("plan") or ""
-        warnings = (plan_data_warnings(plan, fixture)
-                    + plan_path_warnings(plan, fixture)
-                    + plan_symbol_warnings(plan, fixture))
+        if case.get("gate") == "flag":
+            if not include_flag:
+                continue
+            warnings = plan_flag_warnings(plan, fixture)
+        else:
+            warnings = (plan_data_warnings(plan, fixture)
+                        + plan_path_warnings(plan, fixture)
+                        + plan_symbol_warnings(plan, fixture))
         joined = "\n".join(warnings)
         ok = True
         if case.get("expect_clean"):
@@ -1089,6 +1150,7 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
         raise SpecError("the draft has no `## Plan` section")
     warnings = plan_path_warnings(plan, code) if code is not None else []
     warnings += plan_symbol_warnings(plan, code) if code is not None else []
+    warnings += plan_flag_warnings(plan, code) if code is not None else []
     warnings += plan_data_warnings(plan, code) if code is not None else []
     warnings += plan_citation_warnings(text, code) if code is not None else []
     warnings += [f"a build would refuse this draft: {p}" for p in readiness_problems(text)]

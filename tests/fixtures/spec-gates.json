@@ -39,5 +39,38 @@
     "fixture": "declared",
     "plan": "Add an index over the `widgets` table (the data model is declared in repo notes, not code).\n",
     "expect_clean": true
+  },
+  {
+    "id": "cli-fabricated-flag",
+    "title": "CLI repo: a plan reusing a flag the checkout does not define is flagged",
+    "fixture": "cli",
+    "gate": "flag",
+    "plan": "Reuse the existing `--limit` flag to cap the list.\n",
+    "expect_count": 1,
+    "expect_contains": ["--limit"]
+  },
+  {
+    "id": "cli-real-flag-clean",
+    "title": "CLI repo: a plan using a real argparse flag is not flagged",
+    "fixture": "cli",
+    "gate": "flag",
+    "plan": "Use the `--count` flag to print totals.\n",
+    "expect_clean": true
+  },
+  {
+    "id": "cli-proposed-flag-clean",
+    "title": "CLI repo: a plan proposing to add a new flag is not flagged",
+    "fixture": "cli",
+    "gate": "flag",
+    "plan": "Add a new `--limit` flag to cap the list.\n",
+    "expect_clean": true
+  },
+  {
+    "id": "declared-no-cli-noop",
+    "title": "No-CLI repo: with no argparse definitions the flag gate is a no-op",
+    "fixture": "declared",
+    "gate": "flag",
+    "plan": "Reuse the existing `--limit` flag.\n",
+    "expect_clean": true
   }
 ]
