@@ -951,7 +951,7 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
                     with safety.hooks_disabled() as hooks_dir:
                         exists = spawn(safety.disable_hooks(
                             ["git", "branch", "--list", branch], hooks_dir), cwd=code,
-                            capture_output=True, text=True)
+                            capture_output=True, text=True, encoding="utf-8", errors="replace")
                 except OSError as exc:
                     skipped.append({"id": meta.get("id"), "reason": f"git missing: {exc}"})
                     continue

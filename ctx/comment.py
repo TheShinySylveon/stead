@@ -120,7 +120,7 @@ def _find_marked_comment(run, owner_name: str, number, code: Path, login: str):
 def _run(argv: list[str], cwd: Path) -> str:
     try:
         done = subprocess.run(argv, cwd=cwd, check=True, capture_output=True,
-                              text=True)
+                              text=True, encoding="utf-8", errors="replace")
     except subprocess.CalledProcessError as exc:
         detail = (exc.stderr or exc.stdout or "").strip()
         raise CommentError(detail or f"{argv[0]} failed") from exc

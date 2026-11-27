@@ -2090,7 +2090,8 @@ def _wait_for_checks(code: Path, number, minutes: int) -> None:
     while True:
         try:
             done = subprocess.run(["gh", "pr", "checks", str(number)], cwd=code,
-                                  capture_output=True, text=True, timeout=120)
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=120)
         except (OSError, subprocess.SubprocessError) as exc:
             raise BuildError(f"could not read PR checks: {exc}") from exc
         if done.returncode == 0:
