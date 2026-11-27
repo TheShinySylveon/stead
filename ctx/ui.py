@@ -1609,11 +1609,15 @@ def check_evals(root: Path, factory_name: str) -> dict:
     from ctx.models import check_eval_files
     result = check_eval_files(root, factory_name)
     if not factory_name or factory_name == factory.FEATURE_BUILDER_FACTORY:
-        gates = spec_mod.check_gate_cases()
-        result["gates"] = gates
-        if not gates.get("ok", True):
-            result["ok"] = False
-            result["problems"] = list(result.get("problems") or []) + list(gates.get("problems") or [])
+        fixtures = PKG_DIR.parent / "tests" / "fixtures"
+        cases_file = fixtures / "spec-gates.json"
+        if cases_file.is_file():
+            gates = spec_mod.check_gate_cases(cases_file, fixtures / "repos")
+            result["gates"] = gates
+            if not gates.get("ok", True):
+                result["ok"] = False
+                result["problems"] = (list(result.get("problems") or [])
+                                      + list(gates.get("problems") or []))
     return result
 
 

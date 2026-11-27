@@ -1289,9 +1289,12 @@ function renderSettings() {
     <div class="section-title">Server</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>Index</strong>
-      <p class="meta">state.db is an index. Rebuilding it reads context/ again and changes no notes.</p>
-      <button type="button" class="quiet" data-init>Rebuild index</button>
-      <button type="button" class="quiet" data-doctor>Run doctor</button>
+      <p class="meta">state.db is an index. Rebuilding it reads context/ again and keeps runs and prompt promotions; resetting drops and recreates all tables.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="quiet" data-init>Rebuild index</button>
+        <button type="button" class="quiet" data-init-reset>Reset index &amp; runs</button>
+        <button type="button" class="quiet" data-doctor>Run doctor</button>
+      </div>
       <div class="meta" id="doctor-result" style="margin-top:6px"></div>
     </div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
@@ -2138,6 +2141,15 @@ document.body.addEventListener("click", async (event) => {
     try {
       await api("/api/init", {method: "POST", body: "{}"});
       toast("Index rebuilt");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  if (event.target.closest("[data-init-reset]")) {
+    if (!confirm("Reset state.db? This drops all logged runs and resets prompt promotions to the highest version. Markdown notes are unchanged.")) return;
+    try {
+      await api("/api/init", {method: "POST", body: JSON.stringify({reset: true})});
+      toast("Index and runs reset");
       await load();
     } catch (err) { toast(err.message); }
     return;

@@ -58,7 +58,7 @@ def _split_inline(item: str) -> list[str]:
             if ch == quote:
                 quote = None
             continue
-        if ch in "\"'":
+        if ch in "\"'" and not "".join(buf).strip():
             quote = ch
             buf.append(ch)
         elif ch == ",":
@@ -116,11 +116,15 @@ def parse(text: str) -> tuple[dict, str]:
     return meta, body
 
 
+_LINE_SEPARATORS = "\n\r\v\f\x1c\x1d\x1e\x85\u2028\u2029"
+
+
 def _fmt_scalar(value: str, *, in_list: bool = False) -> str:
-    # Flat YAML subset forbids multiline scalars; collapsing CR/LF prevents
-    # frontmatter key injection or block termination when writing untrusted text.
-    if "\n" in value or "\r" in value:
-        value = " ".join(value.replace("\r\n", "\n").replace("\r", "\n").splitlines()).strip()
+    # Flat YAML subset forbids multiline scalars; collapsing every separator
+    # that str.splitlines() treats as a line break prevents frontmatter key
+    # injection or block termination when writing untrusted text.
+    if any(ch in value for ch in _LINE_SEPARATORS):
+        value = " ".join(value.splitlines()).strip()
     needs_quote = (
         value == "" or value != value.strip() or ":" in value or "#" in value
         or value.startswith(("[", "-", "'", '"'))
@@ -142,7 +146,7 @@ def dumps(meta: dict, body: str) -> str:
     out = ["---"]
     for key in keys:
         key_s = str(key)
-        if any(ch in key_s for ch in ("\n", "\r", ":")):
+        if any(ch in key_s for ch in _LINE_SEPARATORS + ":"):
             raise ValueError(f"invalid frontmatter key: {key!r}")
         value = meta[key]
         if isinstance(value, list):

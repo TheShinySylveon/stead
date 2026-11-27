@@ -917,7 +917,7 @@ def build_parser() -> argparse.ArgumentParser:
     ms.add_argument("--name", required=True, help="model name, such as gpt-4.1-mini or llama3.2")
     ms.add_argument("--base-url", help="defaults to the provider preset")
     ms.add_argument("--key", help="stored in gitignored stead.json. Prefer STEAD_MODEL_API_KEY.")
-    ms.add_argument("--key-env", default="STEAD_MODEL_API_KEY")
+    ms.add_argument("--key-env", default=None)
     ms.add_argument("--review", action="store_true",
                     help="configure the optional independent reviewer model. "
                          "Falls back to the builder model when unset.")
@@ -944,7 +944,7 @@ def build_parser() -> argparse.ArgumentParser:
     ma.add_argument("--name", required=True, help="model name, such as gpt-4.1-mini or llama3.2")
     ma.add_argument("--base-url", help="defaults to the provider preset")
     ma.add_argument("--key", help="stored in gitignored stead.json. Prefer an env var.")
-    ma.add_argument("--key-env", default="STEAD_MODEL_API_KEY")
+    ma.add_argument("--key-env", default=None)
     ma.add_argument("--input-price", type=float, help="USD per 1M input tokens")
     ma.add_argument("--output-price", type=float, help="USD per 1M output tokens")
     ma.add_argument("--call-timeout", type=int, metavar="SECONDS")

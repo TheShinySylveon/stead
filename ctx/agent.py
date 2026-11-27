@@ -1341,7 +1341,7 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
                          reason="precondition")
     _repo_path, repo_meta, _repo_body = repo
     if push:
-        policy = autonomy.effective(root, repo_meta)
+        policy = effective(root, repo_meta)
         if policy["ceiling"] in ("ghost", "shadow"):
             raise BuildError(
                 f"this repo's ceiling is {policy['ceiling']}. Pass --no-push or "
@@ -1378,6 +1378,7 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
     started = time.monotonic()
     deadline = started + max(1, max_minutes) * 60
     wt: Path | None = None
+    git_before: dict | None = None
     try:
         if not _git(run, anchor, ["branch", "--list", branch]).strip():
             raise BuildError(
@@ -1576,7 +1577,7 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
                     raise BuildError("HEAD moved during review-fix run; refusing to commit",
                                      reason="tamper")
                 expected = set(files)
-                extra_tracked, extra_untracked = _side_effects(run, code, expected, set())
+                extra_tracked, extra_untracked = _side_effects(run, code, expected, repo_meta)
                 if extra_tracked:
                     raise BuildError(
                         "checks modified files outside the model's edits: "
@@ -1605,6 +1606,10 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
             transcript.append(f"unknown action {kind!r}")
     finally:
         if wt is not None:
+            if git_before is not None:
+                after = safety.git_state_snapshot(wt)
+                if safety.git_state_changes(git_before, after):
+                    safety.git_state_restore(wt, git_before, after)
             try:
                 _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
             except (BuildError, OSError):
@@ -1771,6 +1776,19 @@ def _remain_running(root: Path, deadline: float) -> None:
     if time.monotonic() > deadline:
         raise BuildError("the build hit its time budget. Raise --max-minutes, "
                          "or split the spec.", reason="budget")
+
+
+def _verify_git_hygiene(code: Path, before: dict) -> None:
+    """Fail and restore if checks mutated .git/config or hooks."""
+    after = safety.git_state_snapshot(code)
+    changed = safety.git_state_changes(before, after)
+    if changed:
+        safety.git_state_restore(code, before, after)
+        raise BuildError(
+            "checks changed .git (" + ", ".join(k.rsplit("/", 2)[-1] if "/hooks/" not in k
+                                              else "hooks/" + k.rsplit("/", 1)[-1]
+                                              for k in changed) + "). "
+            "Refusing to continue.", reason="tamper")
 
 
 def _run_checks(code: Path, command: str, repo_meta: dict,

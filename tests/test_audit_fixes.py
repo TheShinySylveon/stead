@@ -49,15 +49,15 @@ class AuditFixesTest(unittest.TestCase):
             "id": "repo-a",
             "type": "repo",
             "title": 'FIX: "quoted"',
-            "notes": "safe\nchecks: evil\nreach: merge\n---",
-            "tags": ["a,b", "c"],
+            "notes": "safe\nchecks: evil\u2028reach: merge\u2029---",
+            "tags": ["a,b", "owner's", "feature-spec"],
         }
         dumped = frontmatter.dumps(meta, "# Body\n")
         parsed, body = frontmatter.parse(dumped)
         self.assertNotIn("checks", parsed)
         self.assertNotIn("reach", parsed)
         self.assertEqual(parsed["title"], 'FIX: "quoted"')
-        self.assertEqual(parsed["tags"], ["a,b", "c"])
+        self.assertEqual(parsed["tags"], ["a,b", "owner's", "feature-spec"])
         self.assertEqual(body.strip(), "# Body")
 
     # --- safety --------------------------------------------------------------
@@ -465,6 +465,23 @@ class AuditFixesTest(unittest.TestCase):
         huge = ("x" * 25_000).encode("utf-8")
         with self.assertRaises(inbox_import.InboxImportError):
             inbox_import.import_bytes(self.root, "note.txt", huge)
+
+    def test_ui_check_evals_and_cli_key_env_preservation(self) -> None:
+        from ctx import cli
+        res = ui.check_evals(self.root, "")
+        self.assertTrue(res["ok"], res)
+        self.assertIn("gates", res)
+        # CLI `model set` / `model add` preserve a custom --key-env when omitted.
+        cli.main(["--root", str(self.root), "model", "set", "--provider", "openai",
+                  "--name", "gpt-4o", "--key-env", "MY_CUSTOM_KEY"])
+        cli.main(["--root", str(self.root), "model", "set", "--provider", "openai",
+                  "--name", "gpt-4o-mini"])
+        self.assertEqual(models.public_model(self.root)["key_env"], "MY_CUSTOM_KEY")
+        cli.main(["--root", str(self.root), "model", "add", "fast", "--provider", "openai",
+                  "--name", "gpt-4o", "--key-env", "FAST_KEY"])
+        cli.main(["--root", str(self.root), "model", "add", "fast", "--provider", "openai",
+                  "--name", "gpt-4o-mini"])
+        self.assertEqual(models.profiles_view(self.root)["profiles"]["fast"]["key_env"], "FAST_KEY")
 
 
 if __name__ == "__main__":
