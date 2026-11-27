@@ -676,3 +676,27 @@ right. A more capable (or differently-trained) model traces the data source
 correctly where `deepseek-v4-pro` fabricates. The remaining costs are *speed*
 and *format friction*, not correctness. The path forward is model selection for
 the draft role, not more gates.
+
+### Draft model found: `qwen3.8-flash` (fast + faithful)
+
+Adding a Qwen profile (`qwen3.8-flash` via the MaaS OpenAI-compatible endpoint)
+and binding `draft` to it settled the question. A fourth fresh issue
+(`contribution list --count`, #111) drafted **under a minute**:
+
+- **Traced faithfully** — `cmd_contribution_list` → the `contributions` table via
+  `db.connect`, the full schema, and *"repos are not a `stead.json`/config key"*
+  (the exact anti-pattern from #104). Zero fabrication.
+- **Wrote prose, not citations** — same as the 27B, which the relaxed citation
+  gate now accepts (it verifies citations that are present and catches
+  `deepseek-v4-pro`'s fabricated quotes as a backstop).
+
+| Model | Fast | Faithful |
+|---|---|---|
+| `deepseek-v4-pro` | ✅ | ❌ fabricates |
+| Arete 27B | ❌ (~40 min) | ✅ |
+| **`qwen3.8-flash`** | ✅ (<1 min) | ✅ |
+
+**The draft role is `qwen3.8-flash`.** The tooling no longer fights the model:
+the gates catch fabrication as a backstop, and the model traces correctly in the
+first place. "draft: human-mostly" is now the *upper bound*, and the remaining
+human step is a fast review, not a rewrite.
