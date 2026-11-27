@@ -1133,6 +1133,8 @@ function renderFactories() {
     const report = state.evals[f.name];
     const evalsBox = report ? `<div class="panel" style="padding:12px 14px;margin-top:10px">
       <strong>Evals${report.version ? " for " + esc(report.version) : ""}</strong>
+      ${report.spec_gates?.cases ? `<p class="meta">Spec gates: ${report.spec_gates.passed}/${report.spec_gates.cases} passed</p>` : ""}
+      ${report.check_problems?.length ? `<ul>${report.check_problems.map(problem => `<li>${esc(problem)}</li>`).join("")}</ul>` : ""}
       <div class="list" style="margin-top:8px">${report.cases.map(c => `<div class="row">
         <span><strong>${esc(c.title)}</strong><br><small>${esc(c.id)}${c.recorded_version ? " · recorded " + esc(c.recorded_version) : ""}</small></span>
         <span class="chips">${chip(c.ok ? "pass" : c.verdict, c.ok ? "done" : "fail")}<button type="button" class="quiet" data-eval-judge="${esc(c.id)}" data-factory="${esc(f.name)}" data-version="${esc(report.version || "")}">Judge</button></span>

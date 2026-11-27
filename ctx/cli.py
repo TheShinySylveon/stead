@@ -1271,16 +1271,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "eval":
         from ctx import models
         if args.sub == "run":
-            checked = models.check_eval_files(root, args.factory)
-            from ctx import spec
-            fixtures = Path(__file__).parent.parent / "tests" / "fixtures"
-            gates = spec.check_gate_cases(fixtures / "spec-gates.json",
-                                          fixtures / "repos")
-            problems = list(checked["problems"]) + gates["problems"]
-            if problems:
-                for problem in problems:
+            checked = models.run_eval_checks(root, args.factory)
+            if not checked["ok"]:
+                for problem in checked["problems"]:
                     print(problem)
                 return 1
+            gates = checked["spec_gates"]
             tail = (f", spec gates {gates['passed']}/{gates['cases']}"
                     if gates["cases"] else "")
             print(f"eval files ok ({checked['cases']} cases{tail})")

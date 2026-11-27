@@ -295,14 +295,15 @@ class SpecApprovalTest(unittest.TestCase):
         self.assertEqual(facts, "")
 
     def test_spec_gate_corpus_passes_on_non_stead_fixtures(self) -> None:
-        # The committed non-Stead fixture corpus (Prisma, SQLAlchemy, declared-only)
+        # The non-Stead fixtures (Prisma, SQLAlchemy, declared-only, and CLI)
         # must pass the deterministic gates — this is what keeps the per-repo data
         # model working for any repo, not just Stead.
         repo = Path(__file__).parent.parent
         result = spec.check_gate_cases(repo / "tests" / "fixtures" / "spec-gates.json",
                                        repo / "tests" / "fixtures" / "repos")
         self.assertTrue(result["ok"], "\n".join(result["problems"]))
-        self.assertEqual(result["passed"], 5)
+        self.assertEqual(result["cases"], 9)
+        self.assertEqual(result["passed"], result["cases"])
 
     def test_citation_verification(self) -> None:
         code = self._seed_repo_with_code()
