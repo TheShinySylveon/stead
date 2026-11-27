@@ -9,6 +9,7 @@ restart forgets any in-flight task.
 
 from __future__ import annotations
 
+import contextvars
 import threading
 import time
 from dataclasses import dataclass, field
@@ -91,7 +92,9 @@ class TaskRunner:
                     task.finished = time.time()
                     task.status = "failed"
 
-        threading.Thread(target=run, daemon=True, name=f"stead-task-{task_id}").start()
+        ctx = contextvars.copy_context()
+        threading.Thread(target=ctx.run, args=(run,), daemon=True,
+                         name=f"stead-task-{task_id}").start()
         return task_id
 
     def get(self, task_id: str) -> dict | None:

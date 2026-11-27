@@ -45,15 +45,20 @@ def current(root: Path) -> str:
 
 def use(root: Path, actor_id: str) -> str:
     actor_id = (actor_id or "").strip()
-    if objects.find(root, "actor", actor_id) is None:
+    found = objects.find(root, "actor", actor_id)
+    if found is None:
         raise ActorError(f"actor not found: {actor_id}")
-    config.save_actor(root, actor_id)
-    return actor_id
+    canonical = str(found[1].get("id") or actor_id)
+    config.save_actor(root, canonical)
+    return canonical
 
 
 def stamp(root: Path, meta: dict) -> None:
     """Set actor: to the current actor when that file exists."""
     actor_id = current(root)
-    if not actor_id or objects.find(root, "actor", actor_id) is None:
+    if not actor_id:
         return
-    meta["actor"] = actor_id
+    found = objects.find(root, "actor", actor_id)
+    if found is None:
+        return
+    meta["actor"] = str(found[1].get("id") or actor_id)

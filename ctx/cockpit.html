@@ -1365,6 +1365,7 @@ function inline(s) {
   return esc(s)
     .replace(/`([^`]+)`/g, (_, code) => hold("<code>" + code + "</code>"))
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, text, url) => hold('<a href="' + url + '" target="_blank" rel="noopener">') + text + hold("</a>"))
+    .replace(/\[([^\]]+)\]\(((?:specs|decisions|glossary|tasks|history|requests)\/[A-Za-z0-9._-]+)\)/g, (_, text, slug) => hold('<button type="button" class="linkish" data-wiki-page="' + slug + '">') + text + hold("</button>"))
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?![\w*])/g, "$1<em>$2</em>")
     .replace(/(^|[^\w])_([^_\s][^_]*?)_(?!\w)/g, "$1<em>$2</em>")

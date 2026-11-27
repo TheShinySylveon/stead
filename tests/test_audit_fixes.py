@@ -366,6 +366,106 @@ class AuditFixesTest(unittest.TestCase):
         verdict, _reason = review._parse("verdict: approve\nactually wait\nverdict: reject\nreason: missing test")
         self.assertEqual(verdict, "reject")
 
+    def test_improvement_proposals_work_end_to_end(self) -> None:
+        from ctx import writeback
+        for field in ("improvement_type", "rationale", "change"):
+            self.assertIn(field, agent._ACTION_FIELDS)
+            self.assertIn(field, agent._ACTION_RESPONSE_FORMAT["json_schema"]["schema"]["properties"])
+        # Multi-heading prompt change is not truncated at ## headings.
+        body = "# Fix\n\n## Rationale\n\nBecause.\n\n## Change\n\nIntro\n\n## Rules\n\nKeep tests.\n"
+        self.assertIn("## Rules", writeback._improvement_section(body, "change"))
+        # Code improvement sourced from a contribution resolves repo -> project without state.db.
+        (self.root / "context/projects/p.md").write_text(
+            frontmatter.dumps({
+                "id": "project-p", "type": "project", "title": "P",
+                "created": "2026-11-21", "updated": "2026-11-21", "status": "active",
+            }, "# P\n"),
+            encoding="utf-8",
+        )
+        (self.root / "context/repos/app.md").write_text(
+            frontmatter.dumps({
+                "id": "repo-app", "type": "repo", "title": "App",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "status": "active", "kind": "own", "project": "project-p",
+            }, "# App\n"),
+            encoding="utf-8",
+        )
+        (self.root / "context/contributions/app-issue-1.md").write_text(
+            frontmatter.dumps({
+                "id": "contribution-app-issue-1", "type": "contribution", "title": "Spec",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "repo": "repo-app", "kind": "issue", "number": 1, "state": "open",
+            }, "# Spec\n"),
+            encoding="utf-8",
+        )
+        prop = writeback.propose_improvement(
+            self.root, "code", "Add guard", "Missing check", "Check input",
+            source="contribution-app-issue-1")
+        accepted = writeback.accept_improvement(self.root, Path(prop["path"]).name)
+        self.assertTrue((self.root / accepted["path"]).is_file())
+
+    def test_writeback_lookup_handles_slug_and_ignores_failed_retry(self) -> None:
+        from ctx import writeback
+        (self.root / "context/contributions/app-issue-9.md").write_text(
+            frontmatter.dumps({
+                "id": "contribution-app-issue-9", "type": "contribution", "title": "S",
+                "created": "2026-11-21", "updated": "2026-11-21",
+                "repo": "repo-app", "kind": "issue", "number": 9, "state": "open",
+            }, "# S\n"),
+            encoding="utf-8",
+        )
+        (self.root / "context/documents/build-app-9-20261121T100000Z.md").write_text(
+            frontmatter.dumps({
+                "id": "document-build-app-9-20261121t100000z", "type": "document",
+                "title": "Delivered", "created": "2026-11-21", "updated": "2026-11-21",
+                "tags": ["build-record"], "contribution": "contribution-app-issue-9",
+                "outcome": "published", "pr_url": "https://github.com/o/r/pull/99",
+            }, "# Delivered\n"),
+            encoding="utf-8",
+        )
+        (self.root / "context/documents/build-app-9-20261121T120000Z.md").write_text(
+            frontmatter.dumps({
+                "id": "document-build-app-9-20261121t120000z", "type": "document",
+                "title": "Failed retry", "created": "2026-11-21", "updated": "2026-11-21",
+                "tags": ["build-record"], "contribution": "contribution-app-issue-9",
+                "outcome": "failed",
+            }, "# Failed\n"),
+            encoding="utf-8",
+        )
+        # Lookup via slug finds the delivered record's PR URL, not the failed retry.
+        self.assertEqual(writeback.contribution_pr_url(self.root, "app-issue-9"),
+                         "https://github.com/o/r/pull/99")
+
+    def test_actors_canonicalize_slug_and_tasks_preserve_context(self) -> None:
+        from ctx import actors, tasks
+        (self.root / "context/actors/ada.md").write_text(
+            frontmatter.dumps({
+                "id": "actor-ada", "type": "actor", "title": "Ada",
+                "created": "2026-11-21", "updated": "2026-11-21", "status": "active",
+            }, "# Ada\n"),
+            encoding="utf-8",
+        )
+        self.assertEqual(actors.use(self.root, "ada"), "actor-ada")
+        runner = tasks.TaskRunner()
+        tok = actors.bind("actor-ada")
+        try:
+            tid = runner.start("test", "t1", lambda _p: {"actor": actors.current(self.root)})
+        finally:
+            actors.unbind(tok)
+        import time as _time
+        for _ in range(50):
+            snap = runner.get(tid)
+            if snap and snap["status"] != "running":
+                break
+            _time.sleep(0.02)
+        self.assertEqual(snap["result"]["actor"], "actor-ada")
+
+    def test_inbox_import_wraps_ui_error_as_inbox_import_error(self) -> None:
+        from ctx import inbox_import
+        huge = ("x" * 25_000).encode("utf-8")
+        with self.assertRaises(inbox_import.InboxImportError):
+            inbox_import.import_bytes(self.root, "note.txt", huge)
+
 
 if __name__ == "__main__":
     unittest.main()

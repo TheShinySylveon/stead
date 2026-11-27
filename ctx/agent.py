@@ -95,6 +95,9 @@ _ACTION_RESPONSE_FORMAT = {
                 "end": {"type": "integer"},
                 "old": {"type": "string"},
                 "new": {"type": "string"},
+                "improvement_type": {"type": "string"},
+                "rationale": {"type": "string"},
+                "change": {"type": "string"},
             },
             "required": ["action"],
             "additionalProperties": False,
@@ -105,7 +108,7 @@ _ACTION_RESPONSE_FORMAT = {
 # The fields the build loop reads from an action object. A test asserts each is
 # declared in the schema above, so a strict server never drops one.
 _ACTION_FIELDS = {"action", "path", "content", "summary", "query", "kind", "title", "text",
-                  "start", "end", "old", "new"}
+                  "start", "end", "old", "new", "improvement_type", "rationale", "change"}
 
 
 class BuildError(Exception):
@@ -208,6 +211,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         raise BuildError("ghost writes the plan and spec/doc changes only, for "
                          "approval. Publish and merge need a higher reach on the repo.",
                          reason="precondition")
+    if merge and not publish:
+        raise BuildError("--merge needs --publish; nothing was pushed",
+                         reason="precondition")
     checks = (repo_meta.get("checks") or "").strip()
     default = (repo_meta.get("default_branch") or "main").strip()
     base_run = runner or _git_run
@@ -299,7 +305,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         # model's own write set.
         commit_base = _git(run, code, ["rev-parse", "HEAD"]).strip()
         base_tracked_cf = {line.casefold() for line in
-                           _git(run, code, ["ls-tree", "-r", "--name-only", default]).splitlines()
+                           _git(run, code, ["-c", "core.quotePath=false",
+                                            "ls-tree", "-r", "--name-only", default]).splitlines()
                            if line}
         branch_tracked = _tracked_files(run, code)
         git_before = safety.git_state_snapshot(code)
@@ -351,8 +358,10 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     raise
 
             responder._plain = False
-            prices = (settings.get("input_price_per_mtok") or 0.0,
-                      settings.get("output_price_per_mtok") or 0.0)
+            model_prices = (settings.get("input_price_per_mtok") or 0.0,
+                            settings.get("output_price_per_mtok") or 0.0)
+            if model_prices[0] or model_prices[1]:
+                prices = model_prices
         tree = _tree(code)
         context = factory.feature_build_context(root, spec, body, repo_meta, repo_body)
         prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta,
@@ -399,14 +408,14 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             if token_budget and tokens_total > token_budget:
                 raise BuildError(
                     f"the build hit its token budget ({tokens_total} > {token_budget}). "
-                    "Raise --max-tokens, or split the spec.")
+                    "Raise --max-tokens, or split the spec.", reason="budget")
             if cost_budget and (prices[0] or prices[1]):
                 spent = (usage["prompt_tokens"] / 1e6 * prices[0]
                          + usage["completion_tokens"] / 1e6 * prices[1])
                 if spent > cost_budget:
                     raise BuildError(
                         f"the build hit its cost budget (${spent:.2f} > ${cost_budget:.2f}). "
-                        "Raise --max-cost, or split the spec.")
+                        "Raise --max-cost, or split the spec.", reason="budget")
             action = _parse(reply)
             progress_log(f"step {_step + 1}/{max_steps}  {_describe(action)}  "
                  f"({len(full_prompt) // 1000}k chars sent, {_step_latency / 1000:.0f}s)")
@@ -970,12 +979,14 @@ def _lock(code: Path) -> Path:
             raise BuildError(
                 f"another build holds the lock for this checkout ({path}). "
                 "Remove it if no build is running.") from exc
-        os.write(fd, json.dumps({
-            "pid": os.getpid(),
-            "host": socket.gethostname(),
-            "started": datetime.now(timezone.utc).isoformat(),
-        }).encode("utf-8"))
-        os.close(fd)
+        try:
+            os.write(fd, json.dumps({
+                "pid": os.getpid(),
+                "host": socket.gethostname(),
+                "started": datetime.now(timezone.utc).isoformat(),
+            }).encode("utf-8"))
+        finally:
+            os.close(fd)
         return path
     raise BuildError(f"could not take the build lock ({path})")
 
@@ -989,6 +1000,9 @@ def _reclaimable(path: Path) -> bool:
         return True
     if age > STALE_LOCK_SECONDS:
         return True
+    if not raw and age < 5.0:
+        # Another process just created the lock and has not flushed its PID yet.
+        return False
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -1013,11 +1027,18 @@ def _pid_alive(pid: int) -> bool:
         return False
     if os.name == "nt":
         import ctypes
-        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(0x1000, False, pid)
         if not handle:
-            return False
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return True
+            # ERROR_ACCESS_DENIED (5): process exists under another privilege level.
+            return ctypes.get_last_error() == 5
+        try:
+            exit_code = ctypes.c_ulong(0)
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return exit_code.value == 259  # STILL_ACTIVE
+            return True
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -1877,14 +1898,15 @@ def _remove_path(path: Path) -> None:
 
 def _tracked_files(run, code: Path) -> set[str]:
     return {line.strip().strip('"')
-            for line in _git(run, code, ["ls-files"]).splitlines() if line.strip()}
+            for line in _git(run, code, ["-c", "core.quotePath=false", "ls-files"]).splitlines()
+            if line.strip()}
 
 
 def _range_changes(run, code: Path, base: str) -> tuple[list[str], list[str]]:
     """The committed range from the base commit: (changed, deleted) paths."""
     changed: list[str] = []
     deleted: list[str] = []
-    raw = _git(run, code, ["diff", "--name-status", base, "HEAD"])
+    raw = _git(run, code, ["-c", "core.quotePath=false", "diff", "--name-status", base, "HEAD"])
     for line in raw.splitlines():
         parts = line.split("\t")
         if len(parts) < 2:
@@ -1904,7 +1926,7 @@ def _staged_changes(run, code: Path) -> tuple[list[str], list[str]]:
     """The real diff about to be committed: (changed, deleted) paths."""
     changed: list[str] = []
     deleted: list[str] = []
-    raw = _git(run, code, ["diff", "--cached", "--name-status", "HEAD"])
+    raw = _git(run, code, ["-c", "core.quotePath=false", "diff", "--cached", "--name-status", "HEAD"])
     for line in raw.splitlines():
         parts = line.split("\t")
         if len(parts) < 2:

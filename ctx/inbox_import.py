@@ -10,9 +10,10 @@ import re
 from email import policy
 from pathlib import Path
 
-from ctx.ui import capture
+from ctx.ui import UiError, capture
 
 _ICS_UNFOLD = re.compile(r"\r?\n[ \t]")
+MAX_IMPORT_BYTES = 2 * 1024 * 1024
 
 
 class InboxImportError(Exception):
@@ -25,7 +26,13 @@ def import_file(root: Path, source: str) -> list[dict]:
     path = Path(source)
     if not path.is_file():
         raise InboxImportError(f"file not found: {source}")
-    return import_bytes(root, path.name, path.read_bytes())
+    try:
+        if path.stat().st_size > MAX_IMPORT_BYTES:
+            raise InboxImportError("file is too large to import (limit 2 MB)")
+        data = path.read_bytes()
+    except OSError as exc:
+        raise InboxImportError(f"could not read file: {exc}") from exc
+    return import_bytes(root, path.name, data)
 
 
 def import_bytes(root: Path, filename: str, data: bytes) -> list[dict]:
@@ -43,7 +50,10 @@ def import_bytes(root: Path, filename: str, data: bytes) -> list[dict]:
         raise InboxImportError("import a .eml, .ics, .md, or .txt file")
     written = []
     for title, body in notes:
-        written.append(capture(root, title, body, source="an imported file"))
+        try:
+            written.append(capture(root, title, body, source="an imported file"))
+        except UiError as exc:
+            raise InboxImportError(str(exc)) from exc
     return written
 
 
@@ -53,7 +63,11 @@ def _email_bytes(filename: str, data: bytes) -> tuple[str, str]:
     body = message.get_body(preferencelist=("plain", "html"))
     text = ""
     if body is not None:
-        text = body.get_content()
+        try:
+            text = body.get_content()
+        except (KeyError, LookupError, TypeError, ValueError):
+            payload = body.get_payload(decode=True)
+            text = payload.decode("utf-8", errors="replace") if isinstance(payload, bytes) else ""
     if not str(text).strip():
         text = "(no body)"
     sender = message.get("from") or ""
