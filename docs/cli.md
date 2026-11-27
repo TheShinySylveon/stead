@@ -54,23 +54,31 @@ See [Spec Kit](spec-kit-workflow.md).
 
 ```bash
 python -m stead task add --title T --project P [--status to-do|doing|done|blocked]
-python -m stead task list [--project P] [--status S]
+python -m stead task list [--project P] [--status S] [--sort]
 python -m stead task set ID --status S
 
 python -m stead repo add --title T [--url URL] [--kind own|oss] \
     [--status active|paused|archived]
-python -m stead repo list [--kind own|oss]
+python -m stead repo list [--kind own|oss] [--json]
 
 python -m stead contribution add --title T --repo REPO --kind issue|pr --number N \
     [--role author|assignee|reviewer] [--state open|closed|merged] \
     [--ci pending|pass|fail|none] [--review requested|approved|changes|none] \
     [--method spec-kit|builtin]
-python -m stead contribution list
+python -m stead contribution list [--repo R] [--kind issue|pr] [--role R] \
+    [--state S] [--json] [--count]
 python -m stead contribution set ID [--state S] [--ci C] [--review R] \
     [--role R] [--method spec-kit|builtin]
 
 python -m stead delete TYPE ID [--force]
 ```
+
+The `list` commands read the SQLite index and are read-only. `task list --sort`
+orders by title then status; `repo list --json` and `contribution list --json`
+emit a machine-readable array instead of the table. `contribution list` filters
+by `--repo`, `--kind`, `--role`, and `--state`; `--count` prints only the number
+of matching contributions (a bare integer, or a JSON number with `--json`) and
+still respects those filters. The default table output is unchanged.
 
 `method` chooses tooling for feature-builder. It does not turn planning off.
 Omitted, it is `spec-kit`.
@@ -341,6 +349,25 @@ when it merged, and the next feature-builder bundle for that repo reads the
 prior records. The model may `propose` a decision or glossary term; that goes
 to `inbox/` for a person to triage, never straight into context. `repo set`
 warns when `checks:` names a runner whose config file is unprotected.
+
+## Metrics
+
+```bash
+python -m stead metrics [--json] [--repo R] [--since YYYY-MM-DD]
+python -m stead metrics mark RECORD_ID --correct true|false [--rule TEXT]
+```
+
+`metrics` reports the dogfood ledger from the `build-record` documents: builds,
+merged / published / committed / failed, the hand-checked **correct** count kept
+apart from the mechanical **committed** count, failure rate, merged share,
+merged-after-a-human-edit, repair rounds, checks mode, time, tokens, and cost.
+`--repo` limits to one repo, `--since` to records created on/after a date, and
+`--json` emits the counters (including `attempts`, `build_failures`,
+`infra_failures`) as machine-readable numbers.
+
+`metrics mark` records the hand-checked rubric verdict on one build record, so an
+unverified build never reads as a success. `--rule` optionally proposes an
+anti-slop rule to the inbox.
 
 ## Runs and prompts
 

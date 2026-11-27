@@ -2,6 +2,25 @@
 
 ## Unreleased
 
+- **MVP met: the full loop ran end to end on a model draft.** A fresh issue
+  (`contribution list --count`, #111) went draft → approve → build → PR → merge
+  with a `qwen3.8-flash` draft and an autonomous Arete 27B build (0 repair
+  rounds, 0 human commits), scored correct and merged with no human edits (#179).
+  The measured split is **draft = fast human review, build = human-rarely**: the
+  draft's data source was faithful but a fresh re-draft invented a `--limit` flag
+  that a fast review removed. `mvp.md` now declares the MVP met and opens the post-MVP
+  list (shared-server hardening, eval redesign, filing issues upstream).
+- **`contribution list --count` prints only the number of matches.** A new
+  `--count` flag emits a bare integer (or a JSON number with `--json`) instead of
+  the table, still respecting `--repo`, `--kind`, `--role`, and `--state`; an
+  empty match prints `0`, and the default table/JSON output is unchanged. The
+  first feature built through the full model-drafted loop (#179).
+- **The issue comment skips cleanly when there is no real upstream issue.**
+  Issues and PRs share one number space, so a local-only spec whose number
+  collides with an upstream PR used to land its comment on `pull/<N>`. The
+  comment step now does one read-only lookup first and returns a clean skip
+  (no write, no error) when the number is a PR or does not exist. CLI and cockpit
+  both surface the skip, and the build record stores `comment_skipped` (#178).
 - **The citation gate accepts a prose `## Data source`; it still verifies
   citations.** Faithful models (Qwen3.8-Flash, Arete 27B) describe the data
   source in prose, which the gate now accepts; it only verifies `(file:line)`

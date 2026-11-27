@@ -26,13 +26,14 @@ Built for the solo open-source contributor: a dozen repos, a weekly review
 queue, and no vendor holding your notes. The same files work for a small team
 behind one container.
 
-> **Status: working toward the [MVP](docs/mvp.md).** One reliable issue → spec
-> → tested change → PR loop, reviewed by a human. The loop runs end to end on a
-> local 27B model: Stead built [#20](https://github.com/TheShinySylveon/stead/pull/20),
-> [#30](https://github.com/TheShinySylveon/stead/pull/30), and [#34](https://github.com/TheShinySylveon/stead/pull/34), all passed
-> CI and were merged by a person with no edits. The scored run
-> ([Dogfood](docs/dogfood.md)) is the next milestone; the ledger reports what
-> happened, and everything else waits until it passes.
+> **Status: [MVP](docs/mvp.md) met.** The issue → spec → tested change → PR →
+> merge loop runs end to end — now including on a **model-drafted** spec: the
+> build is autonomous on a local 27B model, and the draft is model-written with a
+> fast human review. The scored dogfood run ([Dogfood](docs/dogfood.md)) is
+> complete (Set C 3/3 + hold-out correct, and the full loop measured on a fresh
+> model draft, [#179](https://github.com/TheShinySylveon/stead/pull/179)). The
+> post-MVP list — shared-server hardening, eval redesign, filing issues upstream —
+> is now the active roadmap.
 
 ## Quick start
 
