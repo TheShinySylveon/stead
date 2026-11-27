@@ -249,19 +249,23 @@ python -m stead build --contribution ID [--publish] [--merge] [--resume] [--retr
     [--max-tokens N] [--max-cost USD]
 ```
 
-`spec draft` turns a raw issue into a buildable spec in one model call: a new
+`spec draft` turns a raw issue into a buildable spec: a new
 `feature-spec`-tagged contribution linked to the source issue (which is left
-untouched). It refuses to draft from the unedited sync cache stub, from a draft,
+untouched). When the repo has a `code_path` checkout, the drafter runs a bounded
+read/search research phase against the real code, sees the repo's derived data
+model (SQL/Prisma/ORM schema + declared notes), and must end with a
+`## Data source` section; a structurally incomplete draft is re-prompted to
+complete it. It refuses to draft from the unedited sync cache stub, from a draft,
 or when a draft already exists — pass `--redraft` to replace the existing draft
 and clear its approval. The draft must have a `## Acceptance criteria`
-checklist and a `## Plan` section. When the repo has a `code_path` checkout,
-the model sees its depth-2 tree (the same one a build sees), and `spec draft`
-warns about any path in the plan whose folder is not in the repo, or that does
-not exist while a file of the same name does elsewhere (`stead/cli.py` →
-"did you mean `ctx/cli.py`?"). It also warns when a build would refuse the
-draft: more than 8 acceptance criteria, or a description under 25 or over 400
-words. `spec approve` refuses such a spec outright, so an approval always means
-the spec is ready to build.
+checklist and a `## Plan` section, and the deterministic gates warn about a path
+whose folder is not in the repo (`stead/cli.py` → "did you mean `ctx/cli.py`?"),
+a named symbol that does not exist (or is in the wrong module), a fabricated
+table, or a data source claimed to live in config; a `(file:line)` citation in
+`## Data source` is verified against the checkout. It also warns when a build
+would refuse the draft: more than 8 acceptance criteria, or a description under
+25 or over 400 words. `spec approve` refuses such a spec outright, so an
+approval always means the spec is ready to build.
 
 `spec draft --all` drafts every open `stead-build`-labelled issue with no draft
 yet, in one pass, and never approves: each draft still needs a person's
