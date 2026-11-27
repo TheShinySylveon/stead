@@ -133,7 +133,12 @@ in progress on the branch, and spends the budget.
 
 ## Merge gates
 
-`stead factory merge` merges only when all of these hold:
+The workflow requires addressing all actionable human and bot PR comments before
+merge (see `AGENTS.md`). A green review-bot check only means the check completed;
+it is not proof the feedback was addressed. This is a workflow requirement, not
+an automatic comment-resolution check in `stead factory merge`.
+
+`stead factory merge` checks the following:
 
 1. The repo file says `reach: merge`. Merge is never inherited from the install
    default.

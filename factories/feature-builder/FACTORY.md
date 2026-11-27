@@ -133,8 +133,14 @@ local, and network-free for both. Full flow, install, and own-vs-OSS rules:
    premise → criterion→test map → TDD red-green on an isolated branch →
    sabotage-test → quality gates → shadow plan/diff or draft PR → honest CI
    report).
-4. **Review** (human, mandatory): plan/diff in shadow; the draft PR in
-   draft-PR mode. The human merges.
+4. **Review** (human, mandatory): plan/diff in shadow; the PR in PR modes.
+   Before any merge or ready-to-merge handoff, inspect live human and bot
+   feedback on the PR, fix and verify actionable findings on the current head
+   or document a no-change decision agreed to by a reviewer or maintainer, and
+   reply and resolve threads where possible. Green CI or a completed bot review
+   does not clear findings. Hold the merge if feedback is pending, unresolved,
+   or cannot be verified. See `AGENTS.md` for the full policy; merge authority
+   still follows the repo's reach ceiling.
 5. **Record**: `stead run log --factory feature-builder --task <spec-id>
    --prompt-version <v> --output <summary> --verdict approved|rejected`.
 
