@@ -430,11 +430,14 @@ def contribution_pr_url(root: Path, contribution_ref: str) -> str:
 
 
 def _git_out(code: Path, args: list[str], stdin: str | None = None) -> str | None:
-    """stdout of one local git command, or None when it fails."""
+    """stdout of one local git command with hooks/fsmonitor disabled, or None."""
+    from ctx import safety
     try:
-        done = subprocess.run(["git", *args], cwd=code, input=stdin,
-                              capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=120)
+        with safety.hooks_disabled() as hooks_dir:
+            argv = safety.disable_hooks(["git", *args], hooks_dir)
+            done = subprocess.run(argv, cwd=code, input=stdin,
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=120)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None

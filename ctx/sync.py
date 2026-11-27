@@ -95,10 +95,20 @@ def _review_decision(value: str | None) -> str:
             "REVIEW_REQUIRED": "requested"}.get((value or "").upper(), "none")
 
 
+def _github_url(url: str) -> str:
+    cleaned = str(url or "").strip()
+    if not cleaned.startswith("https://github.com/"):
+        return ""
+    return cleaned
+
+
 def _enrich_pr(url: str) -> tuple[str, str]:
     """Best-effort read-only CI + review decision for one PR (gh pr view)."""
+    safe_url = _github_url(url)
+    if not safe_url:
+        return "none", "none"
     try:
-        data = _gh_json(["pr", "view", url, "--json", "statusCheckRollup,reviewDecision"])
+        data = _gh_json(["pr", "view", safe_url, "--json", "statusCheckRollup,reviewDecision"])
     except SystemExit:
         return "none", "none"  # enrichment is optional; search data still caches
     if not isinstance(data, dict):
@@ -179,8 +189,11 @@ def _owner_name(repo_meta: dict) -> str:
 
 def _fetch_issue_body(url: str) -> str:
     """Best-effort read-only fetch of an issue body, so a draft has real text."""
+    safe_url = _github_url(url)
+    if not safe_url:
+        return ""
     try:
-        raw = _run_gh(["issue", "view", url, "--json", "body",
+        raw = _run_gh(["issue", "view", safe_url, "--json", "body",
                        "--jq", ".body"]).stdout or ""
     except SystemExit:
         return ""
@@ -343,6 +356,8 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
                     existing["body"] = item["body"]
                 if item.get("body_sha"):
                     existing["body_sha"] = item["body_sha"]
+                if item.get("body_fetched"):
+                    existing["body_fetched"] = True
             else:
                 by_key[key] = item
         items = list(by_key.values())
@@ -366,14 +381,20 @@ def sync_github(root: Path, author: str = "@me", limit: int = 30,
         from ctx import writeback
 
         def view_pr(url):
+            safe_url = _github_url(url)
+            if not safe_url:
+                return None
             try:
-                return _gh_json(["pr", "view", url, "--json", "state,headRefOid,mergedAt"])
+                return _gh_json(["pr", "view", safe_url, "--json", "state,headRefOid,mergedAt"])
             except SystemExit:
                 return None
 
         def view_issue(url):
+            safe_url = _github_url(url)
+            if not safe_url:
+                return None
             try:
-                return _gh_json(["issue", "view", url, "--json", "state"])
+                return _gh_json(["issue", "view", safe_url, "--json", "state"])
             except SystemExit:
                 return None
 

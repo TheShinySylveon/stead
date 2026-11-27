@@ -422,11 +422,25 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             if kind == "list":
                 rel = _safe_rel(action.get("path") or ".")
                 target = code / rel
-                if not target.is_dir():
+                if not target.is_dir() or (rel != "." and _ignored(target, code)):
                     transcript.append(f"list: not a directory: {rel}")
                     continue
-                names = sorted(p.name + ("/" if p.is_dir() else "")
-                               for p in target.iterdir() if p.name not in IGNORE_DIRS)
+                try:
+                    _resolved_rel(target, code)
+                except BuildError:
+                    transcript.append(f"list: not a directory: {rel}")
+                    continue
+                names = []
+                for p in sorted(target.iterdir()):
+                    if p.name in IGNORE_DIRS or p.name == LOCK_NAME:
+                        continue
+                    try:
+                        p_rel = _resolved_rel(p, code)
+                    except BuildError:
+                        continue
+                    if safety.secret_by(p.relative_to(code).as_posix()) or safety.secret_by(p_rel):
+                        continue
+                    names.append(p.name + ("/" if p.is_dir() else ""))
                 transcript.append(f"list {rel}:\n" + "\n".join(names[:200]))
                 actions.append({"action": "list", "path": rel})
                 continue
@@ -675,8 +689,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     raise BuildError("the model finished without changing a file",
                                      reason="protocol")
                 if criteria and not ghost and safety.truthy(repo_meta.get("require_tests", "true")):
-                    touched_tests = [p for p in list(files) + deleted
-                                     if safety.is_test_path(p)]
+                    touched_tests = [p for p in files if safety.is_test_path(p)]
                     if not touched_tests:
                         no_test += 1
                         if no_test > repair_rounds:
@@ -868,7 +881,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         except CommentError as exc:
                             result["comment_error"] = str(exc)
                     if wait:
-                        _wait_for_checks(code, spec.get("number"), wait_minutes)
+                        pr_num = _pr_number(opened["url"])
+                        if pr_num:
+                            _wait_for_checks(code, pr_num, wait_minutes)
                     if merge:
                         from ctx.merge import MergeError, merge as merge_pr
                         try:
@@ -1151,16 +1166,23 @@ def _pr_number(pr_url: str) -> str:
 def fetch_review_comments(run, owner_name: str, number, code: Path) -> list[dict]:
     """The inline review comments on a PR, as {path, line, body} dicts."""
     try:
-        raw = run(["gh", "api", "--paginate",
+        raw = run(["gh", "api", "--paginate", "--slurp",
                    f"repos/{owner_name}/pulls/{number}/comments"], code)
     except BuildError:
         return []
     try:
-        items = json.loads(raw or "null")
+        parsed = json.loads(raw or "null")
     except json.JSONDecodeError:
         return []
-    if not isinstance(items, list):
+    if not isinstance(parsed, list):
         return []
+    # --slurp wraps each page in a list ([[...], [...]]); flatten if nested.
+    items: list = []
+    for entry in parsed:
+        if isinstance(entry, list):
+            items.extend(entry)
+        elif isinstance(entry, dict):
+            items.append(entry)
     out: list[dict] = []
     for item in items:
         if not isinstance(item, dict) or not (item.get("body") or "").strip():
@@ -1297,6 +1319,13 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
         raise BuildError(f"repo not found: {spec.get('repo')!r}",
                          reason="precondition")
     _repo_path, repo_meta, _repo_body = repo
+    if push:
+        policy = autonomy.effective(root, repo_meta)
+        if policy["ceiling"] in ("ghost", "shadow"):
+            raise BuildError(
+                f"this repo's ceiling is {policy['ceiling']}. Pass --no-push or "
+                "raise the repo reach before pushing review fixes.",
+                reason="precondition")
     code = Path(repo_meta.get("code_path") or "")
     if not repo_meta.get("code_path") or not code.is_dir():
         raise BuildError("set the repo code_path to a local checkout first",
@@ -1336,6 +1365,8 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
         wt = Path(tempfile.mkdtemp(prefix="stead-wt-"))
         _git(run, anchor, ["worktree", "add", str(wt), branch])
         code = wt
+        commit_base = _git(run, code, ["rev-parse", "HEAD"]).strip()
+        git_before = safety.git_state_snapshot(code)
         progress_log(f"worktree ready on {branch}")
 
         prompt_budget = MAX_PROMPT_CHARS
@@ -1385,11 +1416,25 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
             if kind == "list":
                 rel = _safe_rel(action.get("path") or ".")
                 target = code / rel
-                if not target.is_dir():
+                if not target.is_dir() or (rel != "." and _ignored(target, code)):
                     transcript.append(f"list: not a directory: {rel}")
                     continue
-                names = sorted(p.name + ("/" if p.is_dir() else "")
-                               for p in target.iterdir() if p.name not in IGNORE_DIRS)
+                try:
+                    _resolved_rel(target, code)
+                except BuildError:
+                    transcript.append(f"list: not a directory: {rel}")
+                    continue
+                names = []
+                for p in sorted(target.iterdir()):
+                    if p.name in IGNORE_DIRS or p.name == LOCK_NAME:
+                        continue
+                    try:
+                        p_rel = _resolved_rel(p, code)
+                    except BuildError:
+                        continue
+                    if safety.secret_by(p.relative_to(code).as_posix()) or safety.secret_by(p_rel):
+                        continue
+                    names.append(p.name + ("/" if p.is_dir() else ""))
                 transcript.append(f"list {rel}:\n" + "\n".join(names[:200]))
                 continue
             if kind == "read":
@@ -1476,6 +1521,7 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
                     transcript.append("check: this repo has no checks command")
                     continue
                 ok, output, _mode = _run_checks(code, checks, repo_meta, deadline)
+                _verify_git_hygiene(code, git_before)
                 if ok:
                     transcript.append("checks passed")
                 else:
@@ -1495,7 +1541,32 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
                         "run check, then finish.")
                     progress_log("finish refused: no changes yet")
                     continue
-                _git(run, code, ["add", "-A"])
+                checks = (repo_meta.get("checks") or "").strip()
+                if checks:
+                    ok, output, _mode = _run_checks(code, checks, repo_meta, deadline)
+                    _verify_git_hygiene(code, git_before)
+                    if not ok:
+                        transcript.append("final checks failed before finish:\n"
+                                          + _check_summary(output) + "\n"
+                                          + (output[-2000:] or "(no output)"))
+                        progress_log("final checks FAILED")
+                        continue
+                if _git(run, code, ["rev-parse", "HEAD"]).strip() != commit_base:
+                    raise BuildError("HEAD moved during review-fix run; refusing to commit",
+                                     reason="tamper")
+                expected = set(files)
+                extra_tracked, extra_untracked = _side_effects(run, code, expected, set())
+                if extra_tracked:
+                    raise BuildError(
+                        "checks modified files outside the model's edits: "
+                        + ", ".join(sorted(extra_tracked)[:10]), reason="tamper")
+                for stray in extra_untracked:
+                    target = code / stray
+                    if target.is_dir() and not target.is_symlink():
+                        shutil.rmtree(target, ignore_errors=True)
+                    else:
+                        target.unlink(missing_ok=True)
+                _git(run, code, ["add", "-A", "--", *sorted(expected)])
                 _git(run, code, ["commit", "-m", "Address review comments"])
                 commit = _git(run, code, ["rev-parse", "HEAD"]).strip()
                 progress_log(f"committed {commit[:12]} on {branch}")
@@ -1966,9 +2037,15 @@ def _search(code: Path, query: str) -> list[str]:
     for path in sorted(code.rglob("*")):
         if scanned >= 2000 or len(hits) >= 50:
             break
-        if not path.is_file() or _ignored(path, code):
+        if not path.is_file():
             continue
-        if safety.secret_by(path.relative_to(code).as_posix()):
+        try:
+            if _ignored(path, code):
+                continue
+            resolved = _resolved_rel(path, code)
+        except BuildError:
+            continue
+        if safety.secret_by(path.relative_to(code).as_posix()) or safety.secret_by(resolved):
             continue
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
@@ -2297,6 +2374,8 @@ def _safe_rel(raw: str) -> str:
     parts = [part for part in rel.split("/") if part not in {"", "."}]
     if any(part == ".." for part in parts):
         raise BuildError(f"paths may not leave the repository: {raw}", reason="gate")
+    if any(part.endswith((".", " ")) for part in parts):
+        raise BuildError(f"invalid trailing dot or space in path: {raw}", reason="gate")
     if parts and parts[0].casefold() == ".git":
         raise BuildError("the model may not touch .git", reason="gate")
     return "/".join(parts)
@@ -2323,7 +2402,11 @@ def _tree(code: Path) -> str:
             continue
         if any(part in IGNORE_DIRS or part == LOCK_NAME for part in relative.parts):
             continue
-        if safety.secret_by(relative.as_posix()):
+        try:
+            resolved = _resolved_rel(path, code)
+        except BuildError:
+            continue
+        if safety.secret_by(relative.as_posix()) or safety.secret_by(resolved):
             continue
         depth = len(relative.parts)
         if depth > 2:

@@ -4,7 +4,13 @@ state.db
 state.db-wal
 state.db-shm
 stead.json
+private
 .env
+.hallmark
+site
+site.zip
+tests
+.worktrees
 **/__pycache__
 **/*.pyc
 factories/*/runs

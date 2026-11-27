@@ -42,7 +42,14 @@ def _comment_body(pr_url: str) -> str:
 
 
 def _pr_in_repo(pr_url: str, owner_name: str) -> bool:
-    return f"github.com/{owner_name}/pull/" in (pr_url or "").rstrip("/")
+    from urllib.parse import urlparse
+    parsed = urlparse((pr_url or "").strip())
+    if parsed.scheme not in ("http", "https"):
+        return False
+    if (parsed.hostname or "").lower() != "github.com":
+        return False
+    prefix = f"/{owner_name.lower()}/pull/"
+    return parsed.path.lower().startswith(prefix)
 
 
 def _authenticated_login(run, code: Path) -> str:
@@ -125,16 +132,22 @@ def _find_marked_comment(run, owner_name: str, number, code: Path, login: str):
     """The id of the existing marked Stead comment authored by the authenticated
     user, or None. Reads all pages and ignores strangers' comments."""
     try:
-        raw = run(["gh", "api", "--paginate",
+        raw = run(["gh", "api", "--paginate", "--slurp",
                    f"repos/{owner_name}/issues/{number}/comments"], code)
     except CommentError:
         return None
     try:
-        comments = json.loads(raw or "null")
+        parsed = json.loads(raw or "null")
     except json.JSONDecodeError:
         return None
-    if not isinstance(comments, list):
+    if not isinstance(parsed, list):
         return None
+    comments: list = []
+    for entry in parsed:
+        if isinstance(entry, list):
+            comments.extend(entry)
+        elif isinstance(entry, dict):
+            comments.append(entry)
     for item in comments:
         if not isinstance(item, dict) or COMMENT_MARKER not in (item.get("body") or ""):
             continue

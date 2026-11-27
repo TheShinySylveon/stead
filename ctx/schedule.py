@@ -8,12 +8,13 @@ also assembles that project's status. Nothing is posted.
 from __future__ import annotations
 
 import re
+import shlex
 import subprocess
 import sys
 from pathlib import Path
 
 TASK_NAME = "SteadWeekly"
-_PROJECT = re.compile(r"^[A-Za-z0-9._:-]{1,120}$")
+_PROJECT = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$")
 # The folder that holds the Stead code (`ctx/` and `stead/`), where the
 # scheduled command runs so `python -m stead` resolves. The store is a separate
 # `--root`, so the two folders may differ (as they do for a dogfood run).
@@ -23,6 +24,16 @@ _CODE_DIR = str(Path(__file__).resolve().parents[1])
 def _stead(store: str) -> str:
     """The `python -m stead` prefix for a scheduled call, pointed at a store."""
     return f'"{sys.executable}" -m stead --root "{store}"'
+
+
+def _posix_dq(value: str) -> str:
+    """Double-quote a path for POSIX sh, escaping command/var expansions."""
+    escaped = value.replace('"', '\\"').replace("$", "\\$").replace("`", "\\`")
+    return f'"{escaped}"'
+
+
+def _stead_posix(store: str) -> str:
+    return f"{_posix_dq(sys.executable)} -m stead --root {_posix_dq(store)}"
 
 
 class ScheduleError(Exception):
@@ -72,13 +83,38 @@ def monitor_command(root: Path, *, watch: bool = True, merge: bool = False) -> s
     return command
 
 
+def _weekly_posix(root: Path, project: str | None = None, *,
+                  watch: bool = False, merge: bool = False) -> str:
+    if merge and not watch:
+        raise ScheduleError("--merge needs --watch")
+    stead = _stead_posix(str(root))
+    command = (
+        f"cd {_posix_dq(_CODE_DIR)} && {stead} sync github --limit 30 --digest "
+        f"&& {stead} factory run --factory context-maintenance --shadow"
+    )
+    if project:
+        project = project.strip()
+        if not _PROJECT.match(project):
+            raise ScheduleError("project must be a plain id, not a shell fragment")
+        command += (
+            f" && {stead} factory run --factory weekly-project-status "
+            f"--project {project} --shadow"
+        )
+    if watch:
+        command += (
+            f" && {stead} factory watch --build --publish"
+            + (" --merge" if merge else "")
+        )
+    return command
+
+
 def _monitor_posix(root: Path, *, watch: bool = True, merge: bool = False) -> str:
     """The monitor command in POSIX syntax, for the cron line."""
-    stead = _stead(str(root))
-    command = (f'cd "{_CODE_DIR}" && {stead} sync github --limit 30'
-               f' && {stead} spec draft --all')
+    stead = _stead_posix(str(root))
+    command = (f"cd {_posix_dq(_CODE_DIR)} && {stead} sync github --limit 30"
+               f" && {stead} spec draft --all")
     if watch:
-        command += (f' && {stead} factory watch --build --publish'
+        command += (f" && {stead} factory watch --build --publish"
                     + (" --merge" if merge else ""))
     return command
 
@@ -105,7 +141,7 @@ def monitor_show(root: Path, *, interval: str = "hourly", watch: bool = True,
         "Windows Task Scheduler (install writes this to "
         "private/run-monitor.cmd):\n"
         f'schtasks /Create /TN SteadMonitor /SC {schtasks} '
-        f'/TR "cmd /c {monitor_launcher_path(root)}" /F\n\n'
+        f'/TR "cmd /c \\"{monitor_launcher_path(root)}\\"" /F\n\n'
         f"cron:\n{cron} {_monitor_posix(root, watch=watch, merge=merge)}\n"
     )
 
@@ -136,9 +172,9 @@ def show(root: Path, project: str | None = None, *, watch: bool = False,
         "Windows (install writes this to private/run-weekly.cmd so the task\n"
         "command stays under the 261 character limit):\n"
         f'schtasks /Create /TN {TASK_NAME} /SC WEEKLY /D FRI /ST 16:00 '
-        f'/TR "cmd /c {launcher_path(root)}" /F\n\n'
+        f'/TR "cmd /c \\"{launcher_path(root)}\\"" /F\n\n'
         "cron:\n"
-        f"0 16 * * 5 {command}\n"
+        f"0 16 * * 5 {_weekly_posix(root, project, watch=watch, merge=merge)}\n"
     )
 
 

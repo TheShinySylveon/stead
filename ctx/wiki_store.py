@@ -54,12 +54,22 @@ def load(root: Path, repo_id: str) -> dict:
 
 
 def save(root: Path, repo_id: str, data: dict) -> None:
+    import tempfile
     folder = _folder(root)
     folder.mkdir(parents=True, exist_ok=True)
     path = _path(root, repo_id)
-    temp = path.with_suffix(".json.tmp")
-    temp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-    os.replace(temp, path)
+    text = json.dumps(data, indent=2) + "\n"
+    fd, tmp = tempfile.mkstemp(prefix=f".{path.stem}-", suffix=".tmp", dir=str(folder))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def ordered(items: list[str], saved: list[str]) -> list[str]:

@@ -29,7 +29,10 @@ _LIST_ITEM = re.compile(r"^\s*-\s+(.*)$")
 def _unquote(value: str) -> str:
     value = value.strip()
     if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
-        return value[1:-1]
+        inner = value[1:-1]
+        if value[0] == '"':
+            inner = inner.replace('\\"', '"').replace("\\\\", "\\")
+        return inner
     return value
 
 
@@ -37,7 +40,34 @@ def _split_inline(item: str) -> list[str]:
     inner = item.strip()[1:-1].strip()
     if not inner:
         return []
-    return [_unquote(part) for part in inner.split(",")]
+    parts: list[str] = []
+    buf: list[str] = []
+    quote: str | None = None
+    escaped = False
+    for ch in inner:
+        if escaped:
+            buf.append(ch)
+            escaped = False
+            continue
+        if quote == '"' and ch == "\\":
+            buf.append(ch)
+            escaped = True
+            continue
+        if quote:
+            buf.append(ch)
+            if ch == quote:
+                quote = None
+            continue
+        if ch in "\"'":
+            quote = ch
+            buf.append(ch)
+        elif ch == ",":
+            parts.append(_unquote("".join(buf)))
+            buf = []
+        else:
+            buf.append(ch)
+    parts.append(_unquote("".join(buf)))
+    return parts
 
 
 def parse(text: str) -> tuple[dict, str]:
@@ -86,10 +116,18 @@ def parse(text: str) -> tuple[dict, str]:
     return meta, body
 
 
-def _fmt_scalar(value: str) -> str:
-    if value == "" or value != value.strip() or ":" in value or "#" in value \
-            or value.startswith(("[", "-", "'", '"')):
-        escaped = value.replace('"', '\\"')
+def _fmt_scalar(value: str, *, in_list: bool = False) -> str:
+    # Flat YAML subset forbids multiline scalars; collapsing CR/LF prevents
+    # frontmatter key injection or block termination when writing untrusted text.
+    if "\n" in value or "\r" in value:
+        value = " ".join(value.replace("\r\n", "\n").replace("\r", "\n").splitlines()).strip()
+    needs_quote = (
+        value == "" or value != value.strip() or ":" in value or "#" in value
+        or value.startswith(("[", "-", "'", '"'))
+        or (in_list and ("," in value or "]" in value))
+    )
+    if needs_quote:
+        escaped = value.replace("\\", "\\\\").replace('"', '\\"')
         return f'"{escaped}"'
     return value
 
@@ -103,10 +141,13 @@ def dumps(meta: dict, body: str) -> str:
     keys += sorted(k for k in meta if k not in _KEY_ORDER)
     out = ["---"]
     for key in keys:
+        key_s = str(key)
+        if any(ch in key_s for ch in ("\n", "\r", ":")):
+            raise ValueError(f"invalid frontmatter key: {key!r}")
         value = meta[key]
         if isinstance(value, list):
-            out.append(f"{key}: [{', '.join(_fmt_scalar(str(v)) for v in value)}]")
+            out.append(f"{key_s}: [{', '.join(_fmt_scalar(str(v), in_list=True) for v in value)}]")
         else:
-            out.append(f"{key}: {_fmt_scalar(str(value))}")
+            out.append(f"{key_s}: {_fmt_scalar(str(value))}")
     out.append("---")
     return "\n".join(out) + "\n\n" + body.lstrip("\n")

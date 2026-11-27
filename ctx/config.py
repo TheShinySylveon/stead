@@ -61,6 +61,26 @@ def load(root: Path) -> dict:
     }
 
 
+def _write_config(root: Path, payload: dict) -> None:
+    path = config_path(root)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(payload, indent=2) + "\n"
+    import tempfile
+    fd, tmp = tempfile.mkstemp(prefix=".stead-cfg-", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        if os.name != "nt":
+            os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
+
+
 def save(root: Path, data: dict) -> None:
     current = read_raw(root)
     deployment = data.get("deployment") or "single"
@@ -75,14 +95,17 @@ def save(root: Path, data: dict) -> None:
         "port": int(data.get("port") or 8765),
         "access_token": token,
     }
-    for key in ("model", "reviewer", "models", "roles", "factory", "actor", "sync"):
+    for key in ("model", "reviewer", "models", "roles", "factory", "sync"):
         value = data[key] if key in data else current.get(key)
         if isinstance(value, dict) and value:
             payload[key] = value
+    actor = data["actor"] if "actor" in data else current.get("actor")
+    if isinstance(actor, str) and actor:
+        payload["actor"] = actor
     hook = data["hook_token"] if "hook_token" in data else current.get("hook_token")
     if isinstance(hook, str) and hook:
         payload["hook_token"] = hook
-    config_path(root).write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    _write_config(root, payload)
 
 
 def hook_token(root: Path) -> str:

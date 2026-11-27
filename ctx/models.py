@@ -11,7 +11,9 @@ written into context markdown, a factory bundle, or a run file.
 
 from __future__ import annotations
 
+import http.client
 import json
+import math
 import os
 import re
 import time
@@ -88,9 +90,9 @@ def _call_timeout(value) -> int:
     return seconds if low <= seconds <= high else DEFAULT_CALL_TIMEOUT
 
 
-def public_model(root: Path) -> dict:
+def public_model(root: Path, block: str = "model") -> dict:
     """What Settings may show. Never includes the key."""
-    raw = _block(root)
+    raw = _block(root, block)
     key_env = raw.get("api_key_env") or ENV_KEY
     env_set = bool(os.environ.get(key_env, "").strip())
     file_set = bool(raw.get("api_key"))
@@ -145,11 +147,13 @@ def _build_model(current: dict, provider: str, name: str, base_url: str,
         new_endpoint = _endpoint(url)
         if old_endpoint[0] and old_endpoint != new_endpoint:
             stored = ""
+    resolved_env = ((api_key_env if api_key_env is not None
+                     else current.get("api_key_env")) or ENV_KEY).strip() or ENV_KEY
     model = {
         "provider": provider,
         "name": name,
         "base_url": url,
-        "api_key_env": (api_key_env or ENV_KEY).strip() or ENV_KEY,
+        "api_key_env": resolved_env,
     }
     if stored:
         model["api_key"] = stored
@@ -169,7 +173,7 @@ def _build_model(current: dict, provider: str, name: str, base_url: str,
 
 
 def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
-              api_key: str | None = None, api_key_env: str = ENV_KEY,
+              api_key: str | None = None, api_key_env: str | None = None,
               block: str = "model", input_price: float | None = None,
               output_price: float | None = None,
               call_timeout: int | None = None,
@@ -180,7 +184,7 @@ def set_model(root: Path, *, provider: str, name: str, base_url: str = "",
     model = _build_model(current, provider, name, base_url, api_key, api_key_env,
                          input_price, output_price, call_timeout, context)
     config.save_model(root, model, block=block)
-    return public_model(root)
+    return public_model(root, block)
 
 
 def _public_profile(model: dict) -> dict:
@@ -216,7 +220,7 @@ def profiles_view(root: Path) -> dict:
 
 def add_model(root: Path, profile: str, *, provider: str, name: str,
               base_url: str = "", api_key: str | None = None,
-              api_key_env: str = ENV_KEY, input_price: float | None = None,
+              api_key_env: str | None = None, input_price: float | None = None,
               output_price: float | None = None,
               call_timeout: int | None = None,
               context: int | None = None) -> dict:
@@ -281,7 +285,7 @@ def _profile_for_role(root: Path, role: str) -> dict:
 
 
 def role_configured(root: Path, role: str) -> bool:
-    """True when `role` resolves to its own profile/block, not the builder."""
+    """True when `role` resolves to its own profile/block, distinct from build."""
     if role not in MODEL_ROLES:
         return False
     raw = config.read_raw(root)
@@ -289,6 +293,8 @@ def role_configured(root: Path, role: str) -> bool:
     profiles = raw.get("models") if isinstance(raw.get("models"), dict) else {}
     name = roles.get(role)
     if name and isinstance(profiles.get(name), dict):
+        if role != "build" and roles.get("build") == name:
+            return False
         return True
     if role in ("review", "address"):
         block = raw.get("reviewer")
@@ -384,7 +390,10 @@ def _add_usage(usage: dict, data: dict, prompt: str, text: str) -> None:
     if isinstance(block, dict):
         inp = block.get("prompt_tokens", block.get("input_tokens"))
         out = block.get("completion_tokens", block.get("output_tokens"))
-        if isinstance(inp, (int, float)) and isinstance(out, (int, float)):
+        if (isinstance(inp, (int, float)) and not isinstance(inp, bool)
+                and isinstance(out, (int, float)) and not isinstance(out, bool)
+                and math.isfinite(inp) and math.isfinite(out)
+                and inp > 0 and out >= 0):
             usage["prompt_tokens"] = int(usage.get("prompt_tokens", 0)) + int(inp)
             usage["completion_tokens"] = int(usage.get("completion_tokens", 0)) + int(out)
             return
@@ -434,11 +443,25 @@ def list_models(root: Path, *, transport=None, timeout: float = 30) -> dict:
             "models": sorted(ids)}
 
 
+_SAFE_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
+
+
+def _safe_segment(value: str, label: str) -> str:
+    cleaned = (value or "").strip()
+    if not cleaned or ".." in cleaned or not _SAFE_NAME.match(cleaned):
+        raise ModelError(f"invalid {label}: {value!r}")
+    return cleaned
+
+
 def check_eval_files(root: Path, factory_name: str | None = None) -> dict:
     """Structural check. No model, no network."""
     folder = root / "factories"
     paths = []
     if factory_name:
+        try:
+            factory_name = _safe_segment(factory_name, "factory")
+        except ModelError as exc:
+            return {"ok": False, "cases": 0, "problems": [str(exc)]}
         paths = sorted((folder / factory_name / "evals").glob("*.json"))
         if not (folder / factory_name / "FACTORY.md").is_file():
             return {"ok": False, "cases": 0,
@@ -503,6 +526,8 @@ def judge(root: Path, factory_name: str, case_id: str, output_path: str | None,
         "prompt_version": prompt_version or _production_version(root, factory_name),
         "created": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
     }
+    factory_name = _safe_segment(factory_name, "factory")
+    case_id = _safe_segment(case_id, "case")
     dest = root / "factories" / factory_name / "evals" / "results" / f"{case_id}.json"
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(result, indent=2) + "\n", encoding="utf-8")
@@ -512,6 +537,7 @@ def judge(root: Path, factory_name: str, case_id: str, output_path: str | None,
 
 def promotion_blockers(root: Path, factory_name: str, version: str) -> list[str]:
     """Eval cases that do not have a recorded pass for this prompt version."""
+    factory_name = _safe_segment(factory_name, "factory")
     folder = root / "factories" / factory_name / "evals"
     if not folder.is_dir():
         return []
@@ -523,6 +549,11 @@ def promotion_blockers(root: Path, factory_name: str, version: str) -> list[str]
             missing.append(path.stem)
             continue
         case_id = case.get("id") or path.stem
+        try:
+            case_id = _safe_segment(str(case_id), "case")
+        except ModelError:
+            missing.append(path.stem)
+            continue
         recorded = folder / "results" / f"{case_id}.json"
         if not recorded.is_file():
             missing.append(case_id)
@@ -539,6 +570,10 @@ def promotion_blockers(root: Path, factory_name: str, version: str) -> list[str]
 
 def eval_status(root: Path, factory_name: str, version: str = "") -> dict:
     """Per-case verdict for one prompt version. Reads local result files only."""
+    try:
+        factory_name = _safe_segment(factory_name, "factory")
+    except ModelError:
+        return {"factory": factory_name, "version": version, "cases": []}
     folder = root / "factories" / factory_name / "evals"
     cases = []
     if not folder.is_dir():
@@ -549,7 +584,11 @@ def eval_status(root: Path, factory_name: str, version: str = "") -> dict:
         except (OSError, json.JSONDecodeError):
             case = {}
         case_id = case.get("id") or path.stem
-        recorded = folder / "results" / f"{case_id}.json"
+        try:
+            safe_id = _safe_segment(str(case_id), "case")
+        except ModelError:
+            safe_id = path.stem
+        recorded = folder / "results" / f"{safe_id}.json"
         verdict = "no result"
         recorded_version = ""
         if recorded.is_file():
@@ -570,6 +609,7 @@ def eval_status(root: Path, factory_name: str, version: str = "") -> dict:
 
 
 def _production_version(root: Path, factory_name: str) -> str:
+    factory_name = _safe_segment(factory_name, "factory")
     from ctx import db
     if db.db_path(root).exists():
         conn = db.connect(root)
@@ -582,7 +622,9 @@ def _production_version(root: Path, factory_name: str) -> str:
             conn.close()
         if row:
             return row["version"]
-    prompts = sorted((root / "factories" / factory_name / "prompts").glob("v*.md"))
+    prompts = [p for p in (root / "factories" / factory_name / "prompts").glob("v*.md")
+               if p.stem[1:].isdigit()]
+    prompts.sort(key=lambda p: int(p.stem[1:]))
     return prompts[-1].stem if prompts else ""
 
 
@@ -655,23 +697,57 @@ def _request(settings: dict, prompt: str, temperature: float,
     return base + "/chat/completions", headers, body
 
 
+_MAX_RESPONSE_BYTES = 20 * 1024 * 1024
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Strip credentials whenever a redirect crosses scheme/host/port."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and _endpoint(req.full_url) != _endpoint(newurl):
+            for key in list(redirected.headers):
+                if key.lower() in {"authorization", "x-api-key"}:
+                    redirected.remove_header(key)
+            for key in list(redirected.unredirected_hdrs):
+                if key.lower() in {"authorization", "x-api-key"}:
+                    del redirected.unredirected_hdrs[key]
+        return redirected
+
+
+_OPENER = urllib.request.build_opener(_SafeRedirectHandler)
+
+
+def _scrub(text: str, api_key: str) -> str:
+    if api_key and api_key in text:
+        return text.replace(api_key, "[redacted]")
+    return text
+
+
 def _post(url: str, body: dict, headers: dict, api_key: str, timeout: float) -> dict:
     data = json.dumps(body).encode("utf-8")
     req = urllib.request.Request(url, data=data, method="POST")
     for name, value in headers.items():
         req.add_header(name, value)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
+        with _OPENER.open(req, timeout=timeout) as resp:
+            raw = resp.read(_MAX_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         detail = ""
         try:
-            detail = exc.read().decode("utf-8", errors="replace")[:500]
+            detail = exc.read(4096).decode("utf-8", errors="replace")[:500]
         except (OSError, UnicodeDecodeError):
             pass  # a body we cannot read is still an error; report the code
+        detail = _scrub(detail, api_key)
         raise ModelError(f"model request failed ({exc.code}) {detail}") from exc
     except urllib.error.URLError as exc:
-        raise ModelError(f"could not reach the model: {exc.reason}") from exc
+        raise ModelError(f"could not reach the model: {_scrub(str(exc.reason), api_key)}") from exc
+    except (http.client.HTTPException, OSError) as exc:
+        if isinstance(exc, TimeoutError):
+            raise
+        raise ModelError(f"model connection failed: {_scrub(str(exc), api_key)}") from exc
+    if len(raw) > _MAX_RESPONSE_BYTES:
+        raise ModelError("the model response exceeded the 20 MB limit")
     try:
         parsed = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:
@@ -686,12 +762,18 @@ def _get(url: str, headers: dict, timeout: float) -> dict:
     for name, value in headers.items():
         req.add_header(name, value)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
-            raw = resp.read()
+        with _OPENER.open(req, timeout=timeout) as resp:
+            raw = resp.read(_MAX_RESPONSE_BYTES + 1)
     except urllib.error.HTTPError as exc:
         raise ModelError(f"model request failed ({exc.code})") from exc
     except urllib.error.URLError as exc:
         raise ModelError(f"could not reach the model: {exc.reason}") from exc
+    except (http.client.HTTPException, OSError) as exc:
+        if isinstance(exc, TimeoutError):
+            raise
+        raise ModelError(f"model connection failed: {exc}") from exc
+    if len(raw) > _MAX_RESPONSE_BYTES:
+        raise ModelError("the model response exceeded the 20 MB limit")
     try:
         parsed = json.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, json.JSONDecodeError) as exc:

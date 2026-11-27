@@ -17,12 +17,12 @@ from ctx.objects import TYPE_DIRS
 REQUIRED = ("id", "type", "title", "created", "updated")
 STATUSES = {
     "task": {"to-do", "doing", "done", "blocked"},
-    "project": {"active", "paused", "archived"},
+    "project": {"active", "paused", "done"},
     "repo": {"active", "paused", "archived"},
     "contribution": {"open", "closed", "merged"},
 }
-RELATIONS = {"task": ("project",), "document": ("project",), "meeting": ("project",),
-             "contribution": ("repo",)}
+REQUIRED_RELATIONS = {"task": ("project",), "contribution": ("repo",)}
+OPTIONAL_RELATIONS = {"document": ("project",), "meeting": ("project",)}
 
 
 def run(root: Path) -> dict:
@@ -64,14 +64,20 @@ def run(root: Path) -> dict:
                 value = str(meta.get(key) or "")
                 if value and not _is_date(value):
                     errors.append(_issue(relative, f"{key} is not an ISO date: {value!r}"))
-            status = meta.get("status")
+            status_key = "state" if otype == "contribution" else "status"
+            status = meta.get(status_key)
             if status and otype in STATUSES and status not in STATUSES[otype]:
-                warnings.append(_issue(relative, f"unusual status {status!r}"))
-            for relation in RELATIONS.get(otype, ()):
+                warnings.append(_issue(relative, f"unusual {status_key} {status!r}"))
+            for relation in REQUIRED_RELATIONS.get(otype, ()):
                 target = str(meta.get(relation) or "")
                 if not target:
                     errors.append(_issue(relative, f"missing {relation} relation"))
                 elif target not in _all_ids(root, relation):
+                    errors.append(_issue(
+                        relative, f"{relation} points at missing object {target!r}"))
+            for relation in OPTIONAL_RELATIONS.get(otype, ()):
+                target = str(meta.get(relation) or "")
+                if target and target not in _all_ids(root, relation):
                     errors.append(_issue(
                         relative, f"{relation} points at missing object {target!r}"))
             if not body.strip():
@@ -83,7 +89,11 @@ def run(root: Path) -> dict:
                     warnings.append(_issue(
                         relative, "the synced issue changed after it was stored "
                                   "(body_sha != upstream_body_sha)"))
-                if "stead-build" in {str(t).lower() for t in (meta.get("tags") or [])}:
+                raw_tags = meta.get("tags") or []
+                if isinstance(raw_tags, str):
+                    raw_tags = [raw_tags]
+                tag_set = {str(t).lower() for t in raw_tags}
+                if tag_set & {"stead-build", "feature-spec"}:
                     spec_sha = str(meta.get("spec_sha") or "")
                     if not spec_sha:
                         warnings.append(_issue(relative, "no spec_sha (unapproved)"))

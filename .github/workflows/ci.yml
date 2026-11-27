@@ -60,7 +60,7 @@ jobs:
 
   publish:
     name: publish image
-    needs: test
+    needs: [test, lint, test-windows]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     permissions:
