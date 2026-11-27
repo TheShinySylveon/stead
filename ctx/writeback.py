@@ -791,11 +791,15 @@ def propose_note(root: Path, kind: str, title: str, text: str,
 IMPROVEMENT_TYPES = ("eval-case", "prompt", "code")
 
 
+_SAFE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+
+
 def _safe_component(value: str, label: str) -> str:
-    """A single safe path component: non-empty, no separators, no ``..``.
-    Guards against a proposal name or factory that tries to escape the store."""
+    """A single safe path component: one or more of ``[A-Za-z0-9._-]`` and not
+    ``.`` or ``..``. An allow-list (not a deny-list), so a proposal name or
+    factory that tries to escape the store is refused outright."""
     value = (value or "").strip()
-    if not value or value in {".", ".."} or "/" in value or "\\" in value:
+    if not _SAFE_COMPONENT_RE.fullmatch(value) or value in {".", ".."}:
         raise WritebackError(f"{label} is not a safe name: {value!r}")
     return value
 
