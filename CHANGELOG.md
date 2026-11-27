@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- **The citation gate parses backticked locations and checks real citations.** A
+  `(`file:line`)` may be backticked (`` (`ctx/cli.py:2`) ``); the parser now
+  accepts it, and the completion-retry loop checks for *parseable* citations,
+  not just a `## Data source` heading. Found by the second unattended draft.
 - **The draft step now repairs a malformed draft instead of failing.** A
   completion-retry loop re-prompts the model when a draft is structurally
   incomplete (missing `## Acceptance criteria`, `## Plan`, or `## Data source`),

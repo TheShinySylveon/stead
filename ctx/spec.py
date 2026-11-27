@@ -639,7 +639,7 @@ def plan_citation_warnings(plan: str, code: Path) -> list[str]:
     return warnings
 
 
-_DATA_SOURCE_RE = re.compile(r"\(([^():\s]+):(\d+)\)")
+_DATA_SOURCE_RE = re.compile(r"\(`?([^():\s]+):(\d+)`?\)")
 
 
 def _citations(section: str) -> list[tuple[str, str, int]]:
@@ -965,7 +965,7 @@ def _structural_problems(text: str, code) -> list[str]:
         problems.append("`## Acceptance criteria`")
     if not factory.spec_plan(text):
         problems.append("`## Plan`")
-    if code is not None and not _data_source_section(text):
+    if code is not None and not _citations(_data_source_section(text)):
         problems.append("`## Data source`")
     return problems
 

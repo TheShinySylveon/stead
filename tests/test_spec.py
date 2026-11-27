@@ -334,6 +334,18 @@ class SpecApprovalTest(unittest.TestCase):
                 "title FROM tasks'` (ctx/cli.py:2)\n")
         self.assertEqual(spec.plan_citation_warnings(plan, code), [])
 
+    def test_citation_accepts_a_backticked_location(self) -> None:
+        # The (file:line) may itself be backticked: (`ctx/cli.py:2`).
+        code = self._seed_repo_with_code()
+        (code / "ctx/cli.py").write_text(
+            "def cmd_task_list(root, project=None, status=None, sort=False):\n"
+            "    query = 'SELECT id, status, project, title FROM tasks'\n",
+            encoding="utf-8")
+        plan = ("## Data source\n\n"
+                "- task list: `query = 'SELECT id, status, project, title FROM "
+                "tasks'` (`ctx/cli.py:2`)\n")
+        self.assertEqual(spec.plan_citation_warnings(plan, code), [])
+
     def test_incomplete_draft_is_completed(self) -> None:
         code = self._seed_repo_with_code()
         complete = ("Add a flag.\n\n## Acceptance criteria\n\n- [ ] it works\n\n"
