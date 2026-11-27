@@ -594,6 +594,8 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
     contribs = _list(root, "contribution")
     pipeline = _pipeline_contribs(root)
     inbox = list_inbox(root)
+    from ctx import writeback
+    improvements = writeback.list_improvements(root)
     runs = _runs(root)
     projects = _list(root, "project")
     by_project: dict[str, dict[str, int]] = {}
@@ -631,6 +633,7 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
             "open_tasks": open_tasks,
             "attention": len(attention),
             "inbox": len(inbox),
+            "improvements": len(improvements),
             "pending_runs": pending,
         },
         "attention": attention,
@@ -642,6 +645,7 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
         "contributions": contribs,
         "pipeline": pipeline,
         "inbox": inbox,
+        "improvements": improvements,
         "factories": factories,
         "runs": runs,
         "choices": {
@@ -1933,6 +1937,23 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                                   payload.get("project"), payload.get("title"))
         elif path == "/api/inbox/delete":
             result = delete_inbox(root, payload.get("name") or "")
+        elif path == "/api/improve/accept":
+            from ctx import writeback
+            try:
+                result = writeback.accept_improvement(root, payload.get("name") or "")
+            except writeback.WritebackError as exc:
+                raise UiError(str(exc)) from exc
+        elif path == "/api/improve/reject":
+            from ctx import writeback
+            result = writeback.reject_improvement(root, payload.get("name") or "",
+                                                  payload.get("reason") or "")
+        elif path == "/api/improve/edit":
+            from ctx import writeback
+            try:
+                result = writeback.edit_improvement(root, payload.get("name") or "",
+                                                    payload.get("change") or "")
+            except writeback.WritebackError as exc:
+                raise UiError(str(exc)) from exc
         elif path == "/api/sync":
             result = sync_github(root, bool(payload.get("offline")),
                                  repos=payload.get("repos"),

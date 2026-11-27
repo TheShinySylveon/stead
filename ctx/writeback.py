@@ -15,12 +15,13 @@ next bundle can read it. The SQLite ``runs`` table stays a rebuildable index.
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 from datetime import date, datetime, timezone
 from pathlib import Path
 
-from ctx import frontmatter, objects
+from ctx import db, frontmatter, objects
 
 RECORD_TAG = "build-record"
 REVIEW_TAG = "review-record"
@@ -777,3 +778,218 @@ def propose_note(root: Path, kind: str, title: str, text: str,
             "Triage into context/documents/ if it is worth keeping.\n")
     path.write_text(body, encoding="utf-8")
     return {"path": path.relative_to(root).as_posix(), "kind": kind, "title": title}
+
+
+# --- improvements ------------------------------------------------------------
+# A first-class "propose an improvement" channel: the model proposes a concrete
+# change (an eval case, a prompt, or a code change), and a person accepts
+# (applies it), rejects, or edits it in the cockpit's Improvements tab. Data
+# types (eval-case, prompt) are applied directly; code is filed as a task so it
+# goes through the normal build/PR containment. Nothing is applied without a
+# person.
+
+IMPROVEMENT_TYPES = ("eval-case", "prompt", "code")
+
+
+def propose_improvement(root: Path, improvement_type: str, title: str,
+                        rationale: str, change: str, source: str = "",
+                        factory: str = "feature-builder") -> dict:
+    """Write a structured improvement proposal to inbox/ for a person to accept,
+    reject, or edit. Never writes into context/ or the checkout on its own."""
+    improvement_type = (improvement_type or "").strip().lower()
+    if improvement_type not in IMPROVEMENT_TYPES:
+        raise WritebackError(
+            f"improvement type must be one of {', '.join(IMPROVEMENT_TYPES)}")
+    title = (title or "").strip()
+    change = (change or "").strip()
+    if not title or not change:
+        raise WritebackError("an improvement needs a title and a change")
+    folder = root / "inbox"
+    folder.mkdir(parents=True, exist_ok=True)
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "improvement"
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    path = folder / f"propose-improvement-{slug[:40]}-{stamp}.md"
+    n = 2
+    while path.exists():
+        path = folder / f"propose-improvement-{slug[:40]}-{stamp}-{n}.md"
+        n += 1
+    meta = {"kind": "improvement", "improvement_type": improvement_type,
+            "factory": factory, "status": "proposed", "title": title}
+    if source:
+        meta["source"] = source
+    body = (f"# {title}\n\n## Rationale\n\n{(rationale or '').strip()}\n\n"
+            f"## Change\n\n{change}\n")
+    path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+    return {"path": path.relative_to(root).as_posix(), "kind": "improvement",
+            "improvement_type": improvement_type, "title": title}
+
+
+def _improvement_section(body: str, heading: str) -> str:
+    """The text under a ``## Heading`` in a proposal body, or ``''``."""
+    lines = (body or "").splitlines()
+    out: list[str] = []
+    active = False
+    for line in lines:
+        if line.strip().lower().startswith("## "):
+            active = line.strip().lower() == f"## {heading.lower()}"
+            continue
+        if active:
+            out.append(line)
+    return "\n".join(out).strip()
+
+
+def list_improvements(root: Path) -> list[dict]:
+    """Structured rows for every improvement proposal in inbox/."""
+    folder = root / "inbox"
+    if not folder.is_dir():
+        return []
+    rows: list[dict] = []
+    for path in sorted(folder.glob("propose-improvement-*.md")):
+        try:
+            meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue
+        rows.append({
+            "name": path.name,
+            "improvement_type": meta.get("improvement_type") or "code",
+            "factory": meta.get("factory") or "feature-builder",
+            "status": meta.get("status") or "proposed",
+            "source": meta.get("source") or "",
+            "title": meta.get("title") or path.stem,
+            "rationale": _improvement_section(body, "rationale"),
+            "change": _improvement_section(body, "change"),
+        })
+    return rows
+
+
+def _load_improvement(root: Path, name: str) -> tuple[Path, dict, str]:
+    folder = root / "inbox"
+    path = folder / name
+    if not path.is_file() or not name.startswith("propose-improvement-"):
+        raise WritebackError(f"improvement not found: {name}")
+    return path, *frontmatter.parse(path.read_text(encoding="utf-8"))
+
+
+def accept_improvement(root: Path, name: str) -> dict:
+    """Apply one proposal: eval-case writes an eval JSON, prompt writes a new
+    prompt version, code files a task. The proposal note is then removed."""
+    path, meta, body = _load_improvement(root, name)
+    itype = meta.get("improvement_type") or "code"
+    title = meta.get("title") or path.stem
+    rationale = _improvement_section(body, "rationale")
+    change = _improvement_section(body, "change")
+    factory = meta.get("factory") or "feature-builder"
+    result: dict = {"name": name, "improvement_type": itype, "title": title}
+    if itype == "eval-case":
+        result["path"] = _write_eval_case(root, factory, title, rationale, change)
+    elif itype == "prompt":
+        result["path"] = _write_prompt(root, factory, change)
+    else:  # code (and any future code-adjacent type) -> a task for the human
+        result["path"] = _file_improvement_task(root, title, rationale, change,
+                                                meta.get("source") or "")
+    path.unlink()
+    return result
+
+
+def reject_improvement(root: Path, name: str, reason: str = "") -> dict:
+    """Dismiss a proposal. The reason is recorded in the return for the UI."""
+    path, _meta, _body = _load_improvement(root, name)
+    path.unlink()
+    return {"name": name, "rejected": True,
+            "reason": (reason or "").strip()[:500]}
+
+
+def edit_improvement(root: Path, name: str, change: str) -> dict:
+    """Replace the ``## Change`` section of a proposal (the cockpit Edit button)."""
+    path, meta, body = _load_improvement(root, name)
+    title = meta.get("title") or path.stem
+    rationale = _improvement_section(body, "rationale")
+    new_body = (f"# {title}\n\n## Rationale\n\n{rationale}\n\n"
+                f"## Change\n\n{(change or '').strip()}\n")
+    path.write_text(frontmatter.dumps(meta, new_body), encoding="utf-8")
+    return {"name": name, "change": (change or "").strip()}
+
+
+def _write_eval_case(root: Path, factory: str, title: str, rationale: str,
+                     change: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "case"
+    case = {"id": f"eval-{slug}", "factory": factory, "title": title,
+            "input": rationale, "pass_criteria": change}
+    fdir = root / "factories" / factory / "evals"
+    fdir.mkdir(parents=True, exist_ok=True)
+    path = fdir / f"eval-{slug}.json"
+    n = 2
+    while path.exists():
+        path = fdir / f"eval-{slug}-{n}.json"
+        n += 1
+    path.write_text(json.dumps(case, indent=2) + "\n", encoding="utf-8")
+    return path.relative_to(root).as_posix()
+
+
+def _write_prompt(root: Path, factory: str, change: str) -> str:
+    pdir = root / "factories" / factory / "prompts"
+    pdir.mkdir(parents=True, exist_ok=True)
+    best = 0
+    for p in pdir.glob("v*.md"):
+        m = re.match(r"v(\d+)\.md$", p.name)
+        if m:
+            best = max(best, int(m.group(1)))
+    path = pdir / f"v{best + 1}.md"
+    path.write_text(change.strip() + "\n", encoding="utf-8")
+    return path.relative_to(root).as_posix()
+
+
+def _file_improvement_task(root: Path, title: str, rationale: str, change: str,
+                           source: str) -> str:
+    project = _resolve_project(root, source)
+    if project is None:
+        raise WritebackError(
+            "could not resolve a project for this code improvement (no source "
+            "build record, or its repo has no project). File it by hand.")
+    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "improvement"
+    task_id = f"task-{slug}"
+    n = 2
+    while (root / "context" / "tasks" / f"{task_id.removeprefix('task-')}.md").exists():
+        task_id = f"task-{slug}-{n}"
+        n += 1
+    stem = task_id.removeprefix("task-")
+    today = date.today().isoformat()
+    meta = {"id": task_id, "type": "task", "title": title, "created": today,
+            "updated": today, "status": "to-do", "project": project}
+    body = (f"# {title}\n\n## Rationale\n\n{rationale}\n\n## Change\n\n{change}\n")
+    path = root / "context" / "tasks" / f"{stem}.md"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+    conn = db.connect(root)
+    try:
+        conn.execute(
+            "INSERT INTO tasks (id, title, project, status, path, created, updated) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (task_id, title, project, "to-do",
+             path.relative_to(root).as_posix(), today, today))
+        conn.commit()
+    finally:
+        conn.close()
+    return path.relative_to(root).as_posix()
+
+
+def _resolve_project(root: Path, source: str) -> str | None:
+    if not source:
+        return None
+    found = objects.find(root, "document", source)
+    if found is None:
+        return None
+    _path, meta, _body = found
+    repo_id = str(meta.get("repo") or "")
+    if not repo_id:
+        for tag in meta.get("tags") or []:
+            if str(tag).lower().startswith("repo:"):
+                repo_id = str(tag)[5:]
+                break
+    if repo_id:
+        rfound = objects.find(root, "repo", repo_id)
+        if rfound is not None:
+            project = rfound[1].get("project")
+            if project:
+                return str(project)
+    return None

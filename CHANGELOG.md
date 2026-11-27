@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **The model proposes improvements; a person accepts, rejects, or edits them.**
+  A new `stead improve` command and a cockpit **Improvements** tab. During a
+  build the model can `propose` an improvement — an eval case, a sharper prompt,
+  or a code fix — which lands in `inbox/` as a structured proposal. Accept
+  applies data types directly (`eval-case` writes an eval JSON, `prompt` writes
+  a new prompt version) and files a task for `code`; reject dismisses; edit
+  rewrites the change before you accept. Nothing is applied without a person.
 - **A non-Stead eval corpus keeps the data model working for any repo.** Three
   committed fixture repos (`tests/fixtures/repos/` — a Prisma repo, a SQLAlchemy
   repo, and a schema-less "declared-only" repo) plus a deterministic gate runner

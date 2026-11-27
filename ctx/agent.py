@@ -646,10 +646,18 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                                      reason="protocol")
                 from ctx import writeback
                 try:
-                    note = writeback.propose_note(
-                        root, str(action.get("kind") or "decision"),
-                        str(action.get("title") or ""), str(action.get("text") or ""),
-                        source=str(spec.get("id") or ""))
+                    if str(action.get("kind") or "") == "improvement":
+                        note = writeback.propose_improvement(
+                            root, str(action.get("improvement_type") or "code"),
+                            str(action.get("title") or ""),
+                            str(action.get("rationale") or ""),
+                            str(action.get("change") or ""),
+                            source=str(spec.get("id") or ""))
+                    else:
+                        note = writeback.propose_note(
+                            root, str(action.get("kind") or "decision"),
+                            str(action.get("title") or ""), str(action.get("text") or ""),
+                            source=str(spec.get("id") or ""))
                 except writeback.WritebackError as exc:
                     transcript.append(f"propose: {exc}")
                     continue
@@ -2211,6 +2219,8 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         '{"action":"write","path":"new.py","content":"full file text"}, '
         '{"action":"delete","path":"old.py"}, {"action":"check"}, '
         '{"action":"propose","kind":"decision|glossary","title":"...","text":"..."}, '
+        '{"action":"propose","kind":"improvement","improvement_type":"eval-case|prompt|code",'
+        '"title":"...","rationale":"...","change":"..."}, '
         '{"action":"finish","summary":"..."}.\n'
         'Send exactly ONE action object per reply — never an {"actions":[...]} '
         "array, never prose, never code fences. Your first action must be a single "
@@ -2237,6 +2247,10 @@ def _system_prompt(spec: dict, criteria: list[str], tree: str, has_checks: bool,
         "acceptance criteria. "
         "If the work implies a decision or a glossary term, propose it with "
         "propose; it goes to the inbox for a person, never straight into context. "
+        "If you notice a durable improvement to the tool itself — a missing eval "
+        "case, a sharper prompt, or a code fix — propose it with kind improvement "
+        "and a concrete change; a person accepts, rejects, or edits it, so do not "
+        "apply it yourself. "
         "Never fabricate a value to satisfy a criterion: no hardcoded scores, "
         "placeholder results, or stubbed logic. If a criterion asks for a "
         "measured value, compute it for real, or return None / \"not measured\" "

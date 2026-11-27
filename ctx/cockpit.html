@@ -417,6 +417,7 @@ const VIEWS = [
   ["repos", "Repos"],
   ["wiki", "Wiki"],
   ["inbox", "Inbox"],
+  ["improvements", "Improvements"],
   ["factories", "Factories"],
   ["settings", "Settings"],
 ];
@@ -428,6 +429,7 @@ const TITLES = {
   repos: ["Repos", "Own projects and OSS. Sync is read-only. Contribution files stay public."],
   wiki: ["Wiki", "The readable record for one repo: start with the essentials, then drill in."],
   inbox: ["Inbox", "Unsorted capture. File it into a document, meeting, or task, or delete it."],
+  improvements: ["Improvements", "What the model proposes to improve the tool. Accept, reject, or edit each."],
   factories: ["Factories", "Assemble a shadow bundle. A person or an agent still has to write the output."],
   settings: ["Settings", "This computer, a shared server, the model, and how far the software factory may go."],
 };
@@ -609,7 +611,7 @@ function projectName(id) {
 
 function navBadge(id) {
   const c = state.snap.counts || {};
-  const n = { home: (c.attention || 0) + (c.pending_runs || 0), tasks: c.open_tasks, inbox: c.inbox, factories: c.pending_runs }[id];
+  const n = { home: (c.attention || 0) + (c.pending_runs || 0), tasks: c.open_tasks, inbox: c.inbox, improvements: c.improvements, factories: c.pending_runs }[id];
   return n ? `<span class="badge">${esc(n)}</span>` : "";
 }
 function renderNav() {
@@ -1070,6 +1072,32 @@ function renderInbox() {  const items = state.snap.inbox.filter(match);
         <span class="meta">.eml, .ics, .md, or .txt. Local only.</span>
       </form>`)}`;
 }
+function renderImprovements() {
+  const items = (state.snap.improvements || []).filter(match);
+  const typeLabel = t => ({ "eval-case": "Eval case", "prompt": "Prompt", "code": "Code" }[t] || t);
+  const typeTone = t => ({ "eval-case": "done", "prompt": "cool", "code": "warn" }[t] || "note");
+  return `
+    <p class="meta">The model proposes a concrete change (an eval case, a prompt, or a code fix). Accept applies the data types directly and files a task for code; reject dismisses; edit rewrites the change before you accept.</p>
+    <div class="section-title">Proposed${items.length ? ` (${items.length})` : ""}</div>
+    ${items.length ? `<div class="list">${items.map(item => `
+      <div class="card" style="display:block">
+        <div class="inline" style="margin:0;align-items:baseline">
+          <strong>${esc(item.title)}</strong>
+          ${chip(typeLabel(item.improvement_type), typeTone(item.improvement_type))}
+          ${item.source ? `<span class="meta">from ${esc(item.source)}</span>` : ""}
+        </div>
+        ${item.rationale ? `<p class="meta" style="margin:6px 0 0">${esc(item.rationale)}</p>` : ""}
+        <details class="disclose" style="margin-top:8px">
+          <summary>Proposed change</summary>
+          <pre class="meta" style="white-space:pre-wrap">${esc(item.change)}</pre>
+        </details>
+        <div class="inline" style="margin-top:8px">
+          <button type="button" class="primary" data-improve-accept="${esc(item.name)}">Accept</button>
+          <button type="button" class="quiet" data-improve-edit="${esc(item.name)}">Edit</button>
+          <button type="button" class="quiet" data-improve-reject="${esc(item.name)}">Reject</button>
+        </div>
+      </div>`).join("")}</div>` : `<div class="empty">No proposed improvements. The model proposes them during a build when it notices a durable change worth making.</div>`}`;
+}
 function renderFactories() {
   const rank = ["weekly-contribution-digest", "weekly-project-status", "feature-builder", "context-maintenance"];
   const BLURBS = {
@@ -1300,6 +1328,7 @@ function renderSettings() {
 const RENDER = {
   home: renderHome, tasks: renderTasks, projects: renderProjects,
   library: renderLibrary, repos: renderRepos, wiki: renderWiki, inbox: renderInbox,
+  improvements: renderImprovements,
   factories: renderFactories, settings: renderSettings,
 };
 function renderWelcome() {
@@ -1736,6 +1765,39 @@ document.body.addEventListener("click", async (event) => {
     } catch (err) {
       toast(err.message);
     }
+    return;
+  }
+  const acceptImprove = event.target.closest("[data-improve-accept]");
+  if (acceptImprove) {
+    if (!confirm("Accept this improvement? Data types are applied now; code becomes a task.")) return;
+    try {
+      const result = await api("/api/improve/accept", {method: "POST", body: JSON.stringify({name: acceptImprove.dataset.improveAccept})});
+      toast("Accepted: " + (result.title || "") + " → " + (result.path || ""));
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const rejectImprove = event.target.closest("[data-improve-reject]");
+  if (rejectImprove) {
+    if (!confirm("Reject this improvement?")) return;
+    try {
+      await api("/api/improve/reject", {method: "POST", body: JSON.stringify({name: rejectImprove.dataset.improveReject})});
+      toast("Rejected");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
+  const editImprove = event.target.closest("[data-improve-edit]");
+  if (editImprove) {
+    const name = editImprove.dataset.improveEdit;
+    const item = (state.snap.improvements || []).find(i => i.name === name);
+    const change = prompt("Edit the proposed change:", item ? item.change : "");
+    if (change === null) return;
+    try {
+      await api("/api/improve/edit", {method: "POST", body: JSON.stringify({name, change})});
+      toast("Change updated");
+      await load();
+    } catch (err) { toast(err.message); }
     return;
   }
   const runOpen = event.target.closest("[data-run-open]");

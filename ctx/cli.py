@@ -793,6 +793,13 @@ def build_parser() -> argparse.ArgumentParser:
     listed = inbox.add_parser("list", help="list inbox notes. Read-only.")
     listed.add_argument("--kind", choices=("decision", "glossary", "note"),
                         help="limit output to one kind")
+    improve = sub.add_parser("improve", help="proposed improvements (model proposals to accept/reject)").add_subparsers(dest="sub", required=True)
+    imp_list = improve.add_parser("list", help="list proposed improvements. Read-only.")
+    imp_accept = improve.add_parser("accept", help="apply one: eval-case writes an eval, prompt writes a prompt, code files a task")
+    imp_accept.add_argument("name")
+    imp_reject = improve.add_parser("reject", help="dismiss one")
+    imp_reject.add_argument("name")
+    imp_reject.add_argument("--reason", default="", help="why it was rejected (recorded)")
     sched = sub.add_parser("schedule", help="the weekly local jobs").add_subparsers(dest="sub", required=True)
     sshow = sched.add_parser("show", help="print the Friday command. Does not install it.")
     sshow.add_argument("--project", help="also assemble this project's status")
@@ -1328,6 +1335,27 @@ def main(argv: list[str] | None = None) -> int:
         for row in rows:
             print(f"{row['name']}  {row['kind']}  {row['title']}")
         return 0
+    if args.command == "improve":
+        from ctx.writeback import WritebackError, accept_improvement, list_improvements, reject_improvement
+        if args.sub == "list":
+            rows = list_improvements(root)
+            if not rows:
+                print("no proposed improvements")
+                return 0
+            for row in rows:
+                print(f"{row['name']}  [{row['improvement_type']}]  {row['title']}")
+            return 0
+        try:
+            if args.sub == "accept":
+                result = accept_improvement(root, args.name)
+                print(f"accepted [{result['improvement_type']}]: {result['title']}")
+                print(f"applied: {result['path']}")
+                return 0
+            result = reject_improvement(root, args.name, args.reason)
+            print(f"rejected {result['name']}")
+            return 0
+        except WritebackError as exc:
+            raise SystemExit(str(exc)) from exc
     if args.command == "spec" and args.sub == "approve":
         from ctx.spec import SpecError, approve, source_changed_note
         from ctx import objects
