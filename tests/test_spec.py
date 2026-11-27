@@ -186,7 +186,8 @@ class SpecApprovalTest(unittest.TestCase):
         self._seed_repo_with_code()
         draft = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
                  "- Add `stead/context/search.py`.\n- Register it in `stead/cli.py`.\n"
-                 "- Test in `tests/test_search.py`; run `python -m unittest`.\n")
+                 "- Test in `tests/test_search.py`; run `python -m unittest`.\n"
+                 "## Data source\n\n- data: `# file` (stead/__init__.py:1)\n")
         result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
                                  responder=lambda _p: draft)
         self.assertEqual(len(result["warnings"]), 2)
@@ -197,7 +198,8 @@ class SpecApprovalTest(unittest.TestCase):
         self._seed_repo_with_code()
         draft = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
                  "- New `ctx/search.py`, edit `ctx/cli.py`, test in "
-                 "`tests/test_context_search.py`. See `https://example.com/a/b`.\n")
+                 "`tests/test_context_search.py`. See `https://example.com/a/b`.\n"
+                 "## Data source\n\n- data: `# file` (stead/__init__.py:1)\n")
         result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
                                  responder=lambda _p: draft)
         self.assertEqual(result["warnings"], [])
@@ -237,7 +239,8 @@ class SpecApprovalTest(unittest.TestCase):
         draft = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n"
                  "## Acceptance criteria\n\n- [ ] it works\n\n"
                  "## Plan\n\nEdit `ctx/metrics.py` to emit top-level "
-                 "`build_failures` and `infra_failures` keys from `collect()`.\n")
+                 "`build_failures` and `infra_failures` keys from `collect()`.\n"
+                 "## Data source\n\n- data: `# file` (stead/__init__.py:1)\n")
         result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
                                  responder=lambda _p: draft)
         self.assertEqual(result["warnings"], [])
@@ -300,6 +303,23 @@ class SpecApprovalTest(unittest.TestCase):
         self.assertTrue(result["ok"], "\n".join(result["problems"]))
         self.assertEqual(result["passed"], 5)
 
+    def test_citation_verification(self) -> None:
+        code = self._seed_repo_with_code()
+        (code / "ctx/cli.py").write_text(
+            "def cmd_repo_list(root, kind=None):\n"
+            "    query = 'SELECT id, kind, status, title FROM repos'\n",
+            encoding="utf-8")
+        ok = ("## Data source\n\n"
+              "- repos: `SELECT id, kind, status, title FROM repos` (ctx/cli.py:2)\n")
+        self.assertEqual(spec.plan_citation_warnings(ok, code), [])
+        wrong = ("## Data source\n\n"
+                 "- repos: `config.public_list()` (ctx/cli.py:2)\n")
+        self.assertIn("does not contain",
+                      "\n".join(spec.plan_citation_warnings(wrong, code)))
+        missing = "## Plan\n\nEdit ctx/cli.py.\n"
+        self.assertIn("no `## Data source`",
+                      "\n".join(spec.plan_citation_warnings(missing, code)))
+
     def test_fabricated_sql_table_is_flagged(self) -> None:
         code = self._seed_repo_with_code()
         (code / "ctx/schema.sql").write_text(
@@ -343,7 +363,8 @@ class SpecApprovalTest(unittest.TestCase):
         draft = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n- [ ] it works\n\n## Plan\n\n"
                  "- Edit `ctx/cli.py`: call `json.dumps`, `re.match`, and "
                  "`os.path.join`; use `ctx.cli.cmd_list`; seed data named "
-                 "`alpha` and `beta`.\n")
+                 "`alpha` and `beta`.\n"
+                 "## Data source\n\n- data: `# file` (stead/__init__.py:1)\n")
         result = spec.draft_spec(self.root, "contribution-me-app-issue-1",
                                  responder=lambda _p: draft)
         self.assertEqual(result["warnings"], [])
