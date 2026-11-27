@@ -655,3 +655,24 @@ still reviews. The stack is now: retry (fixes structure) + citation gate (catche
 fabrication). What it does not yet do is *make the drafter trace correctly in
 the first place* — that remains a model-capability gap, not a deterministic one.
 "draft: human-mostly" is the honest, measured state.
+
+### Model comparison (2026-11-27): the fabrication is model-specific
+
+To test "is this a model problem, not a tooling problem?", the draft role was
+switched from DeepSeek to the local **Arete 27B** and a third fresh issue
+(`repo list --count`, #110) was drafted:
+
+- **The 27B traces faithfully.** It named `cmd_repo_list` (`ctx/cli.py:231`),
+  the `repos` table (`SELECT … FROM repos`, line 233), and the dispatch (line
+  1108) — all accurate — and it *independently* identified the failure we had
+  documented ("`db.connect` attribution is a flow error"). Zero fabrication.
+- **The 27B is slow** (~30–40 min; the multi-turn research phase at ~2 min/turn).
+- **The 27B writes the data source as prose, not citations** — accurate prose
+  with inline line numbers, but not the `- <what>: `<code>` (file:line)` format,
+  so the citation gate still flags "no citations".
+
+**Conclusion:** the fabrication **is model-specific** — the user's intuition was
+right. A more capable (or differently-trained) model traces the data source
+correctly where `deepseek-v4-pro` fabricates. The remaining costs are *speed*
+and *format friction*, not correctness. The path forward is model selection for
+the draft role, not more gates.
