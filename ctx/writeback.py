@@ -16,7 +16,6 @@ next bundle can read it. The SQLite ``runs`` table stays a rebuildable index.
 from __future__ import annotations
 
 import json
-import os
 import re
 import subprocess
 from datetime import date, datetime, timezone
@@ -792,22 +791,17 @@ def propose_note(root: Path, kind: str, title: str, text: str,
 IMPROVEMENT_TYPES = ("eval-case", "prompt", "code")
 
 
-_SAFE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
-
-
 def _safe_component(value: str, label: str) -> str:
-    """A single safe path component. Refuses any path separator outright, then
-    ``os.path.basename`` strips a directory prefix (the canonical path-injection
-    sanitizer), and an allow-list regex rejects anything not ``[A-Za-z0-9._-]+``
-    (and the reserved ``.``/``..``). A proposal name, factory, or slug cannot
-    escape the store."""
+    """A single safe path component. ``re.sub`` rewrites anything outside
+    ``[A-Za-z0-9._-]`` to ``-`` (the same transform the existing slugifiers use,
+    and what CodeQL recognizes as a sanitizer); if that changes the value, or it
+    is empty or ``.``/``..``, it is refused. The sanitized form is returned, so a
+    proposal name, factory, or slug cannot escape the store."""
     value = (value or "").strip()
-    if "/" in value or "\\" in value:
+    safe = re.sub(r"[^A-Za-z0-9._-]+", "-", value)
+    if not value or value in {".", ".."} or safe != value:
         raise WritebackError(f"{label} is not a safe name: {value!r}")
-    value = os.path.basename(value)
-    if not _SAFE_COMPONENT_RE.fullmatch(value) or value in {".", ".."}:
-        raise WritebackError(f"{label} is not a safe name: {value!r}")
-    return value
+    return safe
 
 
 def propose_improvement(root: Path, improvement_type: str, title: str,
