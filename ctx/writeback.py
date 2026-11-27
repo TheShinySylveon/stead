@@ -122,6 +122,8 @@ def record_delivery(root: Path, contribution_ref: str, result: dict,
         meta["pr_url"] = result["pr_url"]
     if result.get("comment") and isinstance(result["comment"], dict):
         meta["comment_url"] = result["comment"].get("url") or ""
+        if result["comment"].get("skipped"):
+            meta["comment_skipped"] = str(result["comment"].get("reason") or "")[:200]
     if result.get("comment_error"):
         meta["comment_error"] = str(result["comment_error"])[:500]
     if repo_meta.get("project"):

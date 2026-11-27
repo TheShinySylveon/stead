@@ -1471,7 +1471,10 @@ def main(argv: list[str] | None = None) -> int:
         if result["published"]:
             print(f"opened {result['pr_url']}")
             if result.get("comment"):
-                print(f"commented on the issue: {result['comment'].get('url')}")
+                if result["comment"].get("skipped"):
+                    print(f"issue comment skipped: {result['comment'].get('reason')}")
+                else:
+                    print(f"commented on the issue: {result['comment'].get('url')}")
             if result.get("comment_error"):
                 print(f"warning: issue comment failed: {result['comment_error']}")
             if result.get("merged"):
@@ -1587,6 +1590,9 @@ def main(argv: list[str] | None = None) -> int:
             result = comment(root, args.contribution, pr_url)
         except CommentError as exc:
             raise SystemExit(str(exc)) from exc
+        if result.get("skipped"):
+            print(f"skipped: {result.get('reason')}")
+            return 0
         verb = "updated" if result.get("updated") else "created"
         print(f"{verb} {result['url']}")
         return 0

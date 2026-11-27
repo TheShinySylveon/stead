@@ -295,6 +295,9 @@ the default branch. A factory run does not call it.
 linking the PR. It is the only other remote write, and the most gated:
 `allow_comment: true` on the repo, `kind: own` only, and the PR URL must be in
 the same repo. It runs automatically after `build --publish` when enabled.
+A local-only spec whose number is not a real upstream issue is skipped cleanly
+(one read-only lookup first): issues and PRs share a number space, so posting
+blindly would land on `pull/<N>` instead of an issue.
 
 `build` is the model-driven implementation step. It needs a configured model, a
 repo `code_path`, and a buildable, approved spec. Every build runs in its own

@@ -4,7 +4,9 @@ This is the only new remote write beyond publish/merge. It is opt-in per repo
 (``allow_comment: true``), ``kind: own`` only at MVP, idempotent (one marked
 comment, updated in place), and never runs from factory assembly. GitHub already
 surfaces ``Closes #N`` on the issue timeline; this adds an explicit link and is
-the place CI status could later be refreshed without going stale.
+the place CI status could later be refreshed without going stale. A local-only
+spec whose number is not a real upstream issue is skipped cleanly — issues and
+PRs share one number space, so posting blindly would land on ``pull/<N>``.
 """
 
 from __future__ import annotations
@@ -50,6 +52,26 @@ def _authenticated_login(run, code: Path) -> str:
         return ""
 
 
+def _upstream_issue(run, owner_name: str, number, code: Path) -> str:
+    """What GitHub resolves the number to: ``issue``, ``pr``, or ``missing``.
+
+    Issues and pull requests share one number space, so a local-only spec
+    whose number collides with an upstream PR would otherwise be commented
+    on ``pull/<N>`` instead of an issue. One read-only GET settles it.
+    """
+    try:
+        raw = run(["gh", "api", f"repos/{owner_name}/issues/{number}"], code)
+    except CommentError:
+        return "missing"
+    try:
+        data = json.loads(raw or "null")
+    except json.JSONDecodeError:
+        return "missing"
+    if not isinstance(data, dict):
+        return "missing"
+    return "pr" if data.get("pull_request") else "issue"
+
+
 def comment(root: Path, contribution_ref: str, pr_url: str, *, runner=None) -> dict:
     """Post (or update) the Stead comment linking the PR on the source issue."""
     found = objects.find(root, "contribution", contribution_ref)
@@ -76,6 +98,13 @@ def comment(root: Path, contribution_ref: str, pr_url: str, *, runner=None) -> d
     if not _pr_in_repo(pr_url, owner_name):
         raise CommentError(f"the PR url {pr_url!r} is not in {owner_name}")
     run = runner or _run
+
+    upstream = _upstream_issue(run, owner_name, number, code)
+    if upstream != "issue":
+        why = ("the number belongs to a pull request upstream, not an issue"
+               if upstream == "pr" else "no upstream issue with this number")
+        return {"skipped": True, "number": number,
+                "reason": f"{why}; the spec is local-only"}
 
     login = _authenticated_login(run, code)
     existing = _find_marked_comment(run, owner_name, number, code, login)
