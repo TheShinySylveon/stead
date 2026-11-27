@@ -9,11 +9,13 @@ restart forgets any in-flight task.
 
 from __future__ import annotations
 
+import contextvars
 import threading
 import time
 from dataclasses import dataclass, field
 
 PROGRESS_KEEP = 200
+MAX_RETAINED_TASKS = 200
 
 
 @dataclass
@@ -22,6 +24,7 @@ class Task:
     kind: str
     target: str
     started: float = field(default_factory=time.time)
+    finished: float | None = None
     status: str = "running"  # running | done | failed
     result: dict | None = None
     error: str = ""
@@ -29,10 +32,11 @@ class Task:
     line_count: int = 0  # monotonic total of lines ever appended
 
     def snapshot(self) -> dict:
+        end = self.finished if self.finished is not None else time.time()
         return {
             "id": self.id, "kind": self.kind, "target": self.target,
             "status": self.status, "started": self.started,
-            "elapsed": round(time.time() - self.started, 1),
+            "elapsed": round(max(0.0, end - self.started), 1),
             "error": self.error, "result": self.result,
             "progress": list(self.lines[-PROGRESS_KEEP:]),
             "progress_total": self.line_count,
@@ -47,6 +51,13 @@ class TaskRunner:
         self._seq = 0
         self._tasks: dict[str, Task] = {}
 
+    def _prune_locked(self) -> None:
+        if len(self._tasks) <= MAX_RETAINED_TASKS:
+            return
+        done_ids = [tid for tid, t in self._tasks.items() if t.status != "running"]
+        for tid in done_ids[: len(self._tasks) - MAX_RETAINED_TASKS]:
+            self._tasks.pop(tid, None)
+
     def start(self, kind: str, target: str, fn) -> str:
         """Run ``fn(progress)`` in a background thread; return the task id.
 
@@ -54,6 +65,7 @@ class TaskRunner:
         value becomes the task result; an exception makes status ``failed``."""
 
         with self._lock:
+            self._prune_locked()
             self._seq += 1
             task_id = f"{int(time.time())}-{self._seq}"
             task = Task(id=task_id, kind=kind, target=target)
@@ -67,20 +79,28 @@ class TaskRunner:
 
         def run() -> None:
             try:
-                task.result = fn(progress)
-                task.status = "done"
+                res = fn(progress)
+                with self._lock:
+                    task.result = res
+                    task.finished = time.time()
+                    task.status = "done"
             except BaseException as exc:  # noqa: BLE001 — surfaced to the poller
-                task.status = "failed"
-                task.error = (str(exc).splitlines()[0][:400]
-                              if str(exc) else type(exc).__name__)
+                msg = (str(exc).splitlines()[0][:400]
+                       if str(exc) else type(exc).__name__)
+                with self._lock:
+                    task.error = msg
+                    task.finished = time.time()
+                    task.status = "failed"
 
-        threading.Thread(target=run, daemon=True, name=f"stead-task-{task_id}").start()
+        ctx = contextvars.copy_context()
+        threading.Thread(target=ctx.run, args=(run,), daemon=True,
+                         name=f"stead-task-{task_id}").start()
         return task_id
 
     def get(self, task_id: str) -> dict | None:
         with self._lock:
             task = self._tasks.get(task_id)
-        return task.snapshot() if task else None
+            return task.snapshot() if task else None
 
     def list(self) -> list[dict]:
         with self._lock:

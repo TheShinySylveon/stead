@@ -120,13 +120,22 @@ def _clean(path) -> str:
     rel = str(path or "").replace("\\", "/")
     while rel.startswith("./"):
         rel = rel[2:]
-    return rel.lstrip("/")
+    rel = rel.lstrip("/")
+    # Strip trailing dots and spaces per path component so Windows NTFS
+    # canonicalization (e.g. `tests/conftest.py.` -> `tests/conftest.py`,
+    # `id_rsa.` -> `id_rsa`) cannot bypass protected/secret glob matching.
+    parts = [p.rstrip(". ") if p not in (".", "..") else p for p in rel.split("/")]
+    return "/".join(parts)
 
 
 def _match(rel: str, pattern: str) -> bool:
     """Case-insensitive on every platform: macOS and Windows filesystems are
     case-insensitive, so `.GitHub/...` and `TESTS/...` are the real paths there."""
     return fnmatch.fnmatchcase(rel.casefold(), pattern.casefold())
+
+
+def _match_any(rel: str, pattern: str) -> bool:
+    return _match(rel, pattern) or _match("/" + rel, pattern)
 
 
 def protected_by(path: str, repo_meta: dict) -> str | None:
@@ -141,19 +150,19 @@ def protected_by(path: str, repo_meta: dict) -> str | None:
         patterns.extend(TEST_GLOBS)
     patterns.extend(_as_list(repo_meta.get("protected_paths")))
     for pattern in patterns:
-        if _match(rel, pattern) or _match("/" + rel, pattern):
+        if _match_any(rel, pattern):
             return pattern
     return None
 
 
 def is_test_path(path: str) -> bool:
     rel = _clean(path)
-    return any(_match(rel, pattern) for pattern in TEST_GLOBS)
+    return any(_match_any(rel, pattern) for pattern in TEST_GLOBS)
 
 
 def is_ci_path(path: str) -> bool:
     rel = _clean(path)
-    return any(_match(rel, pattern) for pattern in CI_GLOBS)
+    return any(_match_any(rel, pattern) for pattern in CI_GLOBS)
 
 
 def test_addition_allowed(path: str, repo_meta: dict) -> bool:
@@ -170,7 +179,7 @@ def test_addition_allowed(path: str, repo_meta: dict) -> bool:
     if rel.rsplit("/", 1)[-1].casefold() in {"conftest.py", "__init__.py"}:
         return False
     for pattern in _as_list(repo_meta.get("protected_paths")):
-        if _match(rel, pattern) or _match("/" + rel, pattern):
+        if _match_any(rel, pattern):
             return False
     return True
 
@@ -183,7 +192,7 @@ def secret_by(path: str) -> str | None:
             (".example", ".sample", ".template")):
         return None
     for pattern in SECRET_GLOBS:
-        if _match(rel, pattern):
+        if _match_any(rel, pattern):
             return pattern
     return None
 
@@ -442,6 +451,13 @@ def environment(repo_meta: dict) -> dict:
     return env
 
 
+_DOCKER_CLI_ENV = (
+    "DOCKER_HOST", "DOCKER_CONFIG", "DOCKER_CERT_PATH",
+    "DOCKER_TLS_VERIFY", "DOCKER_CONTEXT",
+    "XDG_RUNTIME_DIR", "APPDATA", "LOCALAPPDATA",
+)
+
+
 def run_checks(code: Path, command: str, repo_meta: dict, *,
                timeout: int = DOCKER_TIMEOUT) -> tuple[bool, str, str]:
     """Run the repo check command. Returns (ok, output, mode)."""
@@ -449,6 +465,7 @@ def run_checks(code: Path, command: str, repo_meta: dict, *,
     if isolation not in {"host", "docker"}:
         raise SafetyError(f"invalid checks_isolation {isolation!r}")
     name = ""
+    env = environment(repo_meta)
     if isolation == "docker":
         image = str(repo_meta.get("checks_image") or "").strip()
         if not image:
@@ -458,6 +475,11 @@ def run_checks(code: Path, command: str, repo_meta: dict, *,
         name = f"stead-checks-{uuid.uuid4().hex[:12]}"
         argv = _docker_command(code, command, image, repo_meta, name)
         mode = "docker"
+        # Preserve Docker client connection vars for the host `docker` CLI;
+        # the container itself only receives explicit `checks_env` via `-e`.
+        for key in _DOCKER_CLI_ENV:
+            if key in os.environ and key not in env:
+                env[key] = os.environ[key]
     else:
         argv = command
         mode = "host"
@@ -465,7 +487,7 @@ def run_checks(code: Path, command: str, repo_meta: dict, *,
         done = subprocess.run(
             argv, cwd=code, shell=(isolation == "host"),
             capture_output=True, text=True, encoding="utf-8", errors="replace",
-            timeout=max(30, timeout), env=environment(repo_meta),
+            timeout=max(30, timeout), env=env,
         )
     except subprocess.TimeoutExpired as exc:
         if name:

@@ -86,9 +86,11 @@ def run_specify(target: Path, integration: str) -> dict:
                 "detail": "specify is not on PATH. The constitution is in context/. "
                           "Install specify-cli and rerun, or keep method builtin."}
     try:
+        from ctx import safety
         proc = subprocess.run(
             [exe, *command[1:]], cwd=target, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=180, check=False)
+            encoding="utf-8", errors="replace", timeout=180, check=False,
+            env=safety.environment({}))
     except subprocess.TimeoutExpired:
         return {"status": "failed", "command": " ".join(command),
                 "detail": "specify init timed out after 180s. Context objects were still written."}
@@ -255,6 +257,8 @@ def onboard(root: Path, title: str, *, kind: str = "own", url: str | None = None
     }
     if url:
         repo_meta["url"] = url
+    if target is not None:
+        repo_meta["code_path"] = str(target)
     _write(root, repo_path, repo_meta, f"# {title}\n")
     conn = db.connect(root)
     try:

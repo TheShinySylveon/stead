@@ -355,7 +355,9 @@ including inline threads, review summaries, and top-level comments, for human
 and bot feedback (including Greptile). Address every actionable comment before
 merging or handing off as ready to merge: make and verify the fix on the current
 PR head, or record why no change is needed and get reviewer or maintainer
-agreement. Reply with the outcome and resolve the thread where possible. A green
+agreement. Always reply inline to each actual review comment thread on GitHub
+(`gh api -X POST repos/<owner>/<repo>/pulls/<pr>/comments/<id>/replies`) with
+the fix commit SHA and outcome, and resolve the thread where possible. A green
 check, including a successful review-bot check, does not clear findings. If
 feedback is pending, unresolved, or cannot be verified, hold the merge and say
 what is outstanding. This policy does not expand the repo's merge permissions.

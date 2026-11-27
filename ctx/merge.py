@@ -73,7 +73,7 @@ def merge(root: Path, contribution_ref: str, *, runner=None,
         raise MergeError(
             f"build branch {branch} does not exist. Run `stead build` first.")
     raw = run([
-        "gh", "pr", "view", "--json",
+        "gh", "pr", "view", branch, "--json",
         "number,url,state,isDraft,baseRefName,headRefName,headRefOid,statusCheckRollup",
     ], code)
     try:

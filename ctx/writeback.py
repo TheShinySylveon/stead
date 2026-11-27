@@ -352,14 +352,28 @@ def _apply_merged(root: Path, contribution_ref: str) -> list[str]:
     return updated
 
 
-def _latest_record(root: Path, contribution_ref: str):
-    """The newest build record for one contribution (any outcome)."""
+def _canonical_contribution_id(root: Path, contribution_ref: str) -> str:
+    found = objects.find(root, "contribution", contribution_ref)
+    if found is not None:
+        return str(found[1].get("id") or contribution_ref)
+    return str(contribution_ref or "")
+
+
+def _latest_record(root: Path, contribution_ref: str, *, delivered_only: bool = False):
+    """The newest build record for one contribution."""
+    wanted = _canonical_contribution_id(root, contribution_ref)
+    candidates = {wanted, str(contribution_ref or "")}
     found = []
     for path, meta, body in objects.iter_objects(root, "document"):
-        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        raw_tags = meta.get("tags") or []
+        if isinstance(raw_tags, str):
+            raw_tags = [raw_tags]
+        tags = {str(t).lower() for t in raw_tags}
         if RECORD_TAG not in tags:
             continue
-        if str(meta.get("contribution") or "") != contribution_ref:
+        if str(meta.get("contribution") or "") not in candidates:
+            continue
+        if delivered_only and str(meta.get("outcome") or "") == "failed":
             continue
         found.append((path, meta, body))
     found.sort(key=lambda item: (str(item[1].get("created") or ""),
@@ -373,7 +387,8 @@ def mark_merged(root: Path, contribution_ref: str, *, url: str = "",
     does not write a second one) and applies the linked statuses. A human
     merge is reconciled later by sync, not here."""
     updated = _apply_merged(root, contribution_ref)
-    latest = _latest_record(root, contribution_ref)
+    latest = (_latest_record(root, contribution_ref, delivered_only=True)
+              or _latest_record(root, contribution_ref))
     if latest is not None:
         path, meta, _body = latest
         fields = {"outcome": "merged"}
@@ -402,39 +417,33 @@ def mark_published(root: Path, repo_id: str, branch: str, url: str) -> dict | No
 
 
 def mark_commented(root: Path, contribution_ref: str) -> None:
-    """Mark the newest build record for a spec as commented, so the cockpit
-    pipeline stops offering the (idempotent) comment action after it runs."""
-    best = None
-    for path, meta, _body in objects.iter_objects(root, "document"):
-        if RECORD_TAG not in {str(t).lower() for t in (meta.get("tags") or [])}:
-            continue
-        if str(meta.get("contribution") or "") != contribution_ref:
-            continue
-        if best is None or str(meta.get("updated") or "") >= str(best[1].get("updated") or ""):
-            best = (path, meta)
-    if best is not None:
-        _patch(root, "document", str(best[1].get("id") or ""), {"commented": "true"})
+    """Mark the newest delivered build record for a spec as commented, so the
+    cockpit pipeline stops offering the (idempotent) comment action."""
+    latest = (_latest_record(root, contribution_ref, delivered_only=True)
+              or _latest_record(root, contribution_ref))
+    if latest is not None:
+        _patch(root, "document", str(latest[1].get("id") or latest[0].stem),
+               {"commented": "true"})
 
 
 def contribution_pr_url(root: Path, contribution_ref: str) -> str:
-    """The PR URL on the newest build record for a contribution, or ""."""
-    best = None
-    for path, meta, _body in objects.iter_objects(root, "document"):
-        if RECORD_TAG not in {str(t).lower() for t in (meta.get("tags") or [])}:
-            continue
-        if str(meta.get("contribution") or "") != contribution_ref:
-            continue
-        if best is None or str(meta.get("updated") or "") >= str(best.get("updated") or ""):
-            best = meta
-    return str(best.get("pr_url") or "") if best else ""
+    """The PR URL on the newest delivered build record for a contribution, or ""."""
+    latest = _latest_record(root, contribution_ref, delivered_only=True)
+    if latest is not None and latest[1].get("pr_url"):
+        return str(latest[1].get("pr_url") or "")
+    any_rec = _latest_record(root, contribution_ref)
+    return str(any_rec[1].get("pr_url") or "") if any_rec else ""
 
 
 def _git_out(code: Path, args: list[str], stdin: str | None = None) -> str | None:
-    """stdout of one local git command, or None when it fails."""
+    """stdout of one local git command with hooks/fsmonitor disabled, or None."""
+    from ctx import safety
     try:
-        done = subprocess.run(["git", *args], cwd=code, input=stdin,
-                              capture_output=True, text=True, encoding="utf-8",
-                              errors="replace", timeout=120)
+        with safety.hooks_disabled() as hooks_dir:
+            argv = safety.disable_hooks(["git", *args], hooks_dir)
+            done = subprocess.run(argv, cwd=code, input=stdin,
+                                  capture_output=True, text=True, encoding="utf-8",
+                                  errors="replace", timeout=120)
     except (OSError, subprocess.SubprocessError):
         return None
     return done.stdout if done.returncode == 0 else None
@@ -840,16 +849,24 @@ def propose_improvement(root: Path, improvement_type: str, title: str,
 
 
 def _improvement_section(body: str, heading: str) -> str:
-    """The text under a ``## Heading`` in a proposal body, or ``''``."""
+    """The text under a ``## Heading`` in a proposal body, or ``''``.
+
+    ``## Change`` is always the final section in a proposal, so capture through
+    EOF without stopping at nested ``## `` headings inside a proposed prompt."""
     lines = (body or "").splitlines()
+    target = f"## {heading.lower()}"
+    is_final = heading.lower() == "change"
     out: list[str] = []
     active = False
     for line in lines:
-        if line.strip().lower().startswith("## "):
-            active = line.strip().lower() == f"## {heading.lower()}"
+        stripped = line.strip().lower()
+        if not active:
+            if stripped == target:
+                active = True
             continue
-        if active:
-            out.append(line)
+        if not is_final and stripped.startswith("## "):
+            break
+        out.append(line)
     return "\n".join(out).strip()
 
 
@@ -930,8 +947,6 @@ def _write_eval_case(root: Path, factory: str, title: str, rationale: str,
                      change: str) -> str:
     slug = _safe_component(
         re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "case", "title")
-    case = {"id": f"eval-{slug}", "factory": factory, "title": title,
-            "input": rationale, "pass_criteria": change}
     fdir = root / "factories" / factory / "evals"
     fdir.mkdir(parents=True, exist_ok=True)
     path = fdir / f"eval-{slug}.json"
@@ -939,6 +954,8 @@ def _write_eval_case(root: Path, factory: str, title: str, rationale: str,
     while path.exists():
         path = fdir / f"eval-{slug}-{n}.json"
         n += 1
+    case = {"id": path.stem, "factory": factory, "title": title,
+            "input": rationale or title, "pass_criteria": change}
     path.write_text(json.dumps(case, indent=2) + "\n", encoding="utf-8")
     return path.relative_to(root).as_posix()
 
@@ -978,23 +995,24 @@ def _file_improvement_task(root: Path, title: str, rationale: str, change: str,
     path = root / "context" / "tasks" / f"{stem}.md"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
-    conn = db.connect(root)
-    try:
-        conn.execute(
-            "INSERT INTO tasks (id, title, project, status, path, created, updated) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?)",
-            (task_id, title, project, "to-do",
-             path.relative_to(root).as_posix(), today, today))
-        conn.commit()
-    finally:
-        conn.close()
+    if db.db_path(root).exists():
+        conn = db.connect(root)
+        try:
+            conn.execute(
+                "INSERT INTO tasks (id, title, project, status, path, created, updated) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (task_id, title, project, "to-do",
+                 path.relative_to(root).as_posix(), today, today))
+            conn.commit()
+        finally:
+            conn.close()
     return path.relative_to(root).as_posix()
 
 
 def _resolve_project(root: Path, source: str) -> str | None:
     if not source:
         return None
-    found = objects.find(root, "document", source)
+    found = objects.find(root, "document", source) or objects.find(root, "contribution", source)
     if found is None:
         return None
     _path, meta, _body = found

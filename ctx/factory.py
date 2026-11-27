@@ -212,7 +212,10 @@ def assemble_digest(root: Path, factory: str = DIGEST_FACTORY,
     db.require_db(root)
     fdir = _check_factory_dir(root, factory)
 
-    contribs = list(objects.iter_objects(root, "contribution"))
+    contribs = [
+        item for item in objects.iter_objects(root, "contribution")
+        if str(item[1].get("visibility", "public")).strip().lower() == "public"
+    ]
     repos = {meta["id"]: (path, meta, body)
              for path, meta, body in objects.iter_objects(root, "repo")}
 
@@ -917,6 +920,8 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
     ran: list[dict] = []
     skipped: list[dict] = []
     for _path, meta, body in objects.iter_objects(root, "contribution"):
+        if safety.stopped(root):
+            break
         if meta.get("kind") != "issue" or not enabled(meta):
             continue
         if meta.get("state") not in (None, "", "open"):
@@ -942,10 +947,11 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
             if not spec_approval.is_approved(meta, body):
                 skipped.append({"id": meta.get("id"), "reason": "spec not approved"})
                 continue
-            code = Path(repo[1].get("code_path") or "")
+            raw_code = str(repo[1].get("code_path") or "").strip()
+            code = Path(raw_code) if raw_code else None
             from ctx.agent import branch_for
             branch = branch_for(meta)
-            if code.is_dir() and (code / ".git").exists():
+            if code is not None and code.is_dir() and (code / ".git").exists():
                 from subprocess import run as spawn
                 try:
                     with safety.hooks_disabled() as hooks_dir:
@@ -973,8 +979,10 @@ def watch_specs(root: Path, *, build: bool = False, publish: bool = False,
                                     max_minutes=int(defaults.get("build_minutes") or 240),
                                     max_tokens=int(defaults.get("max_tokens_per_build") or 0),
                                     max_cost=float(defaults.get("max_cost_per_build_usd") or 0))
-            except (BuildError, ModelError) as exc:
-                built += 1  # a failed build still spent the budget
+            except (BuildError, ModelError, TimeoutError) as exc:
+                reason = getattr(exc, "reason", "build")
+                if reason not in ("precondition", "infrastructure"):
+                    built += 1  # only real build attempts spend the daily budget
                 skipped.append({"id": meta.get("id"), "reason": str(exc)})
                 continue
             built += 1

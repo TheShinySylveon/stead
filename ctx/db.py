@@ -23,9 +23,14 @@ def db_path(root: Path) -> Path:
 
 
 def connect(root: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(db_path(root))
+    conn = sqlite3.connect(db_path(root), timeout=5.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
+    conn.execute("PRAGMA busy_timeout = 5000")
+    try:
+        conn.execute("PRAGMA journal_mode = WAL")
+    except sqlite3.OperationalError:
+        pass  # read-only or unsupported filesystem: fall back to default journal mode
     return conn
 
 
@@ -82,30 +87,71 @@ def reindex_github(conn: sqlite3.Connection, root: Path) -> dict[str, int]:
     return {"repos": n_repos, "contributions": n_contribs}
 
 
-def init_db(root: Path) -> dict[str, int]:
-    """Idempotent rebuild of state.db from schema.sql + source files."""
+def _prompt_paths(pdir: Path) -> list[Path]:
+    return sorted(
+        (p for p in pdir.glob("v*.md") if p.stem[1:].isdigit()),
+        key=lambda p: int(p.stem[1:]),
+    )
+
+
+def _has_tables(conn: sqlite3.Connection) -> bool:
+    rows = conn.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table'").fetchall()
+    names = {row["name"] for row in rows}
+    return {"tasks", "repos", "contributions", "prompt_versions", "runs", "evals"} <= names
+
+
+def init_db(root: Path, *, reset: bool = False) -> dict[str, int]:
+    """Idempotent rebuild of the markdown index in state.db.
+
+    When state.db already exists and ``reset`` is False, preserves the append-only
+    ``runs`` ledger and existing ``prompt_versions`` promotions while rebuilding
+    the index tables (`tasks`, `repos`, `contributions`, `evals`) and seeding any
+    newly discovered prompt files. Pass ``reset=True`` to drop and recreate all
+    tables from schema.sql."""
+    existed = db_path(root).exists()
     conn = connect(root)
     try:
-        conn.executescript((PKG_DIR / "schema.sql").read_text(encoding="utf-8"))
+        preserve = existed and not reset and _has_tables(conn)
+        if not preserve:
+            conn.executescript((PKG_DIR / "schema.sql").read_text(encoding="utf-8"))
+        else:
+            conn.execute("DELETE FROM tasks")
+            conn.execute("DELETE FROM repos")
+            conn.execute("DELETE FROM contributions")
+            conn.execute("DELETE FROM evals")
         today = date.today().isoformat()
 
-        # Seed prompt versions from factories/*/prompts/v*.md. The HIGHEST
-        # version is production — the natural, current flow (e.g. v2 for
-        # feature-builder's spec-driven / planning-first prompt); lower versions
-        # are retired. Switch or roll back explicitly with `stead prompt promote`.
+        # Seed prompt versions from factories/*/prompts/v*.md. For a fresh
+        # factory (no rows yet), the HIGHEST version is production and lower
+        # versions are retired. When preserving an existing DB, newly added
+        # prompt files for an already-indexed factory are inserted as 'testing'
+        # so an explicit promotion or rollback is never clobbered.
         n_prompts = 0
         fdirs = sorted((root / "factories").iterdir()) if (root / "factories").is_dir() else []
         for fdir in fdirs:
             pdir = fdir / "prompts"
             if not (fdir.is_dir() and pdir.is_dir()):
                 continue
-            paths = sorted(pdir.glob("v*.md"))
+            paths = _prompt_paths(pdir)
             if not paths:
                 continue
-            latest = max(paths, key=lambda p: int(p.stem[1:]))
+            existing_versions = {
+                row["version"] for row in conn.execute(
+                    "SELECT version FROM prompt_versions WHERE factory = ?",
+                    (fdir.name,),
+                ).fetchall()
+            } if preserve else set()
+            latest = paths[-1]
             for prompt_path in paths:
                 version = prompt_path.stem
-                status = "production" if prompt_path == latest else "retired"
+                if version in existing_versions:
+                    n_prompts += 1
+                    continue
+                if existing_versions:
+                    status = "testing"
+                else:
+                    status = "production" if prompt_path == latest else "retired"
                 conn.execute(
                     "INSERT INTO prompt_versions (factory, version, status, path, created) "
                     "VALUES (?, ?, ?, ?, ?)",
@@ -162,9 +208,9 @@ def index_new_factory(root: Path, name: str) -> None:
         fdir = root / "factories" / name
         today = date.today().isoformat()
         pdir = fdir / "prompts"
-        paths = sorted(pdir.glob("v*.md")) if pdir.is_dir() else []
+        paths = _prompt_paths(pdir) if pdir.is_dir() else []
         if paths:
-            latest = max(paths, key=lambda p: int(p.stem[1:]))
+            latest = paths[-1]
             for prompt_path in paths:
                 status = "production" if prompt_path == latest else "retired"
                 conn.execute(

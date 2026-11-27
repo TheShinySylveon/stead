@@ -49,7 +49,7 @@ def collect(root: Path, repo: str | None = None, since: str | None = None) -> di
         since_date = _parse_date(since)
     found = []
     for path, meta, _body in objects.iter_objects(root, "document"):
-        tags = {str(t).lower() for t in (meta.get("tags") or [])}
+        tags = {t.lower() for t in _list(meta.get("tags"))}
         if RECORD_TAG not in tags:
             continue
         if repo and f"repo:{repo}".lower() not in tags:
@@ -110,17 +110,27 @@ def collect(root: Path, repo: str | None = None, since: str | None = None) -> di
         cost += _num(meta.get("cost_usd"))
         if str(meta.get("human_edits") or "").lower() == "true":
             human_edits += 1
-        for tag in (meta.get("tags") or []):
-            if str(tag).lower().startswith("repo:"):
-                key = str(tag)[5:]
+        for tag in _list(meta.get("tags")):
+            if tag.lower().startswith("repo:"):
+                key = tag[5:]
                 by_repo[key] = by_repo.get(key, 0) + 1
     reviews = {"approve": 0, "reject": 0}
     for _path, meta, _body in objects.iter_objects(root, "document"):
-        tags = {str(t).lower() for t in (meta.get("tags") or [])}
-        if REVIEW_TAG in tags:
-            verdict = str(meta.get("verdict") or "").lower()
-            if verdict in reviews:
-                reviews[verdict] += 1
+        tags = {t.lower() for t in _list(meta.get("tags"))}
+        if REVIEW_TAG not in tags:
+            continue
+        if repo and f"repo:{repo}".lower() not in tags:
+            continue
+        if since_date is not None:
+            try:
+                created_date = _parse_date(str(meta.get("created") or ""))
+            except ValueError:
+                continue
+            if created_date < since_date:
+                continue
+        verdict = str(meta.get("verdict") or "").lower()
+        if verdict in reviews:
+            reviews[verdict] += 1
     total = len(records)
     attempts = total - infra_failures  # an infrastructure failure is not a build attempt
     return {
@@ -151,8 +161,8 @@ def collect(root: Path, repo: str | None = None, since: str | None = None) -> di
             {"id": m.get("id", ""), "title": m.get("title", ""),
              "outcome": m.get("outcome", ""), "correct": m.get("correct", ""),
              "created": m.get("created", ""),
-             "repo": next((str(t)[5:] for t in (m.get("tags") or [])
-                           if str(t).lower().startswith("repo:")), "")}
+             "repo": next((t[5:] for t in _list(m.get("tags"))
+                           if t.lower().startswith("repo:")), "")}
             for m in records[:10]
         ],
     }

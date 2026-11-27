@@ -9,8 +9,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import secrets
+import tempfile
 from pathlib import Path
 
 from ctx import objects
@@ -85,6 +87,9 @@ def reset(root: Path, name: str) -> str:
     return shown
 
 
+_DUMMY_SALT = b"stead-dummy-salt"
+
+
 def verify(root: Path, name: str, password: str) -> dict | None:
     """Return {name, actor} or None. Does not say which part was wrong."""
     wanted = (name or "").strip().lower()
@@ -104,6 +109,8 @@ def verify(root: Path, name: str, password: str) -> dict | None:
         if secrets.compare_digest(digest, expected):
             return {"name": wanted, "actor": item.get("actor") or ""}
         return None
+    # Equalize timing when the username does not exist.
+    _hash(password, _DUMMY_SALT)
     return None
 
 
@@ -123,4 +130,17 @@ def _hash(password: str, salt: bytes | None = None) -> tuple[str, str]:
 def _save(root: Path, accounts: list[dict]) -> None:
     path = accounts_path(root)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"accounts": accounts}, indent=2) + "\n", encoding="utf-8")
+    text = json.dumps({"accounts": accounts}, indent=2) + "\n"
+    fd, tmp = tempfile.mkstemp(prefix=".accounts-", suffix=".tmp", dir=str(path.parent))
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as handle:
+            handle.write(text)
+        if os.name != "nt":
+            os.chmod(tmp, 0o600)
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass  # best-effort cleanup of temp file before re-raising
+        raise

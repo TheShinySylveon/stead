@@ -75,20 +75,20 @@ def _parse(text: str) -> tuple[str, str]:
             return "approve", reason
         if verdict in {"reject", "rejected", "fail"}:
             return "reject", reason or "the reviewer rejected the change"
-    # Two-line fallback: "verdict: approve" / "reason: ..."
+    # Two-line fallback: check reject before approve so ambiguous replies fail closed.
     lowered = cleaned.lower()
-    if re.search(r"^\s*verdict:\s*(approve|approved|pass)\b", lowered, re.M):
-        reason = ""
-        match = re.search(r"^\s*reason:\s*(.+)$", cleaned, re.M)
-        if match:
-            reason = match.group(1).strip()
-        return "approve", reason
     if re.search(r"^\s*verdict:\s*(reject|rejected|fail)\b", lowered, re.M):
         reason = ""
         match = re.search(r"^\s*reason:\s*(.+)$", cleaned, re.M)
         if match:
             reason = match.group(1).strip()
         return "reject", reason or "the reviewer rejected the change"
+    if re.search(r"^\s*verdict:\s*(approve|approved|pass)\b", lowered, re.M):
+        reason = ""
+        match = re.search(r"^\s*reason:\s*(.+)$", cleaned, re.M)
+        if match:
+            reason = match.group(1).strip()
+        return "approve", reason
     return "reject", "the reviewer's reply was not a readable verdict"
 
 

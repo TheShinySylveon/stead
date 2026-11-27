@@ -559,7 +559,8 @@ async function awaitTask(path, payload, verb, logEl) {
     for (const live of targets) { live.hidden = false; live.textContent += text + "\n"; live.scrollTop = live.scrollHeight; }
     if (contribution) {
       state.activity = { contribution, verb, line: text };
-      const lineEl = document.querySelector('[data-activity="' + contribution + '"]');
+      const lineEl = Array.from(document.querySelectorAll("[data-activity]"))
+        .find(el => el.dataset.activity === contribution);
       if (lineEl) lineEl.textContent = text;
     }
   };
@@ -588,7 +589,8 @@ async function awaitTask(path, payload, verb, logEl) {
   } finally {
     if (contribution && state.activity && state.activity.contribution === contribution) {
       state.activity = null;
-      const lineEl = document.querySelector('[data-activity="' + contribution + '"]');
+      const lineEl = Array.from(document.querySelectorAll("[data-activity]"))
+        .find(el => el.dataset.activity === contribution);
       if (lineEl) lineEl.textContent = "";
     }
   }
@@ -813,7 +815,7 @@ function renderRepos() {
       <button type="button" class="linkish" data-toggle-contrib="${esc(c.act_id)}" aria-expanded="${state.detailId === c.act_id}" style="display:flex;justify-content:space-between;gap:8px;align-items:start;width:100%">
         <span style="min-width:0">
           <strong>${esc(c.title)}</strong>
-          <span class="meta" style="display:block">${esc(c.kind)} #${esc(c.number)} · ${esc(c.repo)} · ${ago(c.updated)}</span>
+          <span class="meta" style="display:block">${esc(c.kind)} #${esc(c.number)} · ${esc(c.repo)} · ${esc(ago(c.updated))}</span>
         </span>
         <span class="chips">${c.ci && c.ci !== "none" ? chip("ci " + c.ci, ciTone) : ""}${c.review && c.review !== "none" ? chip(c.review, "review") : ""}</span>
         <span class="chev" aria-hidden="true"></span>
@@ -883,14 +885,14 @@ function renderRepos() {
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                   <span class="meta">Auto-publish PR</span>
-                  <select data-set-repo data-id="${esc(r.id)}" data-field="auto_publish" aria-label="Auto-publish for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], r.auto_publish === "true" ? "on" : "off")}</select>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="auto_publish" aria-label="Auto-publish for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], String(r.auto_publish || "").toLowerCase() === "true" ? "on" : "off")}</select>
                   <span class="meta">Build commits to a branch; only auto-publish opens the PR.</span>
                 </div>
                 <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap">
                   <span class="meta">Require tests</span>
-                  <select data-set-repo data-id="${esc(r.id)}" data-field="require_tests" aria-label="Require tests for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], r.require_tests === "false" ? "off" : "on")}</select>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="require_tests" aria-label="Require tests for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], String(r.require_tests || "").toLowerCase() === "false" ? "off" : "on")}</select>
                   <span class="meta">Anti-slop gate</span>
-                  <select data-set-repo data-id="${esc(r.id)}" data-field="slop_gate" aria-label="Anti-slop gate for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], r.slop_gate === "false" ? "off" : "on")}</select>
+                  <select data-set-repo data-id="${esc(r.id)}" data-field="slop_gate" aria-label="Anti-slop gate for ${esc(r.title)}" style="max-width:110px">${options(["off", "on"], String(r.slop_gate || "").toLowerCase() === "false" ? "off" : "on")}</select>
                   <span class="meta">A build with acceptance criteria must add a failing-then-passing test; new files are checked for anti-slop findings.</span>
                 </div>
                 <div style="display:flex;gap:8px;flex-wrap:wrap">
@@ -1009,10 +1011,10 @@ function renderWiki() {
         </div>
       </div>`;
   }
-  const crumbs = (page.breadcrumb || []).map((crumb, index) =>
-    index === 0
-      ? `<button type="button" data-wiki-home>${esc(crumb.title)}</button>`
-      : `<button type="button" data-wiki-page="${esc(crumb.slug)}">${esc(crumb.title)}</button>`).join("<span>/</span>");
+  const crumbs = (page.breadcrumb || []).map(crumb =>
+    crumb.slug
+      ? `<button type="button" data-wiki-page="${esc(crumb.slug)}">${esc(crumb.title)}</button>`
+      : `<button type="button" data-wiki-home>${esc(crumb.title)}</button>`).join("<span>/</span>");
   const labels = (page.labels || []).map(label => chip(label)).join("");
   const meta = [page.updated ? "updated " + when(page.updated) : "", page.author ? "by " + page.author : ""]
     .filter(Boolean).join(" · ");
@@ -1289,9 +1291,12 @@ function renderSettings() {
     <div class="section-title">Server</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>Index</strong>
-      <p class="meta">state.db is an index. Rebuilding it reads context/ again and changes no notes.</p>
-      <button type="button" class="quiet" data-init>Rebuild index</button>
-      <button type="button" class="quiet" data-doctor>Run doctor</button>
+      <p class="meta">state.db is an index. Rebuilding it reads context/ again and keeps runs and prompt promotions; resetting drops and recreates all tables.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button type="button" class="quiet" data-init>Rebuild index</button>
+        <button type="button" class="quiet" data-init-reset>Reset index &amp; runs</button>
+        <button type="button" class="quiet" data-doctor>Run doctor</button>
+      </div>
       <div class="meta" id="doctor-result" style="margin-top:6px"></div>
     </div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
@@ -1365,6 +1370,7 @@ function inline(s) {
   return esc(s)
     .replace(/`([^`]+)`/g, (_, code) => hold("<code>" + code + "</code>"))
     .replace(/\[([^\]]+)\]\((https?:\/\/[^)\s]+)\)/g, (_, text, url) => hold('<a href="' + url + '" target="_blank" rel="noopener">') + text + hold("</a>"))
+    .replace(/\[([^\]]+)\]\(((?:specs|decisions|glossary|tasks|history|requests)\/[A-Za-z0-9._-]+)\)/g, (_, text, slug) => hold('<button type="button" class="linkish" data-wiki-page="' + slug + '">') + text + hold("</button>"))
     .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
     .replace(/(^|[^\w*])\*([^*\s][^*]*?)\*(?![\w*])/g, "$1<em>$2</em>")
     .replace(/(^|[^\w])_([^_\s][^_]*?)_(?!\w)/g, "$1<em>$2</em>")
@@ -1734,6 +1740,8 @@ document.body.addEventListener("click", async (event) => {
       await load();
     } catch (err) {
       toast(err.message);
+    } finally {
+      sync.disabled = false;
     }
     return;
   }
@@ -2139,6 +2147,15 @@ document.body.addEventListener("click", async (event) => {
     } catch (err) { toast(err.message); }
     return;
   }
+  if (event.target.closest("[data-init-reset]")) {
+    if (!confirm("Reset state.db? This drops all logged runs and resets prompt promotions to the highest version. Markdown notes are unchanged.")) return;
+    try {
+      await api("/api/init", {method: "POST", body: JSON.stringify({reset: true})});
+      toast("Index and runs reset");
+      await load();
+    } catch (err) { toast(err.message); }
+    return;
+  }
   if (event.target.closest("[data-stop]") || event.target.closest("[data-start]")) {
     const stopping = !!event.target.closest("[data-stop]");
     try {
@@ -2334,7 +2351,7 @@ document.body.addEventListener("change", async (event) => {
     const factory = state.snap.factories.find(f => f.name === form.dataset.promote);
     const prod = factory && (factory.prompts || []).find(p => p.status === "production");
     const button = form.querySelector("[data-promote-button]");
-    if (button) button.disabled = !prod || promoteSelect.value === prod.version;
+    if (button) button.disabled = !!(prod && promoteSelect.value === prod.version);
     return;
   }
   const status = event.target.closest("[data-set-status]");
@@ -2352,7 +2369,8 @@ document.body.addEventListener("change", async (event) => {
     } else if (event.target.closest("[data-set-repo-text]")) {
       const repo = event.target.closest("[data-set-repo-text]");
       await api("/api/repo", {method: "POST", body: JSON.stringify({id: repo.dataset.id, [repo.dataset.field]: repo.value})});
-      toast(repo.dataset.field === "code_path" ? "Code path saved" : "Default branch saved");
+      const labels = {code_path: "Code path", default_branch: "Default branch", url: "Repo URL", notes: "Notes"};
+      toast((labels[repo.dataset.field] || "Repo") + " saved");
       await load();
     } else if (event.target.closest("[data-model-role]")) {
       const sel = event.target.closest("[data-model-role]");

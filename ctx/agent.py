@@ -95,6 +95,9 @@ _ACTION_RESPONSE_FORMAT = {
                 "end": {"type": "integer"},
                 "old": {"type": "string"},
                 "new": {"type": "string"},
+                "improvement_type": {"type": "string"},
+                "rationale": {"type": "string"},
+                "change": {"type": "string"},
             },
             "required": ["action"],
             "additionalProperties": False,
@@ -105,7 +108,7 @@ _ACTION_RESPONSE_FORMAT = {
 # The fields the build loop reads from an action object. A test asserts each is
 # declared in the schema above, so a strict server never drops one.
 _ACTION_FIELDS = {"action", "path", "content", "summary", "query", "kind", "title", "text",
-                  "start", "end", "old", "new"}
+                  "start", "end", "old", "new", "improvement_type", "rationale", "change"}
 
 
 class BuildError(Exception):
@@ -208,6 +211,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         raise BuildError("ghost writes the plan and spec/doc changes only, for "
                          "approval. Publish and merge need a higher reach on the repo.",
                          reason="precondition")
+    if merge and not publish:
+        raise BuildError("--merge needs --publish; nothing was pushed",
+                         reason="precondition")
     checks = (repo_meta.get("checks") or "").strip()
     default = (repo_meta.get("default_branch") or "main").strip()
     base_run = runner or _git_run
@@ -299,7 +305,8 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
         # model's own write set.
         commit_base = _git(run, code, ["rev-parse", "HEAD"]).strip()
         base_tracked_cf = {line.casefold() for line in
-                           _git(run, code, ["ls-tree", "-r", "--name-only", default]).splitlines()
+                           _git(run, code, ["-c", "core.quotePath=false",
+                                            "ls-tree", "-r", "--name-only", default]).splitlines()
                            if line}
         branch_tracked = _tracked_files(run, code)
         git_before = safety.git_state_snapshot(code)
@@ -351,8 +358,10 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     raise
 
             responder._plain = False
-            prices = (settings.get("input_price_per_mtok") or 0.0,
-                      settings.get("output_price_per_mtok") or 0.0)
+            model_prices = (settings.get("input_price_per_mtok") or 0.0,
+                            settings.get("output_price_per_mtok") or 0.0)
+            if model_prices[0] or model_prices[1]:
+                prices = model_prices
         tree = _tree(code)
         context = factory.feature_build_context(root, spec, body, repo_meta, repo_body)
         prompt = _system_prompt(spec, criteria, tree, bool(checks), repo_meta,
@@ -399,14 +408,14 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             if token_budget and tokens_total > token_budget:
                 raise BuildError(
                     f"the build hit its token budget ({tokens_total} > {token_budget}). "
-                    "Raise --max-tokens, or split the spec.")
+                    "Raise --max-tokens, or split the spec.", reason="budget")
             if cost_budget and (prices[0] or prices[1]):
                 spent = (usage["prompt_tokens"] / 1e6 * prices[0]
                          + usage["completion_tokens"] / 1e6 * prices[1])
                 if spent > cost_budget:
                     raise BuildError(
                         f"the build hit its cost budget (${spent:.2f} > ${cost_budget:.2f}). "
-                        "Raise --max-cost, or split the spec.")
+                        "Raise --max-cost, or split the spec.", reason="budget")
             action = _parse(reply)
             progress_log(f"step {_step + 1}/{max_steps}  {_describe(action)}  "
                  f"({len(full_prompt) // 1000}k chars sent, {_step_latency / 1000:.0f}s)")
@@ -422,11 +431,25 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
             if kind == "list":
                 rel = _safe_rel(action.get("path") or ".")
                 target = code / rel
-                if not target.is_dir():
+                if not target.is_dir() or (rel != "." and _ignored(target, code)):
                     transcript.append(f"list: not a directory: {rel}")
                     continue
-                names = sorted(p.name + ("/" if p.is_dir() else "")
-                               for p in target.iterdir() if p.name not in IGNORE_DIRS)
+                try:
+                    _resolved_rel(target, code)
+                except BuildError:
+                    transcript.append(f"list: not a directory: {rel}")
+                    continue
+                names = []
+                for p in sorted(target.iterdir()):
+                    if p.name in IGNORE_DIRS or p.name == LOCK_NAME:
+                        continue
+                    try:
+                        p_rel = _resolved_rel(p, code)
+                    except BuildError:
+                        continue
+                    if safety.secret_by(p.relative_to(code).as_posix()) or safety.secret_by(p_rel):
+                        continue
+                    names.append(p.name + ("/" if p.is_dir() else ""))
                 transcript.append(f"list {rel}:\n" + "\n".join(names[:200]))
                 actions.append({"action": "list", "path": rel})
                 continue
@@ -675,8 +698,7 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                     raise BuildError("the model finished without changing a file",
                                      reason="protocol")
                 if criteria and not ghost and safety.truthy(repo_meta.get("require_tests", "true")):
-                    touched_tests = [p for p in list(files) + deleted
-                                     if safety.is_test_path(p)]
+                    touched_tests = [p for p in files if safety.is_test_path(p)]
                     if not touched_tests:
                         no_test += 1
                         if no_test > repair_rounds:
@@ -868,7 +890,9 @@ def build(root: Path, contribution_ref: str, *, responder=None, runner=None,
                         except CommentError as exc:
                             result["comment_error"] = str(exc)
                     if wait:
-                        _wait_for_checks(code, spec.get("number"), wait_minutes)
+                        pr_num = _pr_number(opened["url"])
+                        if pr_num:
+                            _wait_for_checks(code, pr_num, wait_minutes)
                     if merge:
                         from ctx.merge import MergeError, merge as merge_pr
                         try:
@@ -955,12 +979,14 @@ def _lock(code: Path) -> Path:
             raise BuildError(
                 f"another build holds the lock for this checkout ({path}). "
                 "Remove it if no build is running.") from exc
-        os.write(fd, json.dumps({
-            "pid": os.getpid(),
-            "host": socket.gethostname(),
-            "started": datetime.now(timezone.utc).isoformat(),
-        }).encode("utf-8"))
-        os.close(fd)
+        try:
+            os.write(fd, json.dumps({
+                "pid": os.getpid(),
+                "host": socket.gethostname(),
+                "started": datetime.now(timezone.utc).isoformat(),
+            }).encode("utf-8"))
+        finally:
+            os.close(fd)
         return path
     raise BuildError(f"could not take the build lock ({path})")
 
@@ -974,6 +1000,9 @@ def _reclaimable(path: Path) -> bool:
         return True
     if age > STALE_LOCK_SECONDS:
         return True
+    if not raw and age < 5.0:
+        # Another process just created the lock and has not flushed its PID yet.
+        return False
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -998,11 +1027,18 @@ def _pid_alive(pid: int) -> bool:
         return False
     if os.name == "nt":
         import ctypes
-        handle = ctypes.windll.kernel32.OpenProcess(0x1000, False, pid)
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        handle = kernel32.OpenProcess(0x1000, False, pid)
         if not handle:
-            return False
-        ctypes.windll.kernel32.CloseHandle(handle)
-        return True
+            # ERROR_ACCESS_DENIED (5): process exists under another privilege level.
+            return ctypes.get_last_error() == 5
+        try:
+            exit_code = ctypes.c_ulong(0)
+            if kernel32.GetExitCodeProcess(handle, ctypes.byref(exit_code)):
+                return exit_code.value == 259  # STILL_ACTIVE
+            return True
+        finally:
+            kernel32.CloseHandle(handle)
     try:
         os.kill(pid, 0)
     except ProcessLookupError:
@@ -1151,16 +1187,23 @@ def _pr_number(pr_url: str) -> str:
 def fetch_review_comments(run, owner_name: str, number, code: Path) -> list[dict]:
     """The inline review comments on a PR, as {path, line, body} dicts."""
     try:
-        raw = run(["gh", "api", "--paginate",
+        raw = run(["gh", "api", "--paginate", "--slurp",
                    f"repos/{owner_name}/pulls/{number}/comments"], code)
     except BuildError:
         return []
     try:
-        items = json.loads(raw or "null")
+        parsed = json.loads(raw or "null")
     except json.JSONDecodeError:
         return []
-    if not isinstance(items, list):
+    if not isinstance(parsed, list):
         return []
+    # --slurp wraps each page in a list ([[...], [...]]); flatten if nested.
+    items: list = []
+    for entry in parsed:
+        if isinstance(entry, list):
+            items.extend(entry)
+        elif isinstance(entry, dict):
+            items.append(entry)
     out: list[dict] = []
     for item in items:
         if not isinstance(item, dict) or not (item.get("body") or "").strip():
@@ -1297,6 +1340,13 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
         raise BuildError(f"repo not found: {spec.get('repo')!r}",
                          reason="precondition")
     _repo_path, repo_meta, _repo_body = repo
+    if push:
+        policy = effective(root, repo_meta)
+        if policy["ceiling"] in ("ghost", "shadow"):
+            raise BuildError(
+                f"this repo's ceiling is {policy['ceiling']}. Pass --no-push or "
+                "raise the repo reach before pushing review fixes.",
+                reason="precondition")
     code = Path(repo_meta.get("code_path") or "")
     if not repo_meta.get("code_path") or not code.is_dir():
         raise BuildError("set the repo code_path to a local checkout first",
@@ -1328,6 +1378,7 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
     started = time.monotonic()
     deadline = started + max(1, max_minutes) * 60
     wt: Path | None = None
+    git_before: dict | None = None
     try:
         if not _git(run, anchor, ["branch", "--list", branch]).strip():
             raise BuildError(
@@ -1336,6 +1387,8 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
         wt = Path(tempfile.mkdtemp(prefix="stead-wt-"))
         _git(run, anchor, ["worktree", "add", str(wt), branch])
         code = wt
+        commit_base = _git(run, code, ["rev-parse", "HEAD"]).strip()
+        git_before = safety.git_state_snapshot(code)
         progress_log(f"worktree ready on {branch}")
 
         prompt_budget = MAX_PROMPT_CHARS
@@ -1385,11 +1438,25 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
             if kind == "list":
                 rel = _safe_rel(action.get("path") or ".")
                 target = code / rel
-                if not target.is_dir():
+                if not target.is_dir() or (rel != "." and _ignored(target, code)):
                     transcript.append(f"list: not a directory: {rel}")
                     continue
-                names = sorted(p.name + ("/" if p.is_dir() else "")
-                               for p in target.iterdir() if p.name not in IGNORE_DIRS)
+                try:
+                    _resolved_rel(target, code)
+                except BuildError:
+                    transcript.append(f"list: not a directory: {rel}")
+                    continue
+                names = []
+                for p in sorted(target.iterdir()):
+                    if p.name in IGNORE_DIRS or p.name == LOCK_NAME:
+                        continue
+                    try:
+                        p_rel = _resolved_rel(p, code)
+                    except BuildError:
+                        continue
+                    if safety.secret_by(p.relative_to(code).as_posix()) or safety.secret_by(p_rel):
+                        continue
+                    names.append(p.name + ("/" if p.is_dir() else ""))
                 transcript.append(f"list {rel}:\n" + "\n".join(names[:200]))
                 continue
             if kind == "read":
@@ -1476,6 +1543,7 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
                     transcript.append("check: this repo has no checks command")
                     continue
                 ok, output, _mode = _run_checks(code, checks, repo_meta, deadline)
+                _verify_git_hygiene(code, git_before)
                 if ok:
                     transcript.append("checks passed")
                 else:
@@ -1495,7 +1563,32 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
                         "run check, then finish.")
                     progress_log("finish refused: no changes yet")
                     continue
-                _git(run, code, ["add", "-A"])
+                checks = (repo_meta.get("checks") or "").strip()
+                if checks:
+                    ok, output, _mode = _run_checks(code, checks, repo_meta, deadline)
+                    _verify_git_hygiene(code, git_before)
+                    if not ok:
+                        transcript.append("final checks failed before finish:\n"
+                                          + _check_summary(output) + "\n"
+                                          + (output[-2000:] or "(no output)"))
+                        progress_log("final checks FAILED")
+                        continue
+                if _git(run, code, ["rev-parse", "HEAD"]).strip() != commit_base:
+                    raise BuildError("HEAD moved during review-fix run; refusing to commit",
+                                     reason="tamper")
+                expected = set(files)
+                extra_tracked, extra_untracked = _side_effects(run, code, expected, repo_meta)
+                if extra_tracked:
+                    raise BuildError(
+                        "checks modified files outside the model's edits: "
+                        + ", ".join(sorted(extra_tracked)[:10]), reason="tamper")
+                for stray in extra_untracked:
+                    target = code / stray
+                    if target.is_dir() and not target.is_symlink():
+                        shutil.rmtree(target, ignore_errors=True)
+                    else:
+                        target.unlink(missing_ok=True)
+                _git(run, code, ["add", "-A", "--", *sorted(expected)])
                 _git(run, code, ["commit", "-m", "Address review comments"])
                 commit = _git(run, code, ["rev-parse", "HEAD"]).strip()
                 progress_log(f"committed {commit[:12]} on {branch}")
@@ -1513,6 +1606,10 @@ def address_review(root: Path, contribution_ref: str, *, responder=None,
             transcript.append(f"unknown action {kind!r}")
     finally:
         if wt is not None:
+            if git_before is not None:
+                after = safety.git_state_snapshot(wt)
+                if safety.git_state_changes(git_before, after):
+                    safety.git_state_restore(wt, git_before, after)
             try:
                 _git(run, anchor, ["worktree", "remove", "--force", str(wt)])
             except (BuildError, OSError):
@@ -1681,6 +1778,19 @@ def _remain_running(root: Path, deadline: float) -> None:
                          "or split the spec.", reason="budget")
 
 
+def _verify_git_hygiene(code: Path, before: dict) -> None:
+    """Fail and restore if checks mutated .git/config or hooks."""
+    after = safety.git_state_snapshot(code)
+    changed = safety.git_state_changes(before, after)
+    if changed:
+        safety.git_state_restore(code, before, after)
+        raise BuildError(
+            "checks changed .git (" + ", ".join(k.rsplit("/", 2)[-1] if "/hooks/" not in k
+                                              else "hooks/" + k.rsplit("/", 1)[-1]
+                                              for k in changed) + "). "
+            "Refusing to continue.", reason="tamper")
+
+
 def _run_checks(code: Path, command: str, repo_meta: dict,
                 deadline: float) -> tuple[bool, str, str]:
     remaining = int(max(30, deadline - time.monotonic()))
@@ -1806,14 +1916,15 @@ def _remove_path(path: Path) -> None:
 
 def _tracked_files(run, code: Path) -> set[str]:
     return {line.strip().strip('"')
-            for line in _git(run, code, ["ls-files"]).splitlines() if line.strip()}
+            for line in _git(run, code, ["-c", "core.quotePath=false", "ls-files"]).splitlines()
+            if line.strip()}
 
 
 def _range_changes(run, code: Path, base: str) -> tuple[list[str], list[str]]:
     """The committed range from the base commit: (changed, deleted) paths."""
     changed: list[str] = []
     deleted: list[str] = []
-    raw = _git(run, code, ["diff", "--name-status", base, "HEAD"])
+    raw = _git(run, code, ["-c", "core.quotePath=false", "diff", "--name-status", base, "HEAD"])
     for line in raw.splitlines():
         parts = line.split("\t")
         if len(parts) < 2:
@@ -1833,7 +1944,7 @@ def _staged_changes(run, code: Path) -> tuple[list[str], list[str]]:
     """The real diff about to be committed: (changed, deleted) paths."""
     changed: list[str] = []
     deleted: list[str] = []
-    raw = _git(run, code, ["diff", "--cached", "--name-status", "HEAD"])
+    raw = _git(run, code, ["-c", "core.quotePath=false", "diff", "--cached", "--name-status", "HEAD"])
     for line in raw.splitlines():
         parts = line.split("\t")
         if len(parts) < 2:
@@ -1966,9 +2077,15 @@ def _search(code: Path, query: str) -> list[str]:
     for path in sorted(code.rglob("*")):
         if scanned >= 2000 or len(hits) >= 50:
             break
-        if not path.is_file() or _ignored(path, code):
+        if not path.is_file():
             continue
-        if safety.secret_by(path.relative_to(code).as_posix()):
+        try:
+            if _ignored(path, code):
+                continue
+            resolved = _resolved_rel(path, code)
+        except BuildError:
+            continue
+        if safety.secret_by(path.relative_to(code).as_posix()) or safety.secret_by(resolved):
             continue
         try:
             if path.stat().st_size > MAX_FILE_BYTES:
@@ -2297,6 +2414,8 @@ def _safe_rel(raw: str) -> str:
     parts = [part for part in rel.split("/") if part not in {"", "."}]
     if any(part == ".." for part in parts):
         raise BuildError(f"paths may not leave the repository: {raw}", reason="gate")
+    if any(part.endswith((".", " ")) for part in parts):
+        raise BuildError(f"invalid trailing dot or space in path: {raw}", reason="gate")
     if parts and parts[0].casefold() == ".git":
         raise BuildError("the model may not touch .git", reason="gate")
     return "/".join(parts)
@@ -2323,7 +2442,11 @@ def _tree(code: Path) -> str:
             continue
         if any(part in IGNORE_DIRS or part == LOCK_NAME for part in relative.parts):
             continue
-        if safety.secret_by(relative.as_posix()):
+        try:
+            resolved = _resolved_rel(path, code)
+        except BuildError:
+            continue
+        if safety.secret_by(relative.as_posix()) or safety.secret_by(resolved):
             continue
         depth = len(relative.parts)
         if depth > 2:

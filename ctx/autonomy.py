@@ -137,6 +137,29 @@ def permit(policy: dict, requested: str | None) -> str:
     return asked
 
 
+def repo_auto_publish(root: Path, contribution: str) -> bool:
+    """Whether a build of this contribution should open a PR on success.
+
+    Shared by both CLI (`stead build`) and cockpit (`ui.build_task`). True only
+    when the repo opts in with `auto_publish: true` AND its reach ceiling allows
+    publishing (`draft-pr`, `pr`, or `merge`)."""
+    found = objects.find(root, "contribution", contribution)
+    if found is None:
+        return False
+    repo = objects.find(root, "repo", found[1].get("repo") or "")
+    if repo is None:
+        return False
+    _repo_path, repo_meta, _repo_body = repo
+    from ctx import safety
+    if not safety.truthy(repo_meta.get("auto_publish")):
+        return False
+    ceiling = effective(root, repo_meta)["ceiling"]
+    return ceiling in ("draft-pr", "pr", "merge")
+
+
+_IMMUTABLE_REPO_KEYS = {"id", "type", "created"}
+
+
 def set_repo(root: Path, repo_id: str, *, trigger: str | None = None,
              reach: str | None = None, code_path: str | None = None,
              extra: dict | None = None) -> dict:
@@ -158,12 +181,19 @@ def set_repo(root: Path, repo_id: str, *, trigger: str | None = None,
             raise AutonomyError(f"code_path is not a directory: {code_path}")
         if target.resolve() == root.resolve():
             raise AutonomyError("code_path must be the project checkout, not this Stead repo")
-        meta["code_path"] = str(target)
+        meta["code_path"] = str(target.resolve())
     for key, value in (extra or {}).items():
+        key_s = str(key).strip()
+        if key_s in _IMMUTABLE_REPO_KEYS:
+            raise AutonomyError(f"cannot modify immutable field {key_s!r}")
+        if key_s == "trigger" and value is not None and str(value) not in TRIGGERS:
+            raise AutonomyError(f"invalid trigger {value!r}")
+        if key_s == "reach" and value is not None and str(value) not in REACHES:
+            raise AutonomyError(f"invalid reach {value!r}")
         if value is None:
-            meta.pop(key, None)
+            meta.pop(key_s, None)
         else:
-            meta[str(key)] = value
+            meta[key_s] = value
     if trigger is None and reach is None and code_path is None and not extra:
         raise AutonomyError("nothing to set")
     from datetime import date

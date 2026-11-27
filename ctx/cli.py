@@ -52,9 +52,9 @@ def _info(msg: str) -> None:
 
 # --- init -----------------------------------------------------------------
 
-def cmd_init(root: Path) -> int:
+def cmd_init(root: Path, *, reset: bool = False) -> int:
     seeded = factory.seed_builtin_factories(root)
-    counts = db.init_db(root)
+    counts = db.init_db(root, reset=reset)
     print(f"state.db rebuilt from ctx/schema.sql "
           f"(tasks indexed: {counts['tasks']}, repos: {counts['repos']}, "
           f"contributions: {counts['contributions']}, evals loaded: {counts['evals']}, "
@@ -707,7 +707,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub = p.add_subparsers(dest="command", required=True)
 
     sub.add_parser("version", help="print the Stead version")
-    sub.add_parser("init", help="rebuild state.db from schema.sql + markdown (idempotent)")
+    init_p = sub.add_parser("init", help="rebuild markdown index in state.db (preserves runs unless --reset)")
+    init_p.add_argument("--reset", action="store_true",
+                        help="drop and recreate all tables including runs and prompt promotions")
     doc = sub.add_parser("doctor", help="lint frontmatter, ids, dates, and relations")
     doc.add_argument("--json", action="store_true", help="machine-readable report")
     met = sub.add_parser("metrics", help="dogfood numbers from the build records")
@@ -815,7 +817,7 @@ def build_parser() -> argparse.ArgumentParser:
     imported = inbox.add_parser("import", help="copy a local .eml, .ics, .md, or .txt file into inbox/")
     imported.add_argument("path")
     listed = inbox.add_parser("list", help="list inbox notes. Read-only.")
-    listed.add_argument("--kind", choices=("decision", "glossary", "note"),
+    listed.add_argument("--kind", choices=("decision", "glossary", "rule", "note"),
                         help="limit output to one kind")
     improve = sub.add_parser("improve", help="proposed improvements (model proposals to accept/reject)").add_subparsers(dest="sub", required=True)
     improve.add_parser("list", help="list proposed improvements. Read-only.")
@@ -915,7 +917,7 @@ def build_parser() -> argparse.ArgumentParser:
     ms.add_argument("--name", required=True, help="model name, such as gpt-4.1-mini or llama3.2")
     ms.add_argument("--base-url", help="defaults to the provider preset")
     ms.add_argument("--key", help="stored in gitignored stead.json. Prefer STEAD_MODEL_API_KEY.")
-    ms.add_argument("--key-env", default="STEAD_MODEL_API_KEY")
+    ms.add_argument("--key-env", default=None)
     ms.add_argument("--review", action="store_true",
                     help="configure the optional independent reviewer model. "
                          "Falls back to the builder model when unset.")
@@ -942,7 +944,7 @@ def build_parser() -> argparse.ArgumentParser:
     ma.add_argument("--name", required=True, help="model name, such as gpt-4.1-mini or llama3.2")
     ma.add_argument("--base-url", help="defaults to the provider preset")
     ma.add_argument("--key", help="stored in gitignored stead.json. Prefer an env var.")
-    ma.add_argument("--key-env", default="STEAD_MODEL_API_KEY")
+    ma.add_argument("--key-env", default=None)
     ma.add_argument("--input-price", type=float, help="USD per 1M input tokens")
     ma.add_argument("--output-price", type=float, help="USD per 1M output tokens")
     ma.add_argument("--call-timeout", type=int, metavar="SECONDS")
@@ -1085,7 +1087,7 @@ def main(argv: list[str] | None = None) -> int:
         print(__version__)
         return 0
     if args.command == "init":
-        return cmd_init(root)
+        return cmd_init(root, reset=args.reset)
     if args.command == "doctor":
         from ctx import doctor
         report = doctor.run(root)
@@ -1150,9 +1152,9 @@ def main(argv: list[str] | None = None) -> int:
             found = objects.find(root, "repo", args.id)
             if found is not None:
                 meta = found[1]
-                code = Path(meta.get("code_path") or "")
-                if code.is_dir():
-                    for warning in safety.runner_warnings(code, meta):
+                raw_code = str(meta.get("code_path") or "").strip()
+                if raw_code and Path(raw_code).is_dir():
+                    for warning in safety.runner_warnings(Path(raw_code), meta):
                         print(f"warning: {warning}")
             print("nothing was pushed, opened, or merged")
             return 0
@@ -1450,9 +1452,11 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "build":
         from ctx.agent import BuildError, build as run_build
+        from ctx.autonomy import repo_auto_publish
         from ctx.models import ModelError
+        do_publish = bool(args.publish) or repo_auto_publish(root, args.contribution)
         try:
-            result = run_build(root, args.contribution, publish=args.publish,
+            result = run_build(root, args.contribution, publish=do_publish,
                                merge=args.merge, resume=args.resume, retry=args.retry,
                                wait=args.wait,
                                wait_minutes=max(1, args.wait_minutes),
@@ -1603,6 +1607,7 @@ def main(argv: list[str] | None = None) -> int:
             result = comment(root, args.contribution, pr_url)
         except CommentError as exc:
             raise SystemExit(str(exc)) from exc
+        writeback.mark_commented(root, args.contribution)
         if result.get("skipped"):
             print(f"skipped: {result.get('reason')}")
             return 0

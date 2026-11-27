@@ -9,6 +9,7 @@ shadow-only.
 from __future__ import annotations
 
 import contextlib
+import contextvars
 import email
 import io
 import json
@@ -17,6 +18,7 @@ import re
 import secrets
 import sys
 import threading
+import time
 import webbrowser
 from email import policy
 from datetime import date
@@ -31,6 +33,11 @@ PKG_DIR = Path(__file__).resolve().parent
 PAGE_PATH = PKG_DIR / "cockpit.html"
 LOOPBACK = ("127.0.0.1", "localhost", "::1")
 _RUNNER = TaskRunner()
+_STDOUT_LOCK = threading.Lock()
+_SERVER_DEPLOYMENT: contextvars.ContextVar[str] = contextvars.ContextVar(
+    "stead_server_deployment", default="")
+SESSION_TTL = 24 * 60 * 60
+MAX_SESSIONS = 2048
 _GATE_STYLE = """<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>Stead</title>
 <meta name="description" content="Enter the shared-server access token. It is not stored in git.">
@@ -334,7 +341,8 @@ def _comment_eligible(root: Path, meta: dict) -> bool:
         return False
     if str(repo_meta.get("kind") or "") != "own":
         return False
-    if not bool(repo_meta.get("allow_comment")):
+    from ctx import safety
+    if not safety.truthy(repo_meta.get("allow_comment")):
         return False
     # The comment posts on the spec's source issue number; without one it fails.
     return bool(meta.get("number"))
@@ -951,13 +959,22 @@ def create_contribution(root: Path, payload: dict) -> dict:
         raise UiError("number must be a positive integer") from exc
     if number < 1:
         raise UiError("number must be a positive integer")
-    if shared_server(root) and (payload.get("criteria") or "").strip():
-        raise UiError(
-            "on a shared server, authoring a build spec is read-only. Write and "
-            "approve specs on the machine that runs builds.")
+    if shared_server(root):
+        if (payload.get("criteria") or "").strip():
+            raise UiError(
+                "on a shared server, authoring a build spec is read-only. Write and "
+                "approve specs on the machine that runs builds.")
+        if (payload.get("role") or "").strip().lower() == "author":
+            raise UiError(
+                "on a shared server, the author role is read-only. Set it on the "
+                "machine that runs builds.")
+        if re.search(r"(?im)^##\s+acceptance\s+criteria\b", payload.get("description") or ""):
+            raise UiError(
+                "on a shared server, authoring a build spec is read-only. Write and "
+                "approve specs on the machine that runs builds.")
     kind = payload.get("kind") or "issue"
     method = payload.get("method") or "spec-kit"
-    role = payload.get("role") or "author"
+    role = payload.get("role") or ("assignee" if shared_server(root) else "author")
     _call(cli.cmd_contribution_add, root, title, repo, kind, number, None,
           role, "open", "none", "none", method)
     found_repo = objects.find(root, "repo", repo)
@@ -993,6 +1010,10 @@ def create_contribution(root: Path, payload: dict) -> dict:
 
 def save_public_body(root: Path, ref: str, body: str) -> dict:
     """Edit a contribution body. It is public GitHub-cache data, not a private note."""
+    if shared_server(root):
+        raise UiError(
+            "on a shared server, editing a contribution body is read-only. "
+            "Edit specs on the machine that runs builds.")
     if not ref:
         raise UiError("id is required")
     if body is None:
@@ -1024,9 +1045,11 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
         raise UiError(f"repo not found: {repo_id}", 404)
     if shared_server(root):
         locked = {"trigger", "reach", "code_path", "default_branch", "checks",
-                  "checks_isolation", "checks_image", "protected_paths",
-                  "trust_checks", "allow_test_edits", "allow_ci_edits",
-                  "allow_protected", "merge_without_required_checks"}
+                  "checks_isolation", "checks_image", "checks_env",
+                  "protected_paths", "trust_checks", "allow_test_edits",
+                  "allow_ci_edits", "allow_protected", "allow_comment",
+                  "merge_without_required_checks", "merge_without_review",
+                  "auto_publish", "require_tests", "slop_gate", "kind"}
         touched = locked.intersection(payload)
         if touched:
             raise UiError(
@@ -1254,6 +1277,8 @@ def watch_now(root: Path, build: bool = False, publish: bool = False,
 
 def shared_server(root: Path) -> bool:
     """True when this process is the multi-user deployment."""
+    if _SERVER_DEPLOYMENT.get() == "multi":
+        return True
     from ctx import config
     if os.environ.get("STEAD_DEPLOYMENT", "").strip() == "multi":
         return True
@@ -1370,23 +1395,10 @@ def _refuse_shared_remote(root: Path) -> None:
 
 
 def _repo_auto_publish(root: Path, contribution: str) -> bool:
-    """Whether a build of this contribution opens a PR after committing.
-
-    True only when the repo opts in with auto_publish AND its reach ceiling
-    allows publishing (draft-pr, pr, or merge)."""
-    found = objects.find(root, "contribution", contribution)
-    if found is None:
-        return False
-    repo = objects.find(root, "repo", found[1].get("repo") or "")
-    if repo is None:
-        return False
-    _repo_path, repo_meta, _repo_body = repo
-    from ctx import safety
-    if not safety.truthy(repo_meta.get("auto_publish")):
-        return False
-    from ctx.autonomy import effective
-    ceiling = effective(root, repo_meta)["ceiling"]
-    return ceiling in ("draft-pr", "pr", "merge")
+    """Delegate to the shared autonomy helper so CLI and cockpit resolve
+    auto_publish identically."""
+    from ctx.autonomy import repo_auto_publish
+    return repo_auto_publish(root, contribution)
 
 
 def build_task(root: Path, contribution: str, max_minutes: int | None,
@@ -1404,7 +1416,7 @@ def build_task(root: Path, contribution: str, max_minutes: int | None,
         kwargs = {"publish": auto_publish, "merge": False, "progress": progress}
         if max_minutes:
             kwargs["max_minutes"] = max_minutes
-        if max_tokens:
+        if max_tokens is not None:
             kwargs["max_tokens"] = max_tokens
         if max_cost is not None:
             kwargs["max_cost"] = max_cost
@@ -1570,7 +1582,13 @@ def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
 
 def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -> dict:
     """Judge the newest draft for one factory. Local result file only."""
-    from ctx.models import ModelError, judge
+    from ctx.models import ModelError, _factory_dir, _safe_segment, judge
+    try:
+        safe_factory = _safe_segment(factory_name, "factory")
+    except ModelError as exc:
+        raise UiError(str(exc)) from exc
+    if _factory_dir(root, safe_factory) is None:
+        raise UiError(f"unknown factory: {safe_factory}", 404)
     if not db.db_path(root).exists():
         raise UiError("state.db not found — run stead init first", 404)
     conn = db.connect(root)
@@ -1579,13 +1597,13 @@ def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -
         row = conn.execute(
             "SELECT id, output, prompt_version FROM runs "
             "WHERE factory = ? AND output IS NOT NULL AND TRIM(output) != '' "
-            "ORDER BY id DESC LIMIT 1", (factory_name,)).fetchone()
+            "ORDER BY id DESC LIMIT 1", (safe_factory,)).fetchone()
     finally:
         conn.close()
     if row is None:
         raise UiError("no draft to judge. Run the factory with --generate, or record output.")
     try:
-        return judge(root, factory_name, case_id, None,
+        return judge(root, safe_factory, case_id, None,
                      prompt_version=version or row["prompt_version"],
                      output_text=row["output"])
     except ModelError as exc:
@@ -1598,6 +1616,10 @@ def check_evals(root: Path, factory_name: str) -> dict:
 
 
 def promote_prompt(root: Path, factory_name: str, version: str) -> dict:
+    if shared_server(root):
+        raise UiError(
+            "on a shared server, prompt promotion is read-only. Promote prompts "
+            "on the machine that runs builds.")
     _call(cli.cmd_prompt_promote, root, factory_name, version)
     return {"ok": True, "factory": factory_name, "version": version}
 
@@ -1611,8 +1633,9 @@ def import_inbox_upload(root: Path, filename: str, data: bytes) -> dict:
     return {"ok": True, "imported": written}
 
 
-def rebuild_index(root: Path) -> dict:
-    counts = db.init_db(root)
+def rebuild_index(root: Path, *, reset: bool = False) -> dict:
+    factory.seed_builtin_factories(root)
+    counts = db.init_db(root, reset=reset)
     return {"ok": True, **counts}
 
 
@@ -1690,7 +1713,7 @@ def capture(root: Path, title: str, body: str, source: str = "the local cockpit"
 def _call(fn, *args, **kwargs) -> None:
     buf = io.StringIO()
     try:
-        with contextlib.redirect_stdout(buf):
+        with _STDOUT_LOCK, contextlib.redirect_stdout(buf):
             fn(*args, **kwargs)
     except SystemExit as exc:
         raise UiError(str(exc) or "request rejected") from exc
@@ -1890,6 +1913,10 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = set_run_verdict(root, payload.get("id"), payload.get("verdict") or "",
                                      payload.get("output"))
         elif path == "/api/welcome":
+            if shared_server(root):
+                raise UiError(
+                    "on a shared server, welcome setup is read-only. Configure "
+                    "deployment on the host.")
             from ctx.onboard import OnboardError, welcome
             try:
                 result = welcome(root, payload.get("title") or "", payload.get("url"))
@@ -1912,6 +1939,10 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     "token below, then docker compose up --build"
                 )
         elif path == "/api/onboard":
+            if shared_server(root):
+                raise UiError(
+                    "on a shared server, onboarding a local checkout is read-only. "
+                    "Run `stead onboard` on the machine that runs builds.")
             from ctx.onboard import OnboardError, onboard
             try:
                 result = onboard(
@@ -1940,6 +1971,10 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/inbox/delete":
             result = delete_inbox(root, payload.get("name") or "")
         elif path == "/api/improve/accept":
+            if shared_server(root):
+                raise UiError(
+                    "on a shared server, accepting improvements is read-only. "
+                    "Apply improvements on the machine that runs builds.")
             from ctx import writeback
             try:
                 result = writeback.accept_improvement(root, payload.get("name") or "")
@@ -2018,6 +2053,12 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             except ModelError as exc:
                 raise UiError(str(exc)) from exc
         elif path == "/api/model/add":
+            if shared_server(root):
+                raise UiError(
+                    "on a shared server, model profiles are read-only: "
+                    "pointing base_url at another server or changing api_key_env "
+                    "could leak host secrets or hijack scheduled builds. "
+                    "Set them on the machine that runs builds.")
             from ctx.models import ModelError, add_model
             try:
                 result = add_model(
@@ -2026,13 +2067,17 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     name=payload.get("name") or "",
                     base_url=payload.get("base_url") or "",
                     api_key=payload.get("api_key"),
-                    api_key_env=payload.get("api_key_env") or "STEAD_MODEL_API_KEY",
+                    api_key_env=payload.get("api_key_env"),
                     call_timeout=_opt_int(payload, "call_timeout"),
                     context=_opt_int(payload, "context"))
                 result["ok"] = True
             except ModelError as exc:
                 raise UiError(str(exc)) from exc
         elif path == "/api/model/remove":
+            if shared_server(root):
+                raise UiError(
+                    "on a shared server, model profiles are read-only. "
+                    "Edit them on the machine that runs builds.")
             from ctx.models import ModelError, remove_model
             try:
                 result = remove_model(root, payload.get("profile") or "")
@@ -2040,6 +2085,10 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             except ModelError as exc:
                 raise UiError(str(exc)) from exc
         elif path == "/api/model/role":
+            if shared_server(root):
+                raise UiError(
+                    "on a shared server, model role bindings are read-only. "
+                    "Edit them on the machine that runs builds.")
             from ctx.models import ModelError, set_role
             try:
                 result = set_role(root, payload.get("role") or "",
@@ -2054,7 +2103,12 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     token = rotate_token(root)
                     result = {"ok": True, "access_token": token}
                 else:
-                    result = choose(root, payload.get("deployment") or "single")
+                    target_mode = payload.get("deployment") or "single"
+                    if shared_server(root) and target_mode != "multi":
+                        raise UiError(
+                            "on a shared server, deployment mode cannot be switched "
+                            "to single-user from the cockpit.")
+                    result = choose(root, target_mode)
                     result["ok"] = True
             except ConfigError as exc:
                 raise UiError(str(exc)) from exc
@@ -2107,6 +2161,10 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                                 _opt_float(payload, "max_cost"),
                                 _opt_int(payload, "max_steps"), tasks)
         elif path == "/api/build/lock/remove":
+            if shared_server(root):
+                raise UiError(
+                    "on a shared server, build locks are read-only. "
+                    "Manage locks on the machine that runs builds.")
             result = clear_build_lock(root, payload.get("contribution") or "",
                                       force=bool(payload.get("force")))
         elif path == "/api/eval/judge":
@@ -2120,14 +2178,18 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = promote_prompt(root, payload.get("factory") or "",
                                     payload.get("version") or "")
         elif path == "/api/init":
-            result = rebuild_index(root)
+            result = rebuild_index(root, reset=bool(payload.get("reset")))
         elif path == "/api/hook":
             result = hook_new(root) if payload.get("create") else hook_view(root)
         elif path == "/api/schedule":
             interval = payload.get("interval") or None
-            watch = bool(payload.get("watch"))
+            watch = bool(payload.get("watch")) or bool(interval)
             merge = bool(payload.get("merge"))
             if payload.get("install"):
+                if shared_server(root):
+                    raise UiError(
+                        "on a shared server, installing scheduled host jobs is "
+                        "read-only. Install schedules on the machine that runs builds.")
                 result = schedule_install(root, payload.get("project") or None,
                                           interval=interval, watch=watch, merge=merge)
             else:
@@ -2148,8 +2210,12 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                                   str(payload.get("correct")).lower() == "true",
                                   rule=payload.get("rule") or "")
         elif path == "/api/factory/stop":
+            if shared_server(root):
+                raise UiError("on a shared server, the build stop switch is read-only.")
             result = set_stopped(root, True)
         elif path == "/api/factory/start":
+            if shared_server(root):
+                raise UiError("on a shared server, the build stop switch is read-only.")
             result = set_stopped(root, False)
         elif path == "/api/factory/publish":
             _require_confirm(payload, "publish")
@@ -2181,7 +2247,13 @@ class CockpitHandler(BaseHTTPRequestHandler):
     def _host_ok(self) -> bool:
         if getattr(self.server, "deployment", "single") == "multi":
             return True
-        host = (self.headers.get("Host") or "").split(":")[0].strip("[]")
+        raw_host = (self.headers.get("Host") or "").strip()
+        if not raw_host:
+            return False
+        try:
+            host = urlparse(f"//{raw_host}").hostname or ""
+        except ValueError:
+            return False
         return host in LOOPBACK
 
     def _cookie(self, wanted: str) -> str:
@@ -2202,8 +2274,30 @@ class CockpitHandler(BaseHTTPRequestHandler):
         token = self._cookie("stead_session")
         if not token:
             return ""
+        now = time.monotonic()
         with self.server.sessions_lock:
-            return self.server.sessions.get(token, "")
+            entry = self.server.sessions.get(token)
+            if not entry:
+                return ""
+            if isinstance(entry, tuple):
+                actor, expires = entry
+                if now > expires:
+                    self.server.sessions.pop(token, None)
+                    return ""
+                return actor
+            return str(entry)
+
+    def _read_body(self, limit: int = MAX_BODY) -> bytes:
+        raw_len = (self.headers.get("Content-Length") or "0").strip()
+        try:
+            length = int(raw_len)
+        except ValueError as exc:
+            raise UiError("invalid Content-Length", 400) from exc
+        if length < 0:
+            raise UiError("invalid Content-Length", 400)
+        if length > limit:
+            raise UiError("request is too large", 413)
+        return self.rfile.read(length) if length else b""
 
     def _access_ok(self) -> bool:
         if getattr(self.server, "deployment", "single") != "multi":
@@ -2239,10 +2333,7 @@ class CockpitHandler(BaseHTTPRequestHandler):
         return {key: values[0] for key, values in raw.items() if values}
 
     def _read_json(self) -> dict:
-        length = int(self.headers.get("Content-Length") or "0")
-        if length > MAX_BODY:
-            raise UiError("request is too large")
-        raw = self.rfile.read(length) if length else b""
+        raw = self._read_body(MAX_BODY)
         if not raw:
             return {}
         try:
@@ -2278,6 +2369,7 @@ class CockpitHandler(BaseHTTPRequestHandler):
             return
         from ctx.actors import bind, unbind
         bound = bind(self._session_actor())
+        dep_token = _SERVER_DEPLOYMENT.set(getattr(self.server, "deployment", "single"))
         try:
             token_ok = secrets.compare_digest(
                 self.headers.get("X-Ctx-Token", ""), self.server.token)
@@ -2292,11 +2384,38 @@ class CockpitHandler(BaseHTTPRequestHandler):
                 port=self.server.server_address[1],
                 session_actor=self._session_actor(),
                 tasks=getattr(self.server, "tasks", None))
+            if status == 200 and method == "POST":
+                if parsed.path == "/api/settings" and payload and payload.get("rotate"):
+                    try:
+                        rotated = json.loads(body.decode("utf-8")).get("access_token")
+                        if rotated:
+                            self.server.access_token = rotated
+                    except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
+                        pass  # token rotation response already succeeded; ignore parse noise
+                elif parsed.path == "/api/account/reset" and payload and payload.get("name"):
+                    self._revoke_account_sessions(str(payload.get("name") or ""))
             if parsed.path == "/" and status == 200:
                 body = body.replace(b"__CTX_TOKEN__", self.server.token.encode("ascii"), 1)
             self._send(status, body, content_type)
         finally:
+            _SERVER_DEPLOYMENT.reset(dep_token)
             unbind(bound)
+
+    def _revoke_account_sessions(self, name: str) -> None:
+        from ctx.accounts import AccountError, public_list
+        wanted = name.strip().lower()
+        try:
+            actor = next((a["actor"] for a in public_list(self.server.root)
+                          if a.get("name") == wanted), "")
+        except AccountError:
+            actor = ""
+        if not actor:
+            return
+        with self.server.sessions_lock:
+            stale = [tok for tok, entry in self.server.sessions.items()
+                     if (entry[0] if isinstance(entry, tuple) else entry) == actor]
+            for tok in stale:
+                self.server.sessions.pop(tok, None)
 
     def _import_upload(self) -> None:
         """Accept one .eml/.ics/.md/.txt file and put it in the inbox."""
@@ -2304,11 +2423,11 @@ class CockpitHandler(BaseHTTPRequestHandler):
                 self.headers.get("X-Ctx-Token", ""), self.server.token):
             self._reject(403, "missing or invalid token")
             return
-        length = int(self.headers.get("Content-Length") or "0")
-        if length > MAX_BODY:
-            self._reject(413, "file is too large")
+        try:
+            raw = self._read_body(MAX_BODY)
+        except UiError as exc:
+            self._reject(exc.status, str(exc))
             return
-        raw = self.rfile.read(length) if length else b""
         ctype = self.headers.get("Content-Type", "")
         if "multipart/form-data" not in ctype:
             self._reject(400, "expected a file upload")
@@ -2341,14 +2460,20 @@ class CockpitHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Set-Cookie",
                          "stead_session=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0")
+        self.send_header("Set-Cookie",
+                         "stead_access=; HttpOnly; SameSite=Lax; Path=/; Max-Age=0")
         self.send_header("Connection", "close")
         self.end_headers()
         self.wfile.write(body)
 
     def _capture_hook(self) -> None:
         """Write one inbox note. Does not run a factory or edit context/."""
-        from ctx.config import hook_token
-        expected = hook_token(self.server.root)
+        from ctx.config import ConfigError, hook_token
+        try:
+            expected = hook_token(self.server.root)
+        except ConfigError as exc:
+            self._reject(500, str(exc))
+            return
         presented = self.headers.get("X-Stead-Hook", "")
         if not expected:
             self._reject(404, "webhook is off")
@@ -2367,8 +2492,11 @@ class CockpitHandler(BaseHTTPRequestHandler):
                    "application/json; charset=utf-8")
 
     def _open_session(self) -> None:
-        length = int(self.headers.get("Content-Length") or "0")
-        raw = self.rfile.read(length) if length else b""
+        try:
+            raw = self._read_body(16 * 1024)
+        except UiError as exc:
+            self._reject(exc.status, str(exc))
+            return
         ctype = self.headers.get("Content-Type", "")
         fields = self._session_fields(raw, ctype)
         if self._people() > 0:
@@ -2378,8 +2506,17 @@ class CockpitHandler(BaseHTTPRequestHandler):
                 self._reject(401, "name or password is wrong")
                 return
             session = secrets.token_urlsafe(24)
+            now = time.monotonic()
             with self.server.sessions_lock:
-                self.server.sessions[session] = person["actor"]
+                # Prune expired sessions and cap total sessions in memory.
+                expired = [k for k, v in self.server.sessions.items()
+                           if isinstance(v, tuple) and now > v[1]]
+                for k in expired:
+                    self.server.sessions.pop(k, None)
+                if len(self.server.sessions) >= MAX_SESSIONS:
+                    oldest = next(iter(self.server.sessions))
+                    self.server.sessions.pop(oldest, None)
+                self.server.sessions[session] = (person["actor"], now + SESSION_TTL)
             cookie = f"stead_session={session}; HttpOnly; SameSite=Lax; Path=/"
             self._send_session(cookie, ctype)
             return

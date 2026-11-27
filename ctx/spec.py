@@ -678,7 +678,20 @@ def plan_citation_warnings(plan: str, code: Path) -> list[str]:
             "source lives (quote the code and cite file:line where you can)")
         return warnings
     for snippet, file_rel, line in _citations(_data_source_section(plan)):
-        target = code / file_rel.replace("\\", "/")
+        raw_rel = file_rel.replace("\\", "/")
+        if raw_rel.startswith("/") or re.match(r"^[A-Za-z]:", raw_rel):
+            warnings.append(f"the plan cites `{file_rel}`, which is not in the repo")
+            continue
+        target = code / raw_rel
+        try:
+            rel_resolved = target.resolve().relative_to(code.resolve()).as_posix()
+        except ValueError:
+            warnings.append(f"the plan cites `{file_rel}`, which is not in the repo")
+            continue
+        from ctx import safety
+        if safety.secret_by(raw_rel) or safety.secret_by(rel_resolved):
+            warnings.append(f"the plan cites `{file_rel}`, which is a protected secret path")
+            continue
         if not target.is_file():
             warnings.append(f"the plan cites `{file_rel}`, which is not in the repo")
             continue
@@ -844,6 +857,7 @@ _DRAFT_IGNORE_DIRS = {".git", "node_modules", ".venv", "venv", "__pycache__",
 
 def _draft_read(code: Path, rel: str, start=None, end=None) -> str:
     """Read one file (or a line range) for the drafter. Bounded."""
+    from ctx import safety
     path = code / rel
     try:
         rel_resolved = path.resolve().relative_to(code.resolve()).as_posix()
@@ -851,51 +865,68 @@ def _draft_read(code: Path, rel: str, start=None, end=None) -> str:
         return f"read: no such file {rel}"
     if any(part in _DRAFT_IGNORE_DIRS or part.startswith(".") for part in rel_resolved.split("/")):
         return f"read: refused {rel}"
+    if safety.secret_by(rel) or safety.secret_by(rel_resolved):
+        return f"read: refused {rel}"
     if not path.is_file():
         return f"read: no such file {rel}"
     try:
         text = path.read_text(encoding="utf-8", errors="replace")
     except OSError as exc:
         return f"read: {exc}"
+    lines = text.splitlines()
+    if start is not None or end is not None:
+        try:
+            first = max(1, int(start)) if start is not None else 1
+            last = min(len(lines), int(end)) if end is not None else len(lines)
+        except (TypeError, ValueError):
+            return f"read {rel}: start and end must be integers"
+        shown = "\n".join(lines[first - 1:last])
+        if len(shown) > _DRAFT_MAX_READ_CHARS:
+            return (f"read {rel} lines {first}-{last}: range is {len(shown)} chars; "
+                    "read a smaller line range")
+        return f"read {rel} lines {first}-{last} of {len(lines)}:\n{shown}"
     if len(text) > _DRAFT_MAX_READ_CHARS:
         return (f"read {rel}: the file is {len(text)} chars; read a line range "
                 "instead (start/end)")
-    lines = text.splitlines()
-    if start is not None or end is not None:
-        first = max(1, int(start)) if start else 1
-        last = min(len(lines), int(end)) if end else len(lines)
-        shown = lines[first - 1:last]
-        return f"read {rel} lines {first}-{last} of {len(lines)}:\n" + "\n".join(shown)
     return f"read {rel}:\n{text}"
 
 
 def _draft_search(code: Path, query: str) -> str:
+    from ctx import safety
     needle = (query or "").lower()
     if len(needle) < 2:
         return "search: query must be at least two characters"
+    root_resolved = code.resolve()
     hits: list[str] = []
+    scanned = 0
     for path in sorted(code.rglob("*")):
-        if len(hits) >= 40:
+        if len(hits) >= 40 or scanned >= 2000:
             break
         if not path.is_file():
             continue
         try:
             rel = path.relative_to(code)
+            rel_resolved = path.resolve().relative_to(root_resolved)
         except ValueError:
             continue
-        if any(part in _DRAFT_IGNORE_DIRS or part.startswith(".")
-               for part in rel.parts):
+        if (any(part in _DRAFT_IGNORE_DIRS or part.startswith(".") for part in rel.parts)
+                or any(part in _DRAFT_IGNORE_DIRS or part.startswith(".") for part in rel_resolved.parts)):
+            continue
+        if safety.secret_by(rel.as_posix()) or safety.secret_by(rel_resolved.as_posix()):
             continue
         try:
+            if path.stat().st_size > 512 * 1024:
+                continue
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             continue
+        scanned += 1
         for number, line in enumerate(text.splitlines(), 1):
             if needle in line.lower():
                 hits.append(f"{rel.as_posix()}:{number}: {line[:160]}")
                 if len(hits) >= 40:
                     break
-    return ("search {query!r}:\n" + "\n".join(hits)) if hits else f"search {query!r}: no matches"
+    return (f"search {query!r}:\n" + "\n".join(hits)) if hits else f"search {query!r}: no matches"
 
 
 def draft_research_prompt(title: str, body: str, tree: str, symbols: str,
@@ -951,7 +982,23 @@ def _draft_with_research(code, tree: str, symbols: str, title: str, body: str,
         return _clean_draft(responder(prompt))
 
     history: list[str] = []
-    prompt = draft_research_prompt(title, body, tree, symbols, facts)
+    base_prompt = draft_research_prompt(title, body, tree, symbols, facts)
+    prompt = base_prompt
+
+    def _next_prompt() -> str:
+        # Preserve the original issue/instructions on every stateless turn;
+        # keep the most recent research outputs within a safe char budget.
+        budget = 80_000
+        kept: list[str] = []
+        used = 0
+        for item in reversed(history):
+            if used + len(item) > budget and kept:
+                break
+            kept.append(item)
+            used += len(item)
+        kept.reverse()
+        return base_prompt + "\n\n" + draft_research_nudge("\n\n".join(kept))
+
     for _turn in range(_DRAFT_RESEARCH_TURNS):
         reply = _clean_draft(responder(prompt))
         action = _parse_action(reply)
@@ -963,29 +1010,29 @@ def _draft_with_research(code, tree: str, symbols: str, title: str, body: str,
                 return reply
             history.append("(your last reply was not one JSON action; reply with "
                            "a single {\"action\":...} object)")
-            prompt = draft_research_nudge("\n\n".join(history))
+            prompt = _next_prompt()
             continue
         kind = action.get("action")
         if kind == "read":
             rel = str(action.get("path") or "").strip()
             result = _draft_read(code, rel, action.get("start"), action.get("end"))
             history.append(result)
-            prompt = draft_research_nudge("\n\n".join(history))
+            prompt = _next_prompt()
             continue
         if kind == "search":
             query = str(action.get("query") or "").strip()
             history.append(_draft_search(code, query))
-            prompt = draft_research_nudge("\n\n".join(history))
+            prompt = _next_prompt()
             continue
         if kind == "finish":
             spec = str(action.get("spec") or "").strip()
             if spec:
                 return spec
             history.append("(finish needs a non-empty \"spec\" field)")
-            prompt = draft_research_nudge("\n\n".join(history))
+            prompt = _next_prompt()
             continue
         history.append(f"(unknown action {kind!r}; use read, search, or finish)")
-        prompt = draft_research_nudge("\n\n".join(history))
+        prompt = _next_prompt()
     # Research turns exhausted: a distinct, forced write turn. Ask for the spec
     # and only the spec — not another action. If the model still returns an
     # action or an empty reply, the caller will report the failure.

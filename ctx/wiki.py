@@ -134,9 +134,13 @@ def _sort_tree(tree: list[dict], saved: dict) -> list[dict]:
         if not children or not saved_ids:
             continue
         id_rank = {value: index for index, value in enumerate(saved_ids)}
-        node["children"] = sorted(children,
-                                  key=lambda child: id_rank.get(
-                                      child["slug"].split("/", 1)[1], len(saved_ids)))
+        node["children"] = sorted(
+            children,
+            key=lambda child: id_rank.get(
+                child["slug"],
+                id_rank.get(child["slug"].split("/", 1)[1], len(saved_ids)),
+            ),
+        )
     return tree
 
 

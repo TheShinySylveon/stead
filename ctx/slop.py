@@ -45,7 +45,7 @@ _UNIVERSAL: list[_Rule] = [
     # a block brace — is dead code left behind. Deliberately narrow: a prose
     # doc-comment is full of `:`, `,`, `(`, `)`, which must NOT read as code.
     ("commented-out-code",
-     _line(r"(?:^\s*(?:#|//|;).*[=;{}][^\n]*$\n?){3,}"),
+     _line(r"(?:^[ \t]*(?:#|//|;)[^\n]*[=;{}][^\n]*$(?:\r?\n|$)){3,}"),
      "a block of commented-out code; delete it instead of leaving it", True),
     # More than five TODO/FIXME/HACK markers in one file is debt accumulation.
     ("todo-accumulation",
@@ -126,11 +126,17 @@ def known_extensions() -> frozenset[str]:
     return frozenset(_LANG)
 
 
-def _find(text: str, rules: list[_Rule]) -> list[dict]:
+_MIN_COUNTS = {"todo-accumulation": 6}
+_DOC_EXTS = {".md", ".markdown", ".mdx", ".txt", ".rst"}
+
+
+def _find(text: str, rules: list[_Rule], *, ext: str = "") -> list[dict]:
     findings: list[dict] = []
     for name, pattern, message, hard in rules:
+        if name == "commented-out-code" and ext in _DOC_EXTS:
+            continue
         count = len(pattern.findall(text))
-        if count:
+        if count >= _MIN_COUNTS.get(name, 1):
             findings.append({"rule": name, "message": message,
                              "count": count, "hard": hard})
     return findings
@@ -144,7 +150,7 @@ def slop_flags(rel_path: str, text: str) -> list[dict]:
     """
     ext = Path(rel_path).suffix.lower()
     rules = list(_UNIVERSAL) + _LANG.get(ext, [])
-    return _find(text, rules)
+    return _find(text, rules, ext=ext)
 
 
 def hard_flags(rel_path: str, text: str) -> list[dict]:
