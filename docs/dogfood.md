@@ -700,3 +700,52 @@ and binding `draft` to it settled the question. A fourth fresh issue
 the gates catch fabrication as a backstop, and the model traces correctly in the
 first place. "draft: human-mostly" is now the *upper bound*, and the remaining
 human step is a fast review, not a rewrite.
+
+### Full loop with a model draft (2026-11-27): the number that was missing
+
+The one unmeasured step was the *whole* loop on a fresh, model-drafted issue —
+draft → approve → build → PR → merge — not a hand-written spec. It ran on #111
+(`contribution list --count`), re-drafted fresh by `qwen3.8-flash`
+(`spec draft --redraft`), harness `cf2d665` (which includes the comment-skip fix
+#178). The source issue was enabled (`stead-build` tag) and the corrected spec
+approved by hash (`fc297ba5…`).
+
+**Draft — faithful data source, one fabricated flag.** The re-draft traced the
+real source correctly (`cmd_contribution_list` → the `contributions` table via
+`db.connect`, the full schema, "no new tables or config keys"). But it **invented
+a `--limit` CLI flag** and an acceptance criterion about it; `contribution list`
+has no `--limit`. The gate stack verifies the *data model* (paths, symbols,
+tables, config, citations) — **not CLI-flag existence** — so the draft passed
+every gate. A fast human review caught it and removed that one criterion (plus a
+prose fix). That is a **spot-check edit, not a rewrite**. Note this nuances the
+"zero fabrication" above: Qwen's *data-model* tracing is faithful, but a fresh
+draft can still invent a flag — the earlier #111 draft was clean, this re-draft
+was not. The drafter is non-deterministic across runs.
+
+**Build — autonomous, first attempt.** Arete 27B: **16 steps, ~20 min
+(1215 s), 0 repair rounds, 0 human commits.** It reused the filter clauses,
+placed the count branch before the empty-result early return, and wrote 5 tests.
+The fail-before gate held (re-verified independently: reverting `cli.py` makes
+the new tests fail). Checks passed on the first attempt.
+
+**PR + comment + merge.** Published as **#179**; CI green on the full matrix.
+The comment step **skipped cleanly** in the real pipeline — #111 is local-only
+(the number is a PR upstream), so the #178 fix logged
+`issue comment skipped: … the spec is local-only` and the record carries
+`comment_skipped`. Hand-checked against the rubric: every criterion verified on
+real data (counts match an independent SQL query — 62 total, 45 issues, 34 open,
+14 merged PRs), fail-before/pass-after, CI green → `correct: true`. Merged at the
+`pr` ceiling (human gate, delegated to the agent; **no human edits**), reconciled
+by `sync github` to `outcome: merged`, `human_edits: false`.
+
+**The measured split: draft = fast human review, build = human-rarely.** The
+loop now completes end to end on a model draft. The human step at draft shrank
+from *rewrite the data model* (DeepSeek) to *spot-check and drop one fabricated
+criterion* (Qwen) — real progress, but **not zero**. "draft: human-mostly" is
+properly read as "draft: a fast review still catches residual fabrication."
+
+**Gate gap recorded (not built):** the stack does not verify that a CLI flag a
+plan names actually exists. A flag-existence check is the natural next rule, in
+the same family as the symbol/data gates. Logged here so the next bundle and
+evals can cite it; per the model-selection finding, it is a backstop, not the
+primary fix.
