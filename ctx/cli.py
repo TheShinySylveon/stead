@@ -228,7 +228,7 @@ def cmd_repo_add(root: Path, title: str, url: str | None = None, kind: str = "os
     return 0
 
 
-def cmd_repo_list(root: Path, kind: str | None = None) -> int:
+def cmd_repo_list(root: Path, kind: str | None = None, json: bool = False) -> int:
     db.require_db(root)
     query = "SELECT id, kind, status, title FROM repos"
     params: list = []
@@ -241,6 +241,12 @@ def cmd_repo_list(root: Path, kind: str | None = None) -> int:
         rows = conn.execute(query, params).fetchall()
     finally:
         conn.close()
+    if json:
+        import json as _json
+        print(_json.dumps([
+            {"id": r["id"], "kind": r["kind"], "status": r["status"], "title": r["title"]}
+            for r in rows], indent=2))
+        return 0
     if not rows:
         print("no repos match")
         return 0
@@ -727,6 +733,7 @@ def build_parser() -> argparse.ArgumentParser:
     ra.add_argument("--notes")
     rlist = repo.add_parser("list", help="list repos")
     rlist.add_argument("--kind", choices=REPO_KINDS)
+    rlist.add_argument("--json", action="store_true", help="machine-readable list")
     rs = repo.add_parser("set", help="set this repo's factory trigger and ceiling")
     rs.add_argument("id")
     rs.add_argument("--trigger", choices=("on-demand", "watch"))
@@ -1098,7 +1105,7 @@ def main(argv: list[str] | None = None) -> int:
             return cmd_repo_add(root, args.title, args.url, args.kind, args.status,
                                 args.default_branch, args.contributing, args.notes)
         if args.sub == "list":
-            return cmd_repo_list(root, args.kind)
+            return cmd_repo_list(root, args.kind, json=args.json)
         if args.sub == "set":
             from ctx.autonomy import AutonomyError, set_repo
             try:
