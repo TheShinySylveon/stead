@@ -49,7 +49,8 @@ class DoctorSteadBuildTests(unittest.TestCase):
                            for w in report["warnings"]))
 
     def test_approved_is_silent(self) -> None:
-        good = _sha("approved body\n")
+        from ctx import spec as spec_mod
+        good = spec_mod.body_hash("approved body\n")
         self._stead_build("3", good)
         report = doctor.run(self.root)
         self.assertFalse(any("spec_sha" in w["message"] for w in report["warnings"]))
