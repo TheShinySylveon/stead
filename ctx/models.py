@@ -464,12 +464,16 @@ def check_eval_files(root: Path, factory_name: str | None = None) -> dict:
     return {"ok": not problems, "cases": len(paths), "problems": problems}
 
 
-def run_eval_checks(root: Path, factory_name: str | None = None) -> dict:
+def run_eval_checks(root: Path, factory_name: str | None = None,
+                    spec_gate_checker=None) -> dict:
     """Run the structural and deterministic checks shared by CLI and cockpit."""
-    from ctx import spec
     checked = check_eval_files(root, factory_name)
     fixtures = Path(__file__).parent.parent / "tests" / "fixtures"
-    gates = spec.check_gate_cases(fixtures / "spec-gates.json", fixtures / "repos")
+    checker = spec_gate_checker
+    if checker is None:
+        spec_module = __import__("ctx.spec", fromlist=["check_gate_cases"])
+        checker = spec_module.check_gate_cases
+    gates = checker(fixtures / "spec-gates.json", fixtures / "repos")
     return {"ok": checked["ok"] and gates["ok"], "cases": checked["cases"],
             "problems": checked["problems"] + gates["problems"], "spec_gates": gates}
 
