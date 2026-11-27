@@ -464,8 +464,8 @@ def run_checks(code: Path, command: str, repo_meta: dict, *,
     try:
         done = subprocess.run(
             argv, cwd=code, shell=(isolation == "host"),
-            capture_output=True, text=True, timeout=max(30, timeout),
-            env=environment(repo_meta),
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            timeout=max(30, timeout), env=environment(repo_meta),
         )
     except subprocess.TimeoutExpired as exc:
         if name:
