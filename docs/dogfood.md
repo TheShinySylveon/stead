@@ -601,3 +601,29 @@ from "draft + build both wrong" to "draft only."
 
 **Set C + hold-out are now complete: 3/3 Set C + 1/1 hold-out, all correct.**
 (Set C #1 `task list --sort`, #103, was scored correct earlier.)
+
+### Fresh-draft test (2026-11-27): the draft step, measured unattended
+
+To answer "did the draft hardening actually help?", a new, non-frozen issue
+(`task list --json`, #108) was drafted **by the model, no hand-holding**, on the
+strong drafter (DeepSeek) with the full gate stack live:
+
+- **Attempt 1:** failed — the draft omitted the `## Acceptance criteria`
+  section (the same non-determinism seen all along).
+- **Attempt 2:** **correct.** The drafter traced the real `cmd_task_list`
+  (`SELECT id, status, project, title FROM tasks` via `db.connect`) — it did
+  **not** invent `config.load()`, `public_list()`, or a fake table. The spec
+  passed every gate (readiness, path, symbol, data, citation) with zero
+  warnings.
+
+**Two findings, recorded honestly:**
+
+1. The drafter is **better** — on the attempt that succeeded it traced the real
+   source, which is the exact thing it failed at five times before. But it is
+   still **non-deterministic**: 1 of 2 attempts was malformed. The draft step is
+   still human-gated; the honest number is now "draft: human-mostly, build:
+   human-rarely" — closer, not there.
+2. The test surfaced a real bug in the new citation gate: it read the *first*
+   backticked snippet (often the label, e.g. `task list`) instead of the quoted
+   *code* before the `(file:line)`, so it false-flagged a correct citation.
+   Fixed: the gate now verifies the snippet immediately before the location.

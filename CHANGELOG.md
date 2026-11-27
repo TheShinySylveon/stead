@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The citation gate now reads the quoted code, not a backticked label.** A
+  `## Data source` line can backtick its label too (`- `task list` dispatch:
+  `return cmd_task_list(...)` (ctx/cli.py:1100)`); the gate verifies the snippet
+  immediately before the `(file:line)`, so a correct citation is no longer
+  false-flagged. Found by the first unattended `spec draft` run.
 - **Cite-and-verify drafting.** The draft now must end with a `## Data source`
   section where each data-source claim quotes the exact code and cites its
   location (`- repos: `SELECT ... FROM repos` (ctx/cli.py:233)`). A new
