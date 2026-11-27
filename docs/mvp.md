@@ -1,8 +1,8 @@
 # MVP: a repo, end to end
 
-**Status: not yet met.** This is the focus filter. If a task is not part of this
-loop or a blocker for it, it waits — no new features or QoL until the MVP bar is
-cleared.
+**Status: met in practice — the full loop has run on real issues and scored
+correct; the draft step is now model-drafted (`qwen3.8-flash`) with a fast human
+review.** See [Dogfood](dogfood.md) for the scores.
 
 ## The MVP in one sentence
 
@@ -58,12 +58,16 @@ milestone's own measurement passed). Only the second is "done".
 
 | Milestone | Code | Acceptance |
 |---|---|---|
-| M0 foundations | landed | not run |
-| M1 harness | landed | Set A specs 1, 2, and 3 built correctly on a 27B model and merged (#30, #20, #34; tuning, not scored); baseline + Set B first-attempt score **not run** |
-| M5 spec draft | landed | exercised on #25 and #27 (tuning); not run |
-| M3 intake | landed | exercised: `sync github` picked up #25 and #27; not run |
-| M2 comment | landed | exercised: Stead commented #30 on #25 and #34 on #27; not run |
-| M4, M6, M7 | procedure written | not run |
+| M0 foundations | landed | run |
+| M1 harness | landed | Set A (tuning) + Set B scored (2/3 hand-finished, 1/3 autonomous) + baseline |
+| M5 spec draft | landed | exercised; the drafter is now `qwen3.8-flash` (traces faithfully); gates + cite-and-verify landed |
+| M3 intake | landed | exercised on real issues |
+| M2 comment | landed | exercised (#30 on #25, #34 on #27, #166/#167/#169) |
+| M4, M6, M7 | procedure written | **Set C 3/3 + hold-out 1/1, all correct** (built autonomously on the 27B, merged with no human edits) |
+
+The frozen scoring is complete: [Dogfood](dogfood.md) records every verdict. The
+draft step was the one human gate, and it is now model-drafted by
+`qwen3.8-flash` (fast + faithful) with a fast review, not a rewrite.
 
 The code milestones above carry the review fixes for PRs #4–#8. Acceptance needs
 real model runs and a green PR at the `pr` ceiling, per [Dogfood](dogfood.md).
@@ -103,28 +107,21 @@ milestone's own measurement on the frozen sets.
 | Merge gates (green + required checks, no `--admin`) | working (human merges at MVP) |
 | `stead doctor`, cockpit local read/build | working |
 
-## Blockers (the only work to do)
+## Blockers — cleared
 
-The code for the full loop is landed (see
-[Milestone progress](#milestone-progress)). What remains is operational, not
-more code:
+The three operational blockers are now done:
 
-1. **Build correctness on a real model.** Run the baseline and score Set B on a
-   single first attempt — a build must meet the spec or fail honestly. See
-   [Dogfood](dogfood.md). Not started: three Set A (tuning) specs built
-   correctly on Arete 27B and merged — `metrics --since` (#20), `stead context
-   search` (#30), and `inbox list` (#34). The baseline and Set B are not run.
-   A build takes about 30 minutes on that model.
-2. **Reach a green PR at `pr`.** `build --publish --wait` with CI as a required
-   check, then a human review and merge. **Met in practice (#20, #30):**
-   green CI on the required checks, a human merge, and the merge reconciled
-   into the record with no human edits; #30 also commented on its issue. Not
-   yet exercised: publishing from `build --publish --wait` (both used `factory
-   publish` after the build). The M7 run covers it.
-3. **Run the sign-off (M7).** The monitor → draft → approve → build → PR →
-   comment → merge loop on the frozen Set C + hold-out. Not run. Every step
-   has now run once on a real (tuning) issue, #25 → #30, so the sign-off
-   measures the loop rather than discovering it.
+1. **Build correctness on a real model** — Set B scored (2/3 hand-finished,
+   1/3 autonomous on the 27B), and Set C 3/3 + hold-out 1/1 all correct.
+2. **Reach a green PR at `pr`** — `build --publish` opened green PRs (#166,
+   #167, #169) that CI passed and a human merged with no edits.
+3. **Run the sign-off (M7)** — the frozen Set C + hold-out ran end to end;
+   every spec scored correct (see [Dogfood](dogfood.md)).
+
+The one remaining human gate is the **draft step**, now model-drafted by
+`qwen3.8-flash` (fast + faithful) with a fast review — and the gate stack
+(path → symbol → data-model → citation, plus the completion-retry) catches
+fabrication as a backstop.
 
 ## Deferred until MVP (recorded, not lost)
 
