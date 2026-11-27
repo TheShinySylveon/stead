@@ -1587,7 +1587,13 @@ def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -
         safe_factory = _safe_segment(factory_name, "factory")
     except ModelError as exc:
         raise UiError(str(exc)) from exc
-    if not (root / "factories" / safe_factory).is_dir():
+    factories_root = (root / "factories").resolve()
+    factory_path = (factories_root / safe_factory).resolve()
+    try:
+        factory_path.relative_to(factories_root)
+    except ValueError:
+        raise UiError(f"unknown factory: {safe_factory}", 404)
+    if not factory_path.is_dir():
         raise UiError(f"unknown factory: {safe_factory}", 404)
     if not db.db_path(root).exists():
         raise UiError("state.db not found — run stead init first", 404)

@@ -637,11 +637,12 @@ def _production_version(root: Path, factory_name: str) -> str:
         if row:
             return row["version"]
     factories_root = (root / "factories").resolve()
-    prompts_dir = (factories_root / factory_name / "prompts").resolve()
+    factory_dir = (factories_root / factory_name).resolve()
     try:
-        prompts_dir.relative_to(factories_root)
+        factory_dir.relative_to(factories_root)
     except ValueError as exc:
         raise ModelError(f"invalid factory: {factory_name!r}") from exc
+    prompts_dir = (factory_dir / "prompts").resolve()
     prompts = [p for p in prompts_dir.glob("v*.md")
                if p.stem[1:].isdigit()]
     prompts.sort(key=lambda p: int(p.stem[1:]))
