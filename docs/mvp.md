@@ -133,15 +133,26 @@ data-model fabrication as a backstop; CLI-flag existence is the recorded gap.
 
 The definition of done is satisfied and the full loop is measured end to end.
 These items were deferred during the MVP and are now the active post-MVP work;
-each is filed as an issue so it is tracked, not lost. The headline three:
-**shared-server hardening**, **eval redesign**, and **filing issues upstream**.
+each is filed as an issue so it is tracked, not lost. This is the *product*
+roadmap; the *engineering* autonomy roadmap is `PLAN.md` §7, now annotated with
+what already landed during the MVP (`edit`, budgets, lock recovery, and
+`address`).
 
-- **Shared-server hardening** (roles, permissions, rate limit, TLS) — issue #64,
-  [Trust](trust.md#shared-server-every-account-is-an-admin).
-- **Eval redesign** (pin judge model, multiple runs, compare vs previous version)
-  — issue #56, [Vision](vision.md), [Factories](factories.md).
-- **Filing issues upstream** (Stead files issues, not just comments) — issue #63,
-  [Vision](vision.md).
+The headline three:
+
+1. **Shared-server hardening** (roles, permissions, rate limit, TLS) — issue #64,
+   [Trust](trust.md#shared-server-every-account-is-an-admin). Every account is an
+   admin today; this is the gate before anyone else is invited onto a shared
+   server.
+2. **Eval redesign** (pin judge model, multiple runs, compare vs previous version)
+   — issue #56, [Vision](vision.md), [Factories](factories.md). Makes the draft
+   gates and prompt promotion trustworthy enough to lean on.
+3. **Filing issues upstream** (Stead files issues, not just comments) — issue #63,
+   [Vision](vision.md). Closes the intake side of the loop, which a human still
+   drives today.
+
+Also filed, behind those:
+
 - Per-spec acceptance check in CI (the fail-before/pass-after gate already runs
   locally) — issue #52, [Trust](trust.md#empty-work-ci-and-acceptance-checks).
 - Pluggable executor (headless agent CLI inside a sandbox) — issue #54;
@@ -149,8 +160,11 @@ each is filed as an issue so it is tracked, not lost. The headline three:
   [Vision](vision.md).
 - `.stead/` publish, global search/timeline, kanban changes — issue #65,
   [Vision](vision.md), `PLAN.md` §7.
-- Draft gate gap: verify a CLI flag a plan names actually exists (recorded in
-  [Dogfood](dogfood.md)); a backstop, not the primary fix.
+
+Small and near-term, from the full-loop measurement: a draft gate that verifies a
+CLI flag a plan names actually exists (recorded in [Dogfood](dogfood.md)). It is a
+backstop in the same family as the symbol/data gates — not the primary fix, which
+is model selection for the draft role.
 
 ## Rule
 
