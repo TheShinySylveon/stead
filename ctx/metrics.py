@@ -131,6 +131,7 @@ def collect(root: Path, repo: str | None = None, since: str | None = None) -> di
         "unverified": unverified,
         "build_failures": build_failures,
         "infra_failures": infra_failures,
+        "attempts": attempts,
         "merged_share": round(outcomes["merged"] / total, 3) if total else 0.0,
         "failure_rate": round(build_failures / attempts, 3) if attempts else 0.0,
         "human_edits": human_edits,
