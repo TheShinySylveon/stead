@@ -622,6 +622,19 @@ def eval_status(root: Path, factory_name: str, version: str = "") -> dict:
     return {"factory": factory_name, "version": version, "cases": cases}
 
 
+def _factory_dir(root: Path, factory_name: str) -> Path | None:
+    """Return an existing factory directory by exact name match against
+    ``root/factories``, without constructing a path from user input."""
+    safe = _safe_segment(factory_name, "factory")
+    factories_root = root / "factories"
+    if not factories_root.is_dir():
+        return None
+    for child in factories_root.iterdir():
+        if child.is_dir() and child.name == safe:
+            return child
+    return None
+
+
 def _production_version(root: Path, factory_name: str) -> str:
     factory_name = _safe_segment(factory_name, "factory")
     from ctx import db
@@ -636,13 +649,12 @@ def _production_version(root: Path, factory_name: str) -> str:
             conn.close()
         if row:
             return row["version"]
-    factories_root = (root / "factories").resolve()
-    factory_dir = (factories_root / factory_name).resolve()
-    try:
-        factory_dir.relative_to(factories_root)
-    except ValueError as exc:
-        raise ModelError(f"invalid factory: {factory_name!r}") from exc
-    prompts_dir = (factory_dir / "prompts").resolve()
+    factory_dir = _factory_dir(root, factory_name)
+    if factory_dir is None:
+        return ""
+    prompts_dir = factory_dir / "prompts"
+    if not prompts_dir.is_dir():
+        return ""
     prompts = [p for p in prompts_dir.glob("v*.md")
                if p.stem[1:].isdigit()]
     prompts.sort(key=lambda p: int(p.stem[1:]))

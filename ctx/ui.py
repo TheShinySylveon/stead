@@ -1582,18 +1582,12 @@ def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
 
 def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -> dict:
     """Judge the newest draft for one factory. Local result file only."""
-    from ctx.models import ModelError, judge, _safe_segment
+    from ctx.models import ModelError, _factory_dir, _safe_segment, judge
     try:
         safe_factory = _safe_segment(factory_name, "factory")
     except ModelError as exc:
         raise UiError(str(exc)) from exc
-    factories_root = (root / "factories").resolve()
-    factory_path = (factories_root / safe_factory).resolve()
-    try:
-        factory_path.relative_to(factories_root)
-    except ValueError:
-        raise UiError(f"unknown factory: {safe_factory}", 404)
-    if not factory_path.is_dir():
+    if _factory_dir(root, safe_factory) is None:
         raise UiError(f"unknown factory: {safe_factory}", 404)
     if not db.db_path(root).exists():
         raise UiError("state.db not found — run stead init first", 404)
