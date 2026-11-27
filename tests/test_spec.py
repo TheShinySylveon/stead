@@ -346,6 +346,15 @@ class SpecApprovalTest(unittest.TestCase):
                 "tasks'` (`ctx/cli.py:2`)\n")
         self.assertEqual(spec.plan_citation_warnings(plan, code), [])
 
+    def test_prose_data_source_is_accepted(self) -> None:
+        # A faithful model may describe the data source in prose (no citations);
+        # the gate accepts that and only verifies citations that are present.
+        code = self._seed_repo_with_code()
+        plan = ("## Data source\n\n"
+                "contributions come from the `contributions` table via "
+                "`db.connect`, mirrored from `context/contributions/`.\n")
+        self.assertEqual(spec.plan_citation_warnings(plan, code), [])
+
     def test_incomplete_draft_is_completed(self) -> None:
         code = self._seed_repo_with_code()
         complete = ("Add a flag.\n\n## Acceptance criteria\n\n- [ ] it works\n\n"
