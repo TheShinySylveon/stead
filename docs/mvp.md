@@ -1,8 +1,9 @@
 # MVP: a repo, end to end
 
-**Status: met in practice — the full loop has run on real issues and scored
-correct; the draft step is now model-drafted (`qwen3.8-flash`) with a fast human
-review.** See [Dogfood](dogfood.md) for the scores.
+**Status: met — the full loop (draft → approve → build → PR → merge) has now run
+end to end on a fresh, model-drafted issue and scored correct. The draft is
+model-drafted (`qwen3.8-flash`) with a fast human review; the build is autonomous.**
+See [Dogfood](dogfood.md) for the scores.
 
 ## The MVP in one sentence
 
@@ -60,14 +61,15 @@ milestone's own measurement passed). Only the second is "done".
 |---|---|---|
 | M0 foundations | landed | run |
 | M1 harness | landed | Set A (tuning) + Set B scored (2/3 hand-finished, 1/3 autonomous) + baseline |
-| M5 spec draft | landed | exercised; the drafter is now `qwen3.8-flash` (traces faithfully); gates + cite-and-verify landed |
+| M5 spec draft | landed | **measured end to end** (#111 → #179): `qwen3.8-flash` drafts, a fast human review catches residual fabrication, the build is autonomous; gates + cite-and-verify landed |
 | M3 intake | landed | exercised on real issues |
-| M2 comment | landed | exercised (#30 on #25, #34 on #27, #166/#167/#169) |
+| M2 comment | landed | exercised (#30 on #25, #34 on #27, #166/#167/#169); clean skip for local-only specs (#178, exercised on #179) |
 | M4, M6, M7 | procedure written | **Set C 3/3 + hold-out 1/1, all correct** (built autonomously on the 27B, merged with no human edits) |
 
-The frozen scoring is complete: [Dogfood](dogfood.md) records every verdict. The
-draft step was the one human gate, and it is now model-drafted by
-`qwen3.8-flash` (fast + faithful) with a fast review, not a rewrite.
+The frozen scoring is complete and the full loop is measured end to end:
+[Dogfood](dogfood.md) records every verdict. The draft step was the one human
+gate; it is now model-drafted by `qwen3.8-flash` with a fast review (a spot-check,
+not a rewrite), and the build after it is autonomous.
 
 The code milestones above carry the review fixes for PRs #4–#8. Acceptance needs
 real model runs and a green PR at the `pr` ceiling, per [Dogfood](dogfood.md).
@@ -97,12 +99,12 @@ milestone's own measurement on the frozen sets.
 |---|---|
 | Model config + `model test`/`list` (local LM Studio/Ollama) | working |
 | Monitor: `sync github` + `trigger: watch` + scheduler | working (read-only) |
-| Spec/docs/plan: `spec draft` + `spec approve` | built; **validate the monitor→draft→approve flow end to end** |
+| Spec/docs/plan: `spec draft` + `spec approve` | working; **draft→approve→build→PR→merge validated end to end on a model draft** (#111 → #179); a fast human review still catches residual fabrication |
 | Spec approval by content hash | working |
 | Build correctness on a local model | harness built (structured output, fail-before/pass-after, line-range reads, exact edits); three Set A specs built, hand-checked correct, and merged (#20, #30, #34); **first-attempt score not run** |
 | `require_tests`, protected paths, scrubbed/container checks | working |
 | PR from isolated branch (`pr`) | working: #20 published by `factory publish`, CI green, human-merged |
-| **Comment on the issue linking the PR** | built (gated: `allow_comment`, `kind: own`) |
+| **Comment on the issue linking the PR** | built (gated: `allow_comment`, `kind: own`); skips cleanly when the spec has no real upstream issue (#178) |
 | Write-back record + `stead metrics` | working: a human merge reconciles via `sync github` (scoped with `--repo`, #22); update-from-base merges are not human edits (#21) |
 | Merge gates (green + required checks, no `--admin`) | working (human merges at MVP) |
 | `stead doctor`, cockpit local read/build | working |
@@ -118,25 +120,37 @@ The three operational blockers are now done:
 3. **Run the sign-off (M7)** — the frozen Set C + hold-out ran end to end;
    every spec scored correct (see [Dogfood](dogfood.md)).
 
-The one remaining human gate is the **draft step**, now model-drafted by
-`qwen3.8-flash` (fast + faithful) with a fast review — and the gate stack
-(path → symbol → data-model → citation, plus the completion-retry) catches
-fabrication as a backstop.
+The last human gate was the **draft step**, and it is now measured end to end:
+model-drafted by `qwen3.8-flash` (fast), with a **fast human review** that still
+catches residual fabrication (a fresh #111 re-draft invented a `--limit` flag the
+gate stack does not check). The build after it was autonomous (0 repair rounds,
+0 human commits). So the split is **draft = fast review, build = human-rarely** —
+the loop completes on a model draft, but drafting is not yet unattended. The gate
+stack (path → symbol → data-model → citation, plus the completion-retry) catches
+data-model fabrication as a backstop; CLI-flag existence is the recorded gap.
 
-## Deferred until MVP (recorded, not lost)
+## Post-MVP list (MVP met — now the active roadmap)
 
-- Filing issues upstream (humans file issues for MVP; Stead comments) —
+The definition of done is satisfied and the full loop is measured end to end.
+These items were deferred during the MVP and are now the active post-MVP work;
+each is filed as an issue so it is tracked, not lost. The headline three:
+**shared-server hardening**, **eval redesign**, and **filing issues upstream**.
+
+- **Shared-server hardening** (roles, permissions, rate limit, TLS) — issue #64,
+  [Trust](trust.md#shared-server-every-account-is-an-admin).
+- **Eval redesign** (pin judge model, multiple runs, compare vs previous version)
+  — issue #56, [Vision](vision.md), [Factories](factories.md).
+- **Filing issues upstream** (Stead files issues, not just comments) — issue #63,
   [Vision](vision.md).
 - Per-spec acceptance check in CI (the fail-before/pass-after gate already runs
-  locally) — [Trust](trust.md#empty-work-ci-and-acceptance-checks).
-- Pluggable executor; unified-diff edits (line-range reads and exact-snippet
-  `edit` landed, so a file longer than one read is buildable) —
+  locally) — issue #52, [Trust](trust.md#empty-work-ci-and-acceptance-checks).
+- Pluggable executor (headless agent CLI inside a sandbox) — issue #54;
+  unified-diff edits (lift the per-file size cap) — issue #55,
   [Vision](vision.md).
-- Eval redesign — [Vision](vision.md), [Factories](factories.md).
-- Shared-server hardening (roles, permissions, rate limit, TLS) —
-  [Trust](trust.md#shared-server-every-account-is-an-admin).
-- `.stead/` publish, global search/timeline, kanban changes —
+- `.stead/` publish, global search/timeline, kanban changes — issue #65,
   [Vision](vision.md), `PLAN.md` §7.
+- Draft gate gap: verify a CLI flag a plan names actually exists (recorded in
+  [Dogfood](dogfood.md)); a backstop, not the primary fix.
 
 ## Rule
 
