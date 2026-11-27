@@ -1582,7 +1582,13 @@ def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
 
 def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -> dict:
     """Judge the newest draft for one factory. Local result file only."""
-    from ctx.models import ModelError, judge
+    from ctx.models import ModelError, judge, _safe_segment
+    try:
+        safe_factory = _safe_segment(factory_name, "factory")
+    except ModelError as exc:
+        raise UiError(str(exc)) from exc
+    if not (root / "factories" / safe_factory).is_dir():
+        raise UiError(f"unknown factory: {safe_factory}", 404)
     if not db.db_path(root).exists():
         raise UiError("state.db not found — run stead init first", 404)
     conn = db.connect(root)
@@ -1591,13 +1597,13 @@ def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -
         row = conn.execute(
             "SELECT id, output, prompt_version FROM runs "
             "WHERE factory = ? AND output IS NOT NULL AND TRIM(output) != '' "
-            "ORDER BY id DESC LIMIT 1", (factory_name,)).fetchone()
+            "ORDER BY id DESC LIMIT 1", (safe_factory,)).fetchone()
     finally:
         conn.close()
     if row is None:
         raise UiError("no draft to judge. Run the factory with --generate, or record output.")
     try:
-        return judge(root, factory_name, case_id, None,
+        return judge(root, safe_factory, case_id, None,
                      prompt_version=version or row["prompt_version"],
                      output_text=row["output"])
     except ModelError as exc:
