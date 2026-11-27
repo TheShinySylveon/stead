@@ -320,6 +320,19 @@ class SpecApprovalTest(unittest.TestCase):
         self.assertIn("no `## Data source`",
                       "\n".join(spec.plan_citation_warnings(missing, code)))
 
+    def test_citation_ignores_a_backticked_label(self) -> None:
+        # A citation may backtick its label too; the gate verifies the quoted
+        # code immediately before the (file:line), not the label.
+        code = self._seed_repo_with_code()
+        (code / "ctx/cli.py").write_text(
+            "def cmd_task_list(root, project=None, status=None, sort=False):\n"
+            "    query = 'SELECT id, status, project, title FROM tasks'\n",
+            encoding="utf-8")
+        plan = ("## Data source\n\n"
+                "- `task list` dispatch: `query = 'SELECT id, status, project, "
+                "title FROM tasks'` (ctx/cli.py:2)\n")
+        self.assertEqual(spec.plan_citation_warnings(plan, code), [])
+
     def test_fabricated_sql_table_is_flagged(self) -> None:
         code = self._seed_repo_with_code()
         (code / "ctx/schema.sql").write_text(

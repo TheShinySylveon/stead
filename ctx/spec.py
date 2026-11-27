@@ -643,17 +643,18 @@ _DATA_SOURCE_RE = re.compile(r"\(([^():\s]+):(\d+)\)")
 
 
 def _citations(section: str) -> list[tuple[str, str, int]]:
-    """(quoted_code, file, line) triples from a `## Data source` section."""
+    """(quoted_code, file, line) triples from a `## Data source` section. The
+    quoted code is the backticked snippet immediately before the `(file:line)`
+    location; a backticked label before it is ignored."""
     out: list[tuple[str, str, int]] = []
     for line in section.splitlines():
         loc = _DATA_SOURCE_RE.search(line)
         if not loc:
             continue
         file_rel, line_str = loc.group(1), loc.group(2)
-        snippet = ""
-        m = re.search(r"`([^`]+)`", line)
-        if m:
-            snippet = m.group(1)
+        prefix = line[:loc.start()]
+        snippets = re.findall(r"`([^`]+)`", prefix)
+        snippet = snippets[-1].strip() if snippets else ""
         out.append((snippet, file_rel, int(line_str)))
     return out
 
