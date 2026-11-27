@@ -583,19 +583,21 @@ context plus generic schema discovery, never its own self.
 ### Set C + hold-out scored (2026-11-27)
 
 The frozen specs were finished **by hand at the spec step** and **built
-autonomously on the 27B**. Both pass the correctness rubric (criteria met,
+autonomously on the 27B**. All pass the correctness rubric (criteria met,
 fail-before held, CI green) with **zero human commits**:
 
 | Spec | Spec step | Build | Verdict |
 |---|---|---|---|
 | `repo list --json` (#104) | hand-corrected (data source = `repos` SQL index, not `config.public_list`) | 20 steps, 1 repair round, PR #166 | **correct** |
 | `metrics --json` counters (#106, hold-out) | hand-corrected (`attempts` is computed-but-not-returned; add it to `collect`) | 14 steps, 2 repair rounds, PR #167 | **correct** |
+| `doctor` missing `repo:` (#107) | hand-corrected (the relation loop silently skipped an *empty* relation) | 9 steps, 0 repair rounds, PR #169 | **correct** |
 
 **Finding, recorded honestly:** the split held exactly — **draft: human-always,
-build: human-rarely.** The *build* is now autonomous on the 27B (both frozen
-specs went spec→PR→merge with no human edits), while the *draft* still needs a
-human to trace the data source. The honest metric is not "zero human edits" but
-"where the human steps in, and is it shrinking" — and it has shrunk from "draft
-+ build both wrong" to "draft only." The remaining frozen spec, Set C #3
-(`doctor` reports a contribution whose `repo:` relation is missing), has no filed
-issue yet and is not scored.
+build: human-rarely.** The *build* is now autonomous on the 27B (all three
+frozen specs went spec→PR→merge with no human edits), while the *draft* still
+needs a human to trace the data source. The honest metric is not "zero human
+edits" but "where the human steps in, and is it shrinking" — and it has shrunk
+from "draft + build both wrong" to "draft only."
+
+**Set C + hold-out are now complete: 3/3 Set C + 1/1 hold-out, all correct.**
+(Set C #1 `task list --sort`, #103, was scored correct earlier.)
