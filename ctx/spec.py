@@ -600,22 +600,18 @@ def plan_data_warnings(plan: str, code: Path) -> list[str]:
 
 
 def plan_citation_warnings(plan: str, code: Path) -> list[str]:
-    """Cite-and-verify: a plan's data-source claim must be a citation that checks
-    out against the code. The `## Data source` section lists
-    `- <what>: `<quoted code>` (<file>:<line>)`, and each citation is verified by
-    reading that file:line and confirming the quoted code actually appears there.
-    This proves the plan read the real code, not a guess — the difference between
-    "name real symbols" and "show your claim matches the code"."""
+    """Cite-and-verify: a `## Data source` section is required. When it carries
+    `(file:line)` citations, each is verified against the code (catching a
+    fabricated quote); a prose description is accepted as-is for the human to
+    review. The difference between "name real symbols" and "prove your claim
+    matches the code" — enforced where the plan volunteers a citation."""
     warnings: list[str] = []
-    section = _data_source_section(plan)
-    citations = _citations(section)
-    if not citations:
+    if not _has_data_source(plan):
         warnings.append(
-            "the plan has no `## Data source` citations; list where each data "
-            "source lives with a quoted code line and a file:line, e.g. "
-            "`- repos: `SELECT id, kind, status, title FROM repos` (ctx/cli.py:233)`")
+            "the plan has no `## Data source` section; describe where each data "
+            "source lives (quote the code and cite file:line where you can)")
         return warnings
-    for snippet, file_rel, line in citations:
+    for snippet, file_rel, line in _citations(_data_source_section(plan)):
         target = code / file_rel.replace("\\", "/")
         if not target.is_file():
             warnings.append(f"the plan cites `{file_rel}`, which is not in the repo")
@@ -637,6 +633,11 @@ def plan_citation_warnings(plan: str, code: Path) -> list[str]:
                 f"the citation `{file_rel}:{line}` does not contain the quoted "
                 f"code `{snippet[:60]}`; the plan did not see what it claims")
     return warnings
+
+
+def _has_data_source(plan: str) -> bool:
+    """Whether the plan has a `## Data source` section (heading present)."""
+    return bool(re.search(r"##\s*data\s+source", plan or "", re.IGNORECASE))
 
 
 _DATA_SOURCE_RE = re.compile(r"\(`?([^():\s]+):(\d+)`?\)")
@@ -935,9 +936,10 @@ def draft_write_prompt(title: str, body: str, tree: str, symbols: str,
         "2. `## Acceptance criteria` — a `- [ ]` checklist of concrete, "
         "testable criteria (self-contained, no invented values).\n"
         "3. `## Plan` — the real files/functions to edit, with boundary constraints.\n"
-        "4. `## Data source` — one `- <what>: `<quoted code>` (<file>:<line>)` "
-        "line per data source, quoting the exact code you read. The quote must "
-        "really be at that file:line — it is verified against the checkout.\n\n"
+        "4. `## Data source` — where each data source actually lives. Quote the "
+        "code and cite its file:line where you can, e.g. `- repos: `SELECT id, "
+        "kind, status, title FROM repos` (ctx/cli.py:233)` (a cited quote is "
+        "verified); a plain description of the real table/file is also fine.\n\n"
         + (f"Data model (the real shapes):\n{facts}\n\n" if facts else "")
         + "What you read:\n"
         + research + "\n\n"
@@ -965,7 +967,7 @@ def _structural_problems(text: str, code) -> list[str]:
         problems.append("`## Acceptance criteria`")
     if not factory.spec_plan(text):
         problems.append("`## Plan`")
-    if code is not None and not _citations(_data_source_section(text)):
+    if code is not None and not _has_data_source(text):
         problems.append("`## Data source`")
     return problems
 

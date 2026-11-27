@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+- **The citation gate accepts a prose `## Data source`; it still verifies
+  citations.** Faithful models (Qwen3.8-Flash, Arete 27B) describe the data
+  source in prose, which the gate now accepts; it only verifies `(file:line)`
+  citations that are present. So a correct draft no longer gets a false "no
+  citations" warning, while a fabricated citation is still caught.
 - **The citation gate parses backticked locations and checks real citations.** A
   `(`file:line`)` may be backticked (`` (`ctx/cli.py:2`) ``); the parser now
   accepts it, and the completion-retry loop checks for *parseable* citations,
