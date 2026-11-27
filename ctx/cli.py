@@ -308,7 +308,7 @@ def cmd_contribution_add(root: Path, title: str, repo: str, kind: str, number: i
 
 def cmd_contribution_list(root: Path, repo: str | None = None, kind: str | None = None,
                           role: str | None = None, state: str | None = None,
-                          json: bool = False) -> int:
+                          json: bool = False, count: bool = False) -> int:
     db.require_db(root)
     query = "SELECT id, repo, kind, number, role, state, ci, title FROM contributions"
     clauses, params = [], []
@@ -322,6 +322,21 @@ def cmd_contribution_list(root: Path, repo: str | None = None, kind: str | None 
             params.append(value)
     if clauses:
         query += " WHERE " + " AND ".join(clauses)
+    if count:
+        count_query = "SELECT COUNT(*) AS n FROM contributions"
+        if clauses:
+            count_query += " WHERE " + " AND ".join(clauses)
+        conn = db.connect(root)
+        try:
+            n = conn.execute(count_query, params).fetchone()[0]
+        finally:
+            conn.close()
+        if json:
+            import json as _json
+            print(_json.dumps(n))
+        else:
+            print(n)
+        return 0
     query += " ORDER BY repo, kind, number"
     conn = db.connect(root)
     try:
@@ -763,6 +778,8 @@ def build_parser() -> argparse.ArgumentParser:
     cl.add_argument("--role", choices=CONTRIB_ROLES)
     cl.add_argument("--state", choices=CONTRIB_STATES)
     cl.add_argument("--json", action="store_true", help="machine-readable list")
+    cl.add_argument("--count", action="store_true",
+                    help="print only the number of matching contributions")
     cs = contrib.add_parser("set", help="update contribution fields (file + index)")
     cs.add_argument("id")
     cs.add_argument("--state", choices=CONTRIB_STATES)
@@ -1147,7 +1164,7 @@ def main(argv: list[str] | None = None) -> int:
                                         args.method)
         if args.sub == "list":
             return cmd_contribution_list(root, args.repo, args.kind, args.role, args.state,
-                                         json=bool(args.json))
+                                         json=bool(args.json), count=bool(args.count))
         if args.sub == "set":
             return cmd_contribution_set(root, args.id, args.state, args.ci,
                                         args.review, args.role, args.method)
