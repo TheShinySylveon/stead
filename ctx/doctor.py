@@ -69,7 +69,9 @@ def run(root: Path) -> dict:
                 warnings.append(_issue(relative, f"unusual status {status!r}"))
             for relation in RELATIONS.get(otype, ()):
                 target = str(meta.get(relation) or "")
-                if target and target not in _all_ids(root, relation):
+                if not target:
+                    errors.append(_issue(relative, f"missing {relation} relation"))
+                elif target not in _all_ids(root, relation):
                     errors.append(_issue(
                         relative, f"{relation} points at missing object {target!r}"))
             if not body.strip():
