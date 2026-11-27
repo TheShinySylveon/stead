@@ -228,8 +228,10 @@ retrieval with budgets, and one context graph across repos — is
 
 ### 7.1 PR feedback loop — `stead repair`
 
-Today the agent stops at the first PR. It cannot react to a failing CI run or
-a review comment.
+**Partially built.** `stead address` already reacts to review comments — read
+them, fix the code on the PR branch, commit, push, and resolve the threads
+(exercised on #158) — and `build --wait` polls CI. Still planned: reacting to a
+*failing CI run* by reading the check logs and committing a repair.
 
 - Read `gh pr view --json statusCheckRollup,comments,reviews` and the failing
   check logs (read-only).
@@ -267,7 +269,9 @@ a review comment.
 
 ### 7.4 Patch-level edits
 
-Whole-file writes are expensive and risky on large files.
+**Built** — shipped as the `edit` action (exact-snippet find/replace, plus
+line-range reads), so a file longer than one read is buildable. Whole-file
+`write` remains the fallback; it is expensive and risky on large files.
 
 - New `patch` action: `path`, `find`, `replace`, optional `count`.
 - Fail to the model when the match is missing or ambiguous; fall back to
@@ -278,7 +282,10 @@ Whole-file writes are expensive and risky on large files.
 
 ### 7.5 Budgets
 
-Steps are bounded; time, tokens, and cost are not.
+**Built.** Steps, wall-clock (`--max-minutes`), tokens (`--max-tokens`, default
+10M), and an optional USD budget (`--max-cost`) are all bounded; on exhaustion
+the build stops before commit, leaves the branch and edits, and prints
+`--resume`.
 
 - Flags and repo fields for wall-clock minutes, total bytes read/written, and
   an optional token estimate.
@@ -289,7 +296,9 @@ Steps are bounded; time, tokens, and cost are not.
 
 ### 7.6 Stale lock recovery
 
-A crashed build leaves a lock file that needs manual removal.
+**Built (core).** The lock stores PID, host, and start time, and is reclaimed
+automatically when the owner process is gone or the lock is hours old — a
+crashed build no longer wedges the checkout.
 
 - Store PID and start time in the lock.
 - Reclaim automatically when the PID is gone or the lock is older than six
