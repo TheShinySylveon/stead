@@ -16,6 +16,7 @@ next bundle can read it. The SQLite ``runs`` table stays a rebuildable index.
 from __future__ import annotations
 
 import json
+import os
 import re
 import subprocess
 from datetime import date, datetime, timezone
@@ -795,10 +796,15 @@ _SAFE_COMPONENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 
 
 def _safe_component(value: str, label: str) -> str:
-    """A single safe path component: one or more of ``[A-Za-z0-9._-]`` and not
-    ``.`` or ``..``. An allow-list (not a deny-list), so a proposal name or
-    factory that tries to escape the store is refused outright."""
+    """A single safe path component. Refuses any path separator outright, then
+    ``os.path.basename`` strips a directory prefix (the canonical path-injection
+    sanitizer), and an allow-list regex rejects anything not ``[A-Za-z0-9._-]+``
+    (and the reserved ``.``/``..``). A proposal name, factory, or slug cannot
+    escape the store."""
     value = (value or "").strip()
+    if "/" in value or "\\" in value:
+        raise WritebackError(f"{label} is not a safe name: {value!r}")
+    value = os.path.basename(value)
     if not _SAFE_COMPONENT_RE.fullmatch(value) or value in {".", ".."}:
         raise WritebackError(f"{label} is not a safe name: {value!r}")
     return value
@@ -926,7 +932,8 @@ def edit_improvement(root: Path, name: str, change: str) -> dict:
 
 def _write_eval_case(root: Path, factory: str, title: str, rationale: str,
                      change: str) -> str:
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "case"
+    slug = _safe_component(
+        re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "case", "title")
     case = {"id": f"eval-{slug}", "factory": factory, "title": title,
             "input": rationale, "pass_criteria": change}
     fdir = root / "factories" / factory / "evals"
@@ -960,7 +967,8 @@ def _file_improvement_task(root: Path, title: str, rationale: str, change: str,
         raise WritebackError(
             "could not resolve a project for this code improvement (no source "
             "build record, or its repo has no project). File it by hand.")
-    slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "improvement"
+    slug = _safe_component(
+        re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-") or "improvement", "title")
     task_id = f"task-{slug}"
     n = 2
     while (root / "context" / "tasks" / f"{task_id.removeprefix('task-')}.md").exists():
