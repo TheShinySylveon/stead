@@ -627,3 +627,8 @@ strong drafter (DeepSeek) with the full gate stack live:
    backticked snippet (often the label, e.g. `task list`) instead of the quoted
    *code* before the `(file:line)`, so it false-flagged a correct citation.
    Fixed: the gate now verifies the snippet immediately before the location.
+3. The non-determinism (finding 1) is now the target of a **completion-retry
+   loop**: a draft that comes back structurally incomplete (missing criteria,
+   plan, or data source) is re-prompted to complete it, bounded to two tries,
+   instead of failing hard. This turns "malformed → human re-runs" into
+   "malformed → the model repairs it".
