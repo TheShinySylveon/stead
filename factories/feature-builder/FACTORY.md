@@ -96,7 +96,7 @@ unconditional. The spec's `method` field selects only the tooling:
   plan → tasks → implement (TDD) → converge.
 - `builtin` — the same phases, hand-rolled as markdown. No `specify` CLI.
 
-`ctx` never imports or invokes `specify`. Assembly stays deterministic,
+Assembly never imports or invokes `specify` (optional `stead onboard` may run `specify init` when on PATH unless `--no-specify` is passed). Assembly stays deterministic,
 local, and network-free for both. Full flow, install, and own-vs-OSS rules:
 `docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`.
 
@@ -154,7 +154,7 @@ local, and network-free for both. Full flow, install, and own-vs-OSS rules:
 
 ## Tools
 
-Python 3.14+ standard library only (`python -m stead`). External open-source
+Python 3.11+ standard library only (`python -m stead`). External open-source
 tools used by the *generation* step (not by assembly): `git` (branching,
 audit), `gh` (read-only context; draft-PR creation only in draft-PR mode),
 and optionally `specify` (Spec Kit CLI, when `method` is `spec-kit`). `ctx`

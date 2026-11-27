@@ -201,4 +201,12 @@ def set_repo(root: Path, repo_id: str, *, trigger: str | None = None,
     meta["updated"] = date.today().isoformat()
     stamp(root, meta)
     path.write_text(frontmatter.dumps(meta, body), encoding="utf-8")
+    from ctx import db
+    if db.db_path(root).exists():
+        conn = db.connect(root)
+        try:
+            db.index_repo(conn, root, path, meta, meta["updated"])
+            conn.commit()
+        finally:
+            conn.close()
     return effective(root, meta)

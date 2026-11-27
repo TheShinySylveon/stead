@@ -126,7 +126,8 @@ state.db             <- GITIGNORED, rebuildable operational index (stead init)
   commands, not factory assembly: `stead factory publish` may push an isolated
   branch and open a pull request; `stead factory merge` may merge when the repo
   file says `reach: merge` and the checks are green. Neither pushes the default
-  branch. Neither runs from the cockpit.
+  branch. From the cockpit, publish, merge, and comment require explicit
+  confirmation and are refused on a shared server.
 - Do not edit `PLAN.md`. Do not delete run logs under `factories/*/runs/`.
 - Commit meaningful changes with git; the history is the audit trail.
 
@@ -152,8 +153,12 @@ python -m stead factory new --name NAME --title T
 python -m stead factory delete --name NAME [--force]  # refuses shipped factories + run logs without --force
 python -m stead inbox import PATH             # local .eml .ics .md .txt into inbox/
 python -m stead inbox list [--kind KIND]      # read-only: what is waiting in inbox/
+python -m stead inbox capture --title T [--body B]
+python -m stead inbox triage NAME --type T [--project P] [--title T]
+python -m stead inbox delete NAME
 python -m stead improve list                  # model-proposed improvements (eval-case/prompt/code)
 python -m stead improve accept NAME           # apply one: eval-case/prompt write data, code files a task
+python -m stead improve edit NAME --change C  # edit the ## Change section of a proposal
 python -m stead improve reject NAME [--reason R]  # dismiss one
 python -m stead hook set                      # webhook token, printed once
 python -m stead factory publish --contribution ID  # isolated branch + pull request. Never merges.
@@ -164,7 +169,10 @@ python -m stead spec draft --contribution ID [--all] [--redraft]  # issue -> spe
 python -m stead spec approve --contribution ID  # bind approval to the spec body hash
 python -m stead factory merge --contribution ID    # green checks + independent reviewer. Repo must say reach: merge.
 python -m stead account add --name NAME --actor ACTOR  # shared-server sign-in. Hash only.
-python -m stead init                          # rebuild state.db from schema.sql + files
+python -m stead init [--reset]                # rebuild markdown index (preserves runs unless --reset)
+python -m stead lock --contribution ID [--clear] [--force]  # inspect or clear a checkout build lock
+python -m stead settings deployment --mode single|multi     # switch deployment mode
+python -m stead settings rotate                             # rotate shared-server access token
 python -m stead task add --title T --project P [--status to-do]
 python -m stead task list [--project P] [--status S] [--sort]
 python -m stead task set ID --status S
@@ -186,6 +194,7 @@ python -m stead schedule install                         # Windows current user
 python -m stead schedule show --project P                # add a status draft
 
 python -m stead run log --factory F --task REF --prompt-version V [--output TEXT] [--verdict V]
+python -m stead run verdict --run ID --verdict approved|rejected [--note TEXT]
 python -m stead run file --run ID [--title T]   # approved digest/status -> context/documents/
 python -m stead prompt list --factory F
 python -m stead prompt promote --factory F --version V
@@ -283,7 +292,9 @@ field `method` selects only the *tooling*:
 - `method: builtin` — the same phases, hand-rolled as markdown
   (`constitution.md` / `spec.md` / `plan.md` / `tasks.md`); no `specify` CLI.
 
-`ctx` never imports or invokes `specify`. Full flow, install, and own-vs-OSS
+Factory assembly never imports or invokes `specify` (`stead onboard` may invoke
+`specify init` in a repo checkout unless `--no-specify` is passed). Full flow,
+install, and own-vs-OSS
 rules: `docs/spec-kit-workflow.md`. Production prompt is `prompts/v2.md`
 (`stead init` seeds the highest version as production; switch or roll back with
 `stead prompt promote`).

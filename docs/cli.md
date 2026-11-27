@@ -333,9 +333,10 @@ when the ceiling allows it. `--wait` polls PR checks before `--merge`, and
 failed build from its existing branch (the WIP commit a failure left behind).
 
 A spec gets one automatic build attempt per approved content hash. A build that
-fails the work (a build-class failure) blocks a re-run until the body is
-re-approved (a new hash) or you pass `--retry`; an infrastructure failure (the
-model was down, a timeout, a setup error) does not consume the attempt. The spec
+fails the work (a build-class failure, including a model call timeout) blocks a
+re-run until the body is re-approved (a new hash) or you pass `--retry`; an
+infrastructure failure (the model was unreachable or a setup/base-suite error)
+does not consume the attempt. The spec
 must be approved (`spec approve`) and its body unchanged since approval.
 
 A failed build that reached the model also writes a `build-record` with outcome

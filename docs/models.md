@@ -36,7 +36,24 @@ Settings never print it. It is not written into `context/`, a bundle, or
 Ollama on this computer does not need a key. A loopback base URL does not
 either.
 
-The same form is in the cockpit, under Settings.
+The same form is in the cockpit, under Settings (including optional `--input-price`, `--output-price`, `--call-timeout`, `--context`, and `--key-env`).
+
+## Multiple profiles & role bindings
+
+Save named provider connections and bind them to individual jobs (`build`, `draft`, `review`, `address`):
+
+```bash
+python -m stead model add local --provider ollama --name qwen3:30b --context 32768
+python -m stead model add strong --provider openai --name gpt-4.1 --key-env OPENAI_API_KEY --input-price 2.0 --output-price 8.0
+python -m stead model role draft strong
+python -m stead model role review strong
+python -m stead model role build local
+python -m stead model profiles
+python -m stead model role review -   # unbind (falls back to default model)
+python -m stead model remove local
+```
+
+Settings → **Model profiles** exposes the same profile CRUD and role bindings.
 
 ## Verify it works
 

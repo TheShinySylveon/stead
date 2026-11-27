@@ -819,6 +819,16 @@ def build_parser() -> argparse.ArgumentParser:
     listed = inbox.add_parser("list", help="list inbox notes. Read-only.")
     listed.add_argument("--kind", choices=("decision", "glossary", "rule", "note"),
                         help="limit output to one kind")
+    icap = inbox.add_parser("capture", help="write one unsorted note into inbox/")
+    icap.add_argument("--title", required=True)
+    icap.add_argument("--body", default="")
+    itri = inbox.add_parser("triage", help="move an inbox note into context/ as a typed object")
+    itri.add_argument("name", help="inbox filename")
+    itri.add_argument("--type", required=True, choices=("project", "task", "document", "meeting"))
+    itri.add_argument("--project", help="project id (required for task)")
+    itri.add_argument("--title", help="optional title override")
+    idel = inbox.add_parser("delete", help="remove an inbox note")
+    idel.add_argument("name", help="inbox filename")
     improve = sub.add_parser("improve", help="proposed improvements (model proposals to accept/reject)").add_subparsers(dest="sub", required=True)
     improve.add_parser("list", help="list proposed improvements. Read-only.")
     imp_accept = improve.add_parser("accept", help="apply one: eval-case writes an eval, prompt writes a prompt, code files a task")
@@ -826,6 +836,17 @@ def build_parser() -> argparse.ArgumentParser:
     imp_reject = improve.add_parser("reject", help="dismiss one")
     imp_reject.add_argument("name")
     imp_reject.add_argument("--reason", default="", help="why it was rejected (recorded)")
+    imp_edit = improve.add_parser("edit", help="replace the ## Change section of a proposed improvement")
+    imp_edit.add_argument("name")
+    imp_edit.add_argument("--change", required=True, help="replacement text for ## Change")
+    lk = sub.add_parser("lock", help="inspect or clear the build lock for a contribution's checkout")
+    lk.add_argument("--contribution", required=True)
+    lk.add_argument("--clear", action="store_true", help="remove a stale lock (or any lock with --force)")
+    lk.add_argument("--force", action="store_true", help="with --clear, remove even an active lock")
+    sett = sub.add_parser("settings", help="deployment mode and access token").add_subparsers(dest="sub", required=True)
+    sdep = sett.add_parser("deployment", help="switch deployment mode between single and multi")
+    sdep.add_argument("--mode", required=True, choices=("single", "multi"))
+    sett.add_parser("rotate", help="rotate the shared-server access token (printed once)")
     sched = sub.add_parser("schedule", help="the weekly local jobs").add_subparsers(dest="sub", required=True)
     sshow = sched.add_parser("show", help="print the Friday command. Does not install it.")
     sshow.add_argument("--project", help="also assemble this project's status")
@@ -962,7 +983,7 @@ def build_parser() -> argparse.ArgumentParser:
     ej = ev.add_parser("judge", help="ask the configured model to judge one draft")
     ej.add_argument("--factory", required=True)
     ej.add_argument("--case", required=True)
-    ej.add_argument("--output", required=True, help="path to the draft markdown")
+    ej.add_argument("--output", help="path to the draft markdown (defaults to newest recorded run)")
     ej.add_argument("--prompt-version", default="", help="version this pass is for. Defaults to production.")
 
     dg = sub.add_parser("digest", help="assemble the weekly contribution digest")
@@ -986,6 +1007,10 @@ def build_parser() -> argparse.ArgumentParser:
     rf = run.add_parser("file", help="file an approved digest or status as a private document. Never posts.")
     rf.add_argument("--run", required=True)
     rf.add_argument("--title")
+    rv = run.add_parser("verdict", help="record a human review verdict (approved/rejected) on an existing run")
+    rv.add_argument("--run", required=True)
+    rv.add_argument("--verdict", required=True, choices=("approved", "rejected"))
+    rv.add_argument("--note", default="", help="optional review note")
     pr = sub.add_parser("prompt", help="versioned prompts").add_subparsers(dest="sub", required=True)
     pl = pr.add_parser("list", help="list prompt versions")
     pl.add_argument("--factory", required=True)
@@ -1284,8 +1309,14 @@ def main(argv: list[str] | None = None) -> int:
             print(f"eval files ok ({checked['cases']} cases{tail})")
             return 0
         try:
-            judged = models.judge(root, args.factory, args.case, args.output,
-                                  prompt_version=args.prompt_version)
+            if args.output:
+                judged = models.judge(root, args.factory, args.case, args.output,
+                                      prompt_version=args.prompt_version)
+            else:
+                output_text, recorded_version = models.latest_draft(root, args.factory)
+                judged = models.judge(root, args.factory, args.case, None,
+                                      prompt_version=args.prompt_version or recorded_version,
+                                      output_text=output_text)
         except TimeoutError as exc:
             raise _model_timeout(root, "the judge") from exc
         except (models.ModelError, OSError) as exc:
@@ -1320,6 +1351,14 @@ def main(argv: list[str] | None = None) -> int:
             raise SystemExit(str(exc)) from exc
         print(f"filed {filed['id']} -> {_rel(root, filed['path'])}")
         print("local document only. Nothing was posted, pushed, or merged.")
+        return 0
+    if args.command == "run" and args.sub == "verdict":
+        from ctx.ui import UiError, set_run_verdict
+        try:
+            updated = set_run_verdict(root, args.run, args.verdict, args.note)
+        except UiError as exc:
+            raise SystemExit(str(exc)) from exc
+        print(f"run #{updated['id']}: {updated['verdict']}")
         return 0
     if args.command == "prompt":
         if args.sub == "list":
@@ -1357,8 +1396,54 @@ def main(argv: list[str] | None = None) -> int:
         for row in rows:
             print(f"{row['name']}  {row['kind']}  {row['title']}")
         return 0
+    if args.command == "inbox" and args.sub in ("capture", "triage", "delete"):
+        from ctx.ui import UiError, capture, delete_inbox, triage_inbox
+        try:
+            if args.sub == "capture":
+                res = capture(root, args.title, args.body, source="the CLI")
+                print(f"captured {res['name']} -> {res['path']}")
+            elif args.sub == "triage":
+                res = triage_inbox(root, args.name, args.type, args.project, args.title)
+                print(f"triaged {args.name} -> {res['id']} ({res.get('type', args.type)})")
+            else:
+                delete_inbox(root, args.name)
+                print(f"deleted inbox/{args.name}")
+        except UiError as exc:
+            raise SystemExit(str(exc)) from exc
+        return 0
+    if args.command == "lock":
+        from ctx.ui import UiError, build_lock, clear_build_lock
+        try:
+            if args.clear:
+                res = clear_build_lock(root, args.contribution, force=args.force)
+                print(f"lock cleared: {res.get('removed', False)}")
+            else:
+                res = build_lock(root, args.contribution)
+                if not res.get("locked"):
+                    print("not locked")
+                else:
+                    print(f"locked pid={res.get('pid')} host={res.get('host')} stale={res.get('stale')}")
+        except UiError as exc:
+            raise SystemExit(str(exc)) from exc
+        return 0
+    if args.command == "settings":
+        from ctx.config import ConfigError, choose, rotate_token
+        try:
+            if args.sub == "deployment":
+                res = choose(root, args.mode)
+                print(f"deployment: {res['deployment']} ({res['bind']}:{res['port']})")
+                if res.get("access_token"):
+                    print(f"access token, shown once: {res['access_token']}")
+            else:
+                token = rotate_token(root)
+                print(f"access token, shown once: {token}")
+        except ConfigError as exc:
+            raise SystemExit(str(exc)) from exc
+        return 0
     if args.command == "improve":
-        from ctx.writeback import WritebackError, accept_improvement, list_improvements, reject_improvement
+        from ctx.writeback import (WritebackError, accept_improvement,
+                                   edit_improvement, list_improvements,
+                                   reject_improvement)
         if args.sub == "list":
             rows = list_improvements(root)
             if not rows:
@@ -1372,6 +1457,10 @@ def main(argv: list[str] | None = None) -> int:
                 result = accept_improvement(root, args.name)
                 print(f"accepted [{result['improvement_type']}]: {result['title']}")
                 print(f"applied: {result['path']}")
+                return 0
+            if args.sub == "edit":
+                result = edit_improvement(root, args.name, args.change)
+                print(f"updated {result['name']}")
                 return 0
             result = reject_improvement(root, args.name, args.reason)
             print(f"rejected {result['name']}")

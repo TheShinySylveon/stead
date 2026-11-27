@@ -15,8 +15,10 @@ services:
     volumes:
       - stead-context:/app/context
       - stead-private:/app/private
+      - stead-inbox:/app/inbox
     restart: unless-stopped
 
 volumes:
   stead-context:
   stead-private:
+  stead-inbox:

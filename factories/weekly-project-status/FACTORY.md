@@ -47,7 +47,7 @@ One project id. The runner deterministically gathers (no LLM involved):
 
 ## Tools
 
-Python 3.14+ standard library only (`python -m stead`). Generation step: any
+Python 3.11+ standard library only (`python -m stead`). Generation step: any
 LLM/agent the operator chooses. No network dependency in the runner.
 
 ## Risk level & incremental rollout
