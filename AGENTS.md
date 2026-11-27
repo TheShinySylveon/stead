@@ -166,15 +166,15 @@ python -m stead factory merge --contribution ID    # green checks + independent 
 python -m stead account add --name NAME --actor ACTOR  # shared-server sign-in. Hash only.
 python -m stead init                          # rebuild state.db from schema.sql + files
 python -m stead task add --title T --project P [--status to-do]
-python -m stead task list [--project P] [--status S]
+python -m stead task list [--project P] [--status S] [--sort]
 python -m stead task set ID --status S
 python -m stead status PROJECT                # task rollup + recent factory runs
 python -m stead context search QUERY [--repo ID] [--json]  # read-only search over context objects
 
 python -m stead repo add --title T [--url URL] [--kind own|oss] [--status active|paused|archived]
-python -m stead repo list [--kind own|oss]
+python -m stead repo list [--kind own|oss] [--json]
 python -m stead contribution add --title T --repo REPO --kind issue|pr --number N [--role author|assignee|reviewer] [--state open|closed|merged] [--ci pending|pass|fail|none] [--method spec-kit|builtin]
-python -m stead contribution list
+python -m stead contribution list [--repo R] [--kind issue|pr] [--role R] [--state S] [--json] [--count]
 python -m stead contribution set ID [--state S] [--ci C] [--review R] [--role R] [--method spec-kit|builtin]
 python -m stead delete TYPE ID [--force]       # TYPE: project task document meeting repo actor contribution
 
@@ -193,7 +193,7 @@ python -m stead factory run --factory weekly-contribution-digest [--shadow|--liv
 python -m stead factory run --factory weekly-project-status --project P [--shadow|--live]
 python -m stead factory run --factory feature-builder --contribution ID [--shadow|--live]
 python -m stead digest                        # shortcut for the digest shadow run
-python -m stead metrics [--json] [--repo R]  # dogfood numbers: committed vs correct
+python -m stead metrics [--json] [--repo R] [--since YYYY-MM-DD]  # dogfood numbers: committed vs correct
 python -m stead metrics mark ID --correct true|false  # record the hand-checked rubric verdict
 python -m stead onboard --title T [--kind own|oss] [--url URL] [--path DIR] [--method spec-kit|builtin] [--no-specify]
 python -m stead welcome --title T [--url URL] # first run: one project, no Spec Kit
