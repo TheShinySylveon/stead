@@ -7,7 +7,6 @@ import math
 import tempfile
 import unittest
 from pathlib import Path
-from unittest import mock
 
 from ctx import (
     agent,
@@ -17,7 +16,6 @@ from ctx import (
     db,
     doctor,
     frontmatter,
-    merge,
     metrics,
     models,
     onboard,

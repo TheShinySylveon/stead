@@ -636,7 +636,11 @@ def _production_version(root: Path, factory_name: str) -> str:
             conn.close()
         if row:
             return row["version"]
-    prompts = [p for p in (root / "factories" / factory_name / "prompts").glob("v*.md")
+    factories_root = (root / "factories").resolve()
+    prompts_dir = (factories_root / factory_name / "prompts").resolve()
+    if not str(prompts_dir).startswith(str(factories_root) + os.sep):
+        raise ModelError(f"invalid factory: {factory_name!r}")
+    prompts = [p for p in prompts_dir.glob("v*.md")
                if p.stem[1:].isdigit()]
     prompts.sort(key=lambda p: int(p.stem[1:]))
     return prompts[-1].stem if prompts else ""

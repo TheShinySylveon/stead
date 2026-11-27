@@ -10,8 +10,6 @@ import re
 from email import policy
 from pathlib import Path
 
-from ctx.ui import UiError, capture
-
 _ICS_UNFOLD = re.compile(r"\r?\n[ \t]")
 MAX_IMPORT_BYTES = 2 * 1024 * 1024
 
@@ -48,6 +46,7 @@ def import_bytes(root: Path, filename: str, data: bytes) -> list[dict]:
         notes = [(_transcript_title_text(filename, text), text)]
     else:
         raise InboxImportError("import a .eml, .ics, .md, or .txt file")
+    from ctx.ui import UiError, capture
     written = []
     for title, body in notes:
         try:

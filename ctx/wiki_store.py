@@ -68,7 +68,7 @@ def save(root: Path, repo_id: str, data: dict) -> None:
         try:
             os.unlink(tmp)
         except OSError:
-            pass
+            pass  # best-effort cleanup of temp file before re-raising
         raise
 
 

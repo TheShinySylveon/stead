@@ -2385,7 +2385,7 @@ class CockpitHandler(BaseHTTPRequestHandler):
                         if rotated:
                             self.server.access_token = rotated
                     except (UnicodeDecodeError, json.JSONDecodeError, AttributeError):
-                        pass
+                        pass  # token rotation response already succeeded; ignore parse noise
                 elif parsed.path == "/api/account/reset" and payload and payload.get("name"):
                     self._revoke_account_sessions(str(payload.get("name") or ""))
             if parsed.path == "/" and status == 200:

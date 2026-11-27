@@ -30,7 +30,7 @@ def connect(root: Path) -> sqlite3.Connection:
     try:
         conn.execute("PRAGMA journal_mode = WAL")
     except sqlite3.OperationalError:
-        pass
+        pass  # read-only or unsupported filesystem: fall back to default journal mode
     return conn
 
 

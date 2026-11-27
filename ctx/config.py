@@ -77,7 +77,7 @@ def _write_config(root: Path, payload: dict) -> None:
         try:
             os.unlink(tmp)
         except OSError:
-            pass
+            pass  # best-effort cleanup of temp file before re-raising
         raise
 
 
