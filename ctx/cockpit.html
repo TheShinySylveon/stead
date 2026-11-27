@@ -1903,8 +1903,8 @@ document.body.addEventListener("click", async (event) => {
         toast("Published");
       } else if (act === "comment") {
         if (!confirm("Post a comment on the issue linking the PR?")) return;
-        await api("/api/factory/comment", {method: "POST", body: JSON.stringify({contribution: id, confirm: true})});
-        toast("Commented");
+        const commented = await api("/api/factory/comment", {method: "POST", body: JSON.stringify({contribution: id, confirm: true})});
+        toast(commented && commented.skipped ? "Comment skipped: " + (commented.reason || "no upstream issue") : "Commented");
       } else if (act === "address") {
         if (!confirm("Address the review comments on this PR? It reads the comments, fixes the code, commits, and pushes to the PR.")) return;
         const result = await awaitTask("/api/review/address", {contribution: id}, "Address review", logFor(actionBtn));
@@ -2021,7 +2021,7 @@ document.body.addEventListener("click", async (event) => {
       const result = await api("/api/factory/comment", {method: "POST", body: JSON.stringify({
         contribution: commentBtn.dataset.comment, confirm: true,
       })});
-      toast("Comment " + (result.updated ? "updated" : "created"));
+      toast(result.skipped ? "Comment skipped: " + (result.reason || "no upstream issue") : "Comment " + (result.updated ? "updated" : "created"));
       await load();
     } catch (err) { toast(err.message); }
     return;

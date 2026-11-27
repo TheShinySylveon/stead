@@ -202,10 +202,13 @@ gated commands. The
 so a human can merge and close together; filing issues upstream is deferred
 (humans file issues for now). The comment is gated like publish/merge: explicit
 per-repo `allow_comment: true`, `kind: own` only, never from assembly, never the
-default, and idempotent (one marked comment, updated in place). It carries no CI
-status today — a stale status is worse than none — but the marked comment is the
-place CI status could later be refreshed on `--wait`. It is lower-risk than
-merging but is still a public remote write under the user's identity.
+default, and idempotent (one marked comment, updated in place). Before posting,
+one read-only lookup verifies the number is a real upstream issue; a local-only
+spec (no issue, or a number that belongs to a PR — the number space is shared)
+is skipped cleanly, never posted onto `pull/<N>`. It carries no CI status today
+— a stale status is worse than none — but the marked comment is the place CI
+status could later be refreshed on `--wait`. It is lower-risk than merging but
+is still a public remote write under the user's identity.
 
 ## Shared server: every account is an admin
 

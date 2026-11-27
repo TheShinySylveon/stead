@@ -1,4 +1,5 @@
-"""The gated issue comment: kind own, allow_comment, idempotent marker."""
+"""The gated issue comment: kind own, allow_comment, idempotent marker,
+and a clean skip when the spec has no real upstream issue."""
 
 from __future__ import annotations
 
@@ -42,6 +43,8 @@ class CommentTest(unittest.TestCase):
             calls.append(argv)
             if argv[1] == "api" and argv[2] == "user":
                 return "me\n"
+            if argv[1] == "api" and argv[2] == "repos/me/app/issues/5":
+                return '{"number": 5}'
             if argv[1] == "api" and "--paginate" in argv:
                 return "[]"
             if argv[1] == "issue":
@@ -60,6 +63,8 @@ class CommentTest(unittest.TestCase):
         def runner(argv, _cwd):
             if argv[1] == "api" and argv[2] == "user":
                 return "me\n"
+            if argv[1] == "api" and argv[2] == "repos/me/app/issues/5":
+                return '{"number": 5}'
             if argv[1] == "api" and "--paginate" in argv:
                 return ('[{"id": 42, "body": "' + COMMENT_MARKER + ' old\\n", '
                         '"user": {"login": "me"}}]')
@@ -77,6 +82,8 @@ class CommentTest(unittest.TestCase):
         def runner(argv, _cwd):
             if argv[1] == "api" and argv[2] == "user":
                 return "me\n"
+            if argv[1] == "api" and argv[2] == "repos/me/app/issues/5":
+                return '{"number": 5}'
             if argv[1] == "api" and "--paginate" in argv:
                 return ('[{"id": 9, "body": "' + COMMENT_MARKER + ' theirs\\n", '
                         '"user": {"login": "stranger"}}]')
@@ -88,6 +95,39 @@ class CommentTest(unittest.TestCase):
         result = comment(self.root, "contribution-me-app-issue-5",
                          "https://github.com/me/app/pull/9", runner=runner)
         self.assertTrue(result["created"])  # does not overwrite the stranger's
+
+    def test_comment_skips_when_the_number_is_a_pr_upstream(self) -> None:
+        # Issues and PRs share a number space: a local-only spec numbered 5
+        # must not post onto pull/5 when no issue 5 exists upstream.
+        calls = []
+
+        def runner(argv, _cwd):
+            calls.append(argv)
+            if argv[1] == "api" and argv[2] == "repos/me/app/issues/5":
+                return ('{"number": 5, "pull_request": '
+                        '{"url": "https://api.github.com/repos/me/app/pulls/5"}}')
+            raise AssertionError(argv)
+
+        result = comment(self.root, "contribution-me-app-issue-5",
+                         "https://github.com/me/app/pull/9", runner=runner)
+        self.assertTrue(result["skipped"])
+        self.assertIn("pull request", result["reason"])
+        self.assertFalse(any(a[1] == "issue" for a in calls))
+
+    def test_comment_skips_when_there_is_no_upstream_issue(self) -> None:
+        calls = []
+
+        def runner(argv, _cwd):
+            calls.append(argv)
+            if argv[1] == "api" and argv[2] == "repos/me/app/issues/5":
+                raise CommentError("HTTP 404: Not Found")
+            raise AssertionError(argv)
+
+        result = comment(self.root, "contribution-me-app-issue-5",
+                         "https://github.com/me/app/pull/9", runner=runner)
+        self.assertTrue(result["skipped"])
+        self.assertIn("no upstream issue", result["reason"])
+        self.assertFalse(any(a[1] == "issue" for a in calls))
 
     def test_comment_rejects_a_pr_in_another_repo(self) -> None:
         with self.assertRaises(CommentError) as caught:

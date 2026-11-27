@@ -1561,7 +1561,9 @@ def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
         result = comment(root, contribution, pr_url)
     except CommentError as exc:
         raise UiError(str(exc)) from exc
-    # Record that the comment is done, so the pipeline stops offering it.
+    # Record that the comment step is done, so the pipeline stops offering it.
+    # A clean skip (local-only spec, no upstream issue) is done too: there is
+    # nothing to comment on, now or later.
     writeback.mark_commented(root, contribution)
     return {"ok": True, **result}
 
