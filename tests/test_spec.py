@@ -101,7 +101,8 @@ class SpecApprovalTest(unittest.TestCase):
             frontmatter.dumps(repo, "# App\n"), encoding="utf-8")
 
     DRAFT = ("Add a small command-line flag so a caller can change the greeting without editing the source; the default output stays the same when the flag is absent, and a test covers it.\n\n## Acceptance criteria\n\n"
-             "- [ ] the flag works\n\n## Plan\n\nEdit app.py.\n")
+             "- [ ] the flag works\n\n## Plan\n\nEdit app.py.\n\n"
+             "## Data source\n\n- data: `# file` (stead/__init__.py:1)\n")
 
     def test_draft_refuses_the_sync_cache_stub(self) -> None:
         self._seed_repo()
@@ -332,6 +333,24 @@ class SpecApprovalTest(unittest.TestCase):
                 "- `task list` dispatch: `query = 'SELECT id, status, project, "
                 "title FROM tasks'` (ctx/cli.py:2)\n")
         self.assertEqual(spec.plan_citation_warnings(plan, code), [])
+
+    def test_incomplete_draft_is_completed(self) -> None:
+        code = self._seed_repo_with_code()
+        complete = ("Add a flag.\n\n## Acceptance criteria\n\n- [ ] it works\n\n"
+                    "## Plan\n\nEdit ctx/cli.py.\n\n"
+                    "## Data source\n\n- data: `# file` (stead/__init__.py:1)\n")
+        # a draft with only a plan is structurally incomplete
+        incomplete = "## Plan\n\nEdit ctx/cli.py.\n"
+        problems = spec._structural_problems(incomplete, code)
+        self.assertIn("`## Acceptance criteria`", problems)
+        self.assertIn("`## Data source`", problems)
+        self.assertEqual(spec._structural_problems(complete, code), [])
+
+        replies = ["still incomplete\n", complete]
+        result = spec._complete_draft(
+            incomplete, "title", "body", "", "", "", code,
+            responder=lambda _p: replies.pop(0))
+        self.assertEqual(result, complete.strip())
 
     def test_fabricated_sql_table_is_flagged(self) -> None:
         code = self._seed_repo_with_code()

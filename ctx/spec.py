@@ -953,6 +953,55 @@ def _looks_like_spec(text: str) -> bool:
     return bool(re.search(r"##\s*acceptance\s+criteria", (text or ""), re.IGNORECASE))
 
 
+_DRAFT_COMPLETE_TRIES = 2
+
+
+def _structural_problems(text: str, code) -> list[str]:
+    """The spec sections a build would refuse: a missing criteria checklist, a
+    missing plan, or (when there is a checkout) a missing data-source section."""
+    from ctx import factory
+    problems: list[str] = []
+    if not factory.split_spec(text)[1]:
+        problems.append("`## Acceptance criteria`")
+    if not factory.spec_plan(text):
+        problems.append("`## Plan`")
+    if code is not None and not _data_source_section(text):
+        problems.append("`## Data source`")
+    return problems
+
+
+def _complete_draft(text, title, body, tree, symbols, facts, code, responder) -> str:
+    """Nudge the model to complete a structurally incomplete draft. Bounded: the
+    draft step's non-determinism (it sometimes omits a section) is repaired here
+    instead of failing hard, so a malformed first attempt can still land."""
+    for _ in range(_DRAFT_COMPLETE_TRIES):
+        problems = _structural_problems(text, code)
+        if not problems:
+            return text
+        text = _clean_draft(responder(
+            draft_complete_prompt(title, body, tree, symbols, facts, text, problems)))
+        if not text:
+            return ""
+    return text
+
+
+def draft_complete_prompt(title: str, body: str, tree: str, symbols: str,
+                          facts: str, draft: str, problems: list[str]) -> str:
+    """The completion turn: the draft is missing sections; rewrite it complete."""
+    return (
+        "Your draft is missing required sections: " + ", ".join(problems) + ".\n"
+        "Rewrite the FULL spec Markdown — a description, `## Acceptance criteria` "
+        "with a `- [ ]` checklist, `## Plan`, and `## Data source` — keeping the "
+        "content you already wrote and adding only what is missing. Do not issue "
+        "read/search actions; just return the complete spec.\n\n"
+        + (f"Data model (the real shapes):\n{facts}\n\n" if facts else "")
+        + (f"Repository tree:\n{tree}\n\n" if tree else "")
+        + (f"Symbols by file:\n{symbols}\n\n" if symbols else "")
+        + "Your current draft:\n\n" + draft + "\n\n"
+        + f"# Issue: {title}\n\n{body}\n"
+    )
+
+
 def _parse_action(text: str) -> dict | None:
     """One JSON action object, or None. Same tolerance as the build loop."""
     cleaned = (text or "").strip()
@@ -1023,6 +1072,10 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
     text = _draft_with_research(code, tree, symbols,
                                 source.get("title") or contribution_ref,
                                 source_body, responder, facts)
+    if not text:
+        raise SpecError("the model returned an empty draft")
+    text = _complete_draft(text, source.get("title") or contribution_ref,
+                           source_body, tree, symbols, facts, code, responder)
     if not text:
         raise SpecError("the model returned an empty draft")
     from ctx import factory

@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+- **The draft step now repairs a malformed draft instead of failing.** A
+  completion-retry loop re-prompts the model when a draft is structurally
+  incomplete (missing `## Acceptance criteria`, `## Plan`, or `## Data source`),
+  bounded to two tries. This targets the measured non-determinism — a fresh
+  unattended draft was malformed 1 of 2 attempts — the next step toward
+  "draft: human-rarely".
 - **The citation gate now reads the quoted code, not a backticked label.** A
   `## Data source` line can backtick its label too (`- `task list` dispatch:
   `return cmd_task_list(...)` (ctx/cli.py:1100)`); the gate verifies the snippet
