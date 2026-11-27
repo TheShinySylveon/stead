@@ -599,6 +599,83 @@ def plan_data_warnings(plan: str, code: Path) -> list[str]:
     return warnings
 
 
+def plan_citation_warnings(plan: str, code: Path) -> list[str]:
+    """Cite-and-verify: a plan's data-source claim must be a citation that checks
+    out against the code. The `## Data source` section lists
+    `- <what>: `<quoted code>` (<file>:<line>)`, and each citation is verified by
+    reading that file:line and confirming the quoted code actually appears there.
+    This proves the plan read the real code, not a guess — the difference between
+    "name real symbols" and "show your claim matches the code"."""
+    warnings: list[str] = []
+    section = _data_source_section(plan)
+    citations = _citations(section)
+    if not citations:
+        warnings.append(
+            "the plan has no `## Data source` citations; list where each data "
+            "source lives with a quoted code line and a file:line, e.g. "
+            "`- repos: `SELECT id, kind, status, title FROM repos` (ctx/cli.py:233)`")
+        return warnings
+    for snippet, file_rel, line in citations:
+        target = code / file_rel.replace("\\", "/")
+        if not target.is_file():
+            warnings.append(f"the plan cites `{file_rel}`, which is not in the repo")
+            continue
+        try:
+            lines = target.read_text(encoding="utf-8", errors="replace").splitlines()
+        except OSError:
+            warnings.append(f"the plan cites `{file_rel}`, which cannot be read")
+            continue
+        if line < 1 or line > len(lines):
+            warnings.append(f"the plan cites `{file_rel}:{line}`, which is out of range")
+            continue
+        if not snippet:
+            warnings.append(f"the plan cites `{file_rel}:{line}` but quotes no code")
+            continue
+        window = _norm_ws(" ".join(lines[max(0, line - 4):line + 3]))
+        if _norm_ws(snippet) not in window:
+            warnings.append(
+                f"the citation `{file_rel}:{line}` does not contain the quoted "
+                f"code `{snippet[:60]}`; the plan did not see what it claims")
+    return warnings
+
+
+_DATA_SOURCE_RE = re.compile(r"\(([^():\s]+):(\d+)\)")
+
+
+def _citations(section: str) -> list[tuple[str, str, int]]:
+    """(quoted_code, file, line) triples from a `## Data source` section."""
+    out: list[tuple[str, str, int]] = []
+    for line in section.splitlines():
+        loc = _DATA_SOURCE_RE.search(line)
+        if not loc:
+            continue
+        file_rel, line_str = loc.group(1), loc.group(2)
+        snippet = ""
+        m = re.search(r"`([^`]+)`", line)
+        if m:
+            snippet = m.group(1)
+        out.append((snippet, file_rel, int(line_str)))
+    return out
+
+
+def _data_source_section(plan: str) -> str:
+    """The text under the `## Data source` heading, or ''."""
+    lines = (plan or "").splitlines()
+    out: list[str] = []
+    active = False
+    for line in lines:
+        if line.strip().lower().startswith("## "):
+            active = line.strip().lower().startswith("## data source")
+            continue
+        if active:
+            out.append(line)
+    return "\n".join(out)
+
+
+def _norm_ws(text: str) -> str:
+    return re.sub(r"\s+", " ", (text or "")).strip()
+
+
 def check_gate_cases(cases_file: Path, fixtures_dir: Path) -> dict:
     """Deterministic spec-gate eval: run the data-model/path/symbol gates against
     fixture repos (non-Stead) and check the expected result. No model, no network.
@@ -775,7 +852,8 @@ def draft_research_prompt(title: str, body: str, tree: str, symbols: str,
         "(optionally \"start\"/\"end\" for a line range) or "
         "{\"action\":\"search\",\"query\":\"cmd_repo_list\"}. After you have read "
         "enough, reply with {\"action\":\"finish\",\"spec\":\"...\"} where spec is "
-        "the full Markdown spec (description + ## Acceptance criteria + ## Plan)."
+        "the full Markdown spec (description + ## Acceptance criteria + ## Plan + "
+        "## Data source)."
     )
 
 
@@ -855,8 +933,10 @@ def draft_write_prompt(title: str, body: str, tree: str, symbols: str,
         "1. A description of the ONE concrete code change.\n"
         "2. `## Acceptance criteria` — a `- [ ]` checklist of concrete, "
         "testable criteria (self-contained, no invented values).\n"
-        "3. `## Plan` — the real files/functions to edit, with boundary "
-        "constraints and the data source you actually traced.\n\n"
+        "3. `## Plan` — the real files/functions to edit, with boundary constraints.\n"
+        "4. `## Data source` — one `- <what>: `<quoted code>` (<file>:<line>)` "
+        "line per data source, quoting the exact code you read. The quote must "
+        "really be at that file:line — it is verified against the checkout.\n\n"
         + (f"Data model (the real shapes):\n{facts}\n\n" if facts else "")
         + "What you read:\n"
         + research + "\n\n"
@@ -954,6 +1034,7 @@ def draft_spec(root: Path, contribution_ref: str, *, responder=None,
     warnings = plan_path_warnings(plan, code) if code is not None else []
     warnings += plan_symbol_warnings(plan, code) if code is not None else []
     warnings += plan_data_warnings(plan, code) if code is not None else []
+    warnings += plan_citation_warnings(text, code) if code is not None else []
     warnings += [f"a build would refuse this draft: {p}" for p in readiness_problems(text)]
 
     today = date.today().isoformat()

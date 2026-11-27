@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+- **Cite-and-verify drafting.** The draft now must end with a `## Data source`
+  section where each data-source claim quotes the exact code and cites its
+  location (`- repos: `SELECT ... FROM repos` (ctx/cli.py:233)`). A new
+  `plan_citation_warnings` gate reads each cited file:line and confirms the
+  quoted code is actually there, so a plan cannot claim a source it never saw.
+  This is the difference between "name real symbols" and "prove your claim
+  matches the code" — the draft step's next hardening toward autonomy.
 - **The model proposes improvements; a person accepts, rejects, or edits them.**
   A new `stead improve` command and a cockpit **Improvements** tab. During a
   build the model can `propose` an improvement — an eval case, a sharper prompt,
