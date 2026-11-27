@@ -121,8 +121,13 @@ class CockpitActionsTest(unittest.TestCase):
     def test_factory_new_eval_and_promote(self) -> None:
         status, body = self._post("/api/factory/new", {"name": "tidy-notes", "title": "Tidy"})
         self.assertEqual(status, 200, body)
-        status, body = self._post("/api/eval/run", {"factory": "tidy-notes"})
-        self.assertTrue(body["ok"])
+        for route in ("/api/eval/run", "/api/eval/status"):
+            status, body = self._post(route, {"factory": "tidy-notes"})
+            self.assertEqual(status, 200, body)
+            gates = body["spec_gates"]
+            self.assertTrue(gates["ok"], gates["problems"])
+            self.assertEqual(gates["cases"], 9)
+            self.assertEqual(gates["passed"], gates["cases"])
         status, body = self._post("/api/prompt/promote", {"factory": "tidy-notes", "version": "v1"})
         self.assertEqual(status, 400)
         self.assertIn("eval-tidy-notes", body["error"])

@@ -30,13 +30,6 @@ example a cockpit action that auto-resolves a value while its CLI command still
 requires the flag). Both sides share the same handlers and helpers — never
 duplicate logic that should resolve identically.
 
-**Addressing PR review comments — always reply inline.** When addressing pull
-request review comments (from humans or review bots such as Greptile), do not
-stop at pushing the fix commit: reply inline to each actual review comment
-thread on GitHub (`gh api -X POST repos/<owner>/<repo>/pulls/<pr>/comments/<id>/replies`)
-referencing the fix commit SHA and briefly stating what changed (or why a
-suggestion was intentionally declined).
-
 ## What this system is
 
 A local **context system** plus **factories**, covering both your
@@ -356,6 +349,18 @@ when the repo says `reach: merge` and checks are green; no `--admin`; vague or
 large specs are flagged, never guessed; report CI honestly. Assembly alone
 does no LLM/network/subprocess/remote writes. `stead build` is a separate,
 explicit step.
+
+**PR review before merge (all repos and delivery modes).** Check the live PR,
+including inline threads, review summaries, and top-level comments, for human
+and bot feedback (including Greptile). Address every actionable comment before
+merging or handing off as ready to merge: make and verify the fix on the current
+PR head, or record why no change is needed and get reviewer or maintainer
+agreement. Always reply inline to each actual review comment thread on GitHub
+(`gh api -X POST repos/<owner>/<repo>/pulls/<pr>/comments/<id>/replies`) with
+the fix commit SHA and outcome, and resolve the thread where possible. A green
+check, including a successful review-bot check, does not clear findings. If
+feedback is pending, unresolved, or cannot be verified, hold the merge and say
+what is outstanding. This policy does not expand the repo's merge permissions.
 
 ## Factory protocol (incremental risk)
 

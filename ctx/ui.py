@@ -1605,20 +1605,8 @@ def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -
 
 
 def check_evals(root: Path, factory_name: str) -> dict:
-    from ctx import spec as spec_mod
-    from ctx.models import check_eval_files
-    result = check_eval_files(root, factory_name)
-    if not factory_name or factory_name == factory.FEATURE_BUILDER_FACTORY:
-        fixtures = PKG_DIR.parent / "tests" / "fixtures"
-        cases_file = fixtures / "spec-gates.json"
-        if cases_file.is_file():
-            gates = spec_mod.check_gate_cases(cases_file, fixtures / "repos")
-            result["gates"] = gates
-            if not gates.get("ok", True):
-                result["ok"] = False
-                result["problems"] = (list(result.get("problems") or [])
-                                      + list(gates.get("problems") or []))
-    return result
+    from ctx.models import run_eval_checks
+    return run_eval_checks(root, factory_name)
 
 
 def promote_prompt(root: Path, factory_name: str, version: str) -> dict:
@@ -2151,8 +2139,11 @@ def dispatch(root: Path, method: str, path: str, query: dict,
             result = check_evals(root, payload.get("factory") or "")
         elif path == "/api/eval/status":
             from ctx.models import eval_status
-            result = eval_status(root, payload.get("factory") or "",
-                                 payload.get("version") or "")
+            factory_name = payload.get("factory") or ""
+            result = eval_status(root, factory_name, payload.get("version") or "")
+            checks = check_evals(root, factory_name)
+            result["spec_gates"] = checks["spec_gates"]
+            result["check_problems"] = checks["problems"]
         elif path == "/api/wiki/action":
             result = wiki_action(root, payload.get("action") or "", payload)
         elif path == "/api/spec/approve":

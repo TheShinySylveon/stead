@@ -470,7 +470,7 @@ class AuditFixesTest(unittest.TestCase):
         from ctx import cli
         res = ui.check_evals(self.root, "")
         self.assertTrue(res["ok"], res)
-        self.assertIn("gates", res)
+        self.assertIn("spec_gates", res)
         # CLI `model set` / `model add` preserve a custom --key-env when omitted.
         cli.main(["--root", str(self.root), "model", "set", "--provider", "openai",
                   "--name", "gpt-4o", "--key-env", "MY_CUSTOM_KEY"])
