@@ -535,32 +535,46 @@ def plan_path_warnings(plan: str, code: Path) -> list[str]:
     return warnings
 
 
-_CLI_FLAG_DEF = re.compile(r'add_argument\([^)]*--([A-Za-z0-9][A-Za-z0-9_-]*)')
 _PLAN_FLAG = re.compile(r'(?<![\w-])--([A-Za-z0-9][A-Za-z0-9_-]*)')
-_FLAG_PROPOSED = re.compile(r'\b(add|introduce|new|create|implement|expose)\b')
+_FLAG_PROPOSED = re.compile(
+    r'\b(?:(?:add|introduce|create|implement|expose)\s+(?:support\s+for\s+)?'
+    r'(?:(?:a|an|the)\s+)?(?:new\s+)?|new\s+)(?:cli\s+)?$')
+_FLAG_EXISTING = re.compile(
+    r'\b(?:(?:existing|current)\s+|reuse\s+(?:the\s+)?)(?:cli\s+)?$')
+_FLAG_NOUN = re.compile(r'^\s+(?:flag|option)\b')
 
 
 def _cli_flag_names(code: Path) -> set[str]:
     'Long argparse flags defined in the checkout Python files.'
     flags: set[str] = set()
     for path in _py_files(code):
-        if _ignored_path(path, code):
-            continue
         try:
-            text = path.read_text(encoding='utf-8', errors='replace')
-        except OSError:
+            tree = ast.parse(path.read_bytes(), filename=str(path))
+        except (OSError, SyntaxError, ValueError):
             continue
-        for name in _CLI_FLAG_DEF.findall(text):
-            flags.add(name)
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == 'add_argument'):
+                continue
+            for arg in node.args:
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    match = _PLAN_FLAG.fullmatch(arg.value)
+                    if match:
+                        flags.add(match.group(1))
     return flags
 
 
-def _flag_treated_existing(window: str, flag: str) -> bool:
-    if _FLAG_PROPOSED.search(window):
+def _flag_treated_existing(before: str, after: str) -> bool:
+    # Qualifiers must describe this occurrence, not just appear nearby.
+    before = before.lower().rstrip('`')
+    after = after.lower().lstrip('`')
+    if _FLAG_PROPOSED.search(before):
         return False
-    if re.search(r'\b(existing|reuse|already|current)\b', window):
+    if _FLAG_EXISTING.search(before):
         return True
-    return bool(re.search(rf'the\s+{re.escape(flag)}\s+(flag|option)', window))
+    if re.match(r'^\s+(?:already\s+exists|is\s+(?:an?\s+)?existing\b)', after):
+        return True
+    return bool(re.search(r'\bthe\s+$', before) and _FLAG_NOUN.match(after))
 
 
 def plan_flag_warnings(plan: str, code: Path) -> list[str]:
@@ -573,16 +587,13 @@ def plan_flag_warnings(plan: str, code: Path) -> list[str]:
     for match in _PLAN_FLAG.finditer(plan or ''):
         name = match.group(1)
         flag = f'--{name}'
-        if flag in seen:
+        if flag in seen or name in known:
+            continue
+        before = plan[max(0, match.start() - 80):match.start()]
+        after = plan[match.end():match.end() + 80]
+        if not _flag_treated_existing(before, after):
             continue
         seen.add(flag)
-        start = max(0, match.start() - 80)
-        end = min(len(plan), match.end() + 80)
-        window = plan[start:end].lower()
-        if not _flag_treated_existing(window, flag.lower()):
-            continue
-        if name in known:
-            continue
         warnings.append(
             f'the plan treats `{flag}` as an existing CLI flag, but the '
             'checkout does not define it. If you mean to add it, say so '
@@ -733,9 +744,8 @@ def _norm_ws(text: str) -> str:
     return re.sub(r"\s+", " ", (text or "")).strip()
 
 
-def check_gate_cases(cases_file: Path, fixtures_dir: Path,
-                     include_flag: bool = False) -> dict:
-    """Deterministic spec-gate eval: run the data-model/path/symbol gates against
+def check_gate_cases(cases_file: Path, fixtures_dir: Path) -> dict:
+    """Deterministic spec-gate eval: run the data-model/path/symbol/flag gates against
     fixture repos (non-Stead) and check the expected result. No model, no network.
 
     ``cases_file`` is a JSON array of objects::
@@ -767,8 +777,6 @@ def check_gate_cases(cases_file: Path, fixtures_dir: Path,
             continue
         plan = case.get("plan") or ""
         if case.get("gate") == "flag":
-            if not include_flag:
-                continue
             warnings = plan_flag_warnings(plan, fixture)
         else:
             warnings = (plan_data_warnings(plan, fixture)

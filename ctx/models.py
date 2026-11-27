@@ -464,6 +464,16 @@ def check_eval_files(root: Path, factory_name: str | None = None) -> dict:
     return {"ok": not problems, "cases": len(paths), "problems": problems}
 
 
+def run_eval_checks(root: Path, factory_name: str | None = None) -> dict:
+    """Run the structural and deterministic checks shared by CLI and cockpit."""
+    from ctx import spec
+    checked = check_eval_files(root, factory_name)
+    fixtures = Path(__file__).parent.parent / "tests" / "fixtures"
+    gates = spec.check_gate_cases(fixtures / "spec-gates.json", fixtures / "repos")
+    return {"ok": checked["ok"] and gates["ok"], "cases": checked["cases"],
+            "problems": checked["problems"] + gates["problems"], "spec_gates": gates}
+
+
 def judge(root: Path, factory_name: str, case_id: str, output_path: str | None,
           *, transport=None, timeout: float | None = None, prompt_version: str = "",
           output_text: str | None = None) -> dict:
