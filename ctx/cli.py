@@ -794,7 +794,7 @@ def build_parser() -> argparse.ArgumentParser:
     listed.add_argument("--kind", choices=("decision", "glossary", "note"),
                         help="limit output to one kind")
     improve = sub.add_parser("improve", help="proposed improvements (model proposals to accept/reject)").add_subparsers(dest="sub", required=True)
-    imp_list = improve.add_parser("list", help="list proposed improvements. Read-only.")
+    improve.add_parser("list", help="list proposed improvements. Read-only.")
     imp_accept = improve.add_parser("accept", help="apply one: eval-case writes an eval, prompt writes a prompt, code files a task")
     imp_accept.add_argument("name")
     imp_reject = improve.add_parser("reject", help="dismiss one")

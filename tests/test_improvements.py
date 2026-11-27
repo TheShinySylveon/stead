@@ -97,6 +97,24 @@ class ImprovementsTest(unittest.TestCase):
         with self.assertRaises(writeback.WritebackError):
             self._propose(itype="nonsense")
 
+    def test_traversal_in_name_is_refused(self) -> None:
+        self._propose(title="X", change="y")
+        for bad in ("../context/projects/evil", "..\\evil", "sub/dir"):
+            with self.assertRaises(writeback.WritebackError):
+                writeback.accept_improvement(self.root, bad)
+
+    def test_traversal_in_factory_is_refused(self) -> None:
+        # A proposal whose factory tries to escape the store must be refused.
+        (self.root / "inbox").mkdir(parents=True)
+        note = (self.root / "inbox" / "propose-improvement-bad-1.md")
+        note.write_text(
+            "---\nkind: improvement\nimprovement_type: eval-case\n"
+            "factory: ../../evil\ntitle: Bad\n---\n\n"
+            "# Bad\n\n## Rationale\n\nwhy\n\n## Change\n\nwhat\n", encoding="utf-8")
+        with self.assertRaises(writeback.WritebackError):
+            writeback.accept_improvement(self.root, note.name)
+
+
 
 if __name__ == "__main__":
     unittest.main()

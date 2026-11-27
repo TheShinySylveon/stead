@@ -791,6 +791,15 @@ def propose_note(root: Path, kind: str, title: str, text: str,
 IMPROVEMENT_TYPES = ("eval-case", "prompt", "code")
 
 
+def _safe_component(value: str, label: str) -> str:
+    """A single safe path component: non-empty, no separators, no ``..``.
+    Guards against a proposal name or factory that tries to escape the store."""
+    value = (value or "").strip()
+    if not value or value in {".", ".."} or "/" in value or "\\" in value:
+        raise WritebackError(f"{label} is not a safe name: {value!r}")
+    return value
+
+
 def propose_improvement(root: Path, improvement_type: str, title: str,
                         rationale: str, change: str, source: str = "",
                         factory: str = "feature-builder") -> dict:
@@ -863,11 +872,12 @@ def list_improvements(root: Path) -> list[dict]:
 
 
 def _load_improvement(root: Path, name: str) -> tuple[Path, dict, str]:
-    folder = root / "inbox"
-    path = folder / name
+    name = _safe_component(name, "improvement name")
+    path = root / "inbox" / name
     if not path.is_file() or not name.startswith("propose-improvement-"):
         raise WritebackError(f"improvement not found: {name}")
-    return path, *frontmatter.parse(path.read_text(encoding="utf-8"))
+    meta, body = frontmatter.parse(path.read_text(encoding="utf-8"))
+    return path, meta, body
 
 
 def accept_improvement(root: Path, name: str) -> dict:
@@ -878,7 +888,7 @@ def accept_improvement(root: Path, name: str) -> dict:
     title = meta.get("title") or path.stem
     rationale = _improvement_section(body, "rationale")
     change = _improvement_section(body, "change")
-    factory = meta.get("factory") or "feature-builder"
+    factory = _safe_component(meta.get("factory") or "feature-builder", "factory")
     result: dict = {"name": name, "improvement_type": itype, "title": title}
     if itype == "eval-case":
         result["path"] = _write_eval_case(root, factory, title, rationale, change)
