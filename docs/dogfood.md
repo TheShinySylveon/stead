@@ -632,3 +632,26 @@ strong drafter (DeepSeek) with the full gate stack live:
    plan, or data source) is re-prompted to complete it, bounded to two tries,
    instead of failing hard. This turns "malformed → human re-runs" into
    "malformed → the model repairs it".
+
+### Closing measurement (2026-11-27): the retry loop did not fix fabrication
+
+A second fresh issue (`task list --count`, #109) was drafted unattended with the
+retry loop live. The result is the honest bottom line:
+
+- **The retry loop worked** — the draft was produced, not failed hard. The
+  structural non-determinism is gone.
+- **The drafter still fabricates the data source.** All three citations were
+  invented: `def build_parser()` at `ctx/cli.py:180` (really `conn.close()`),
+  `def cmd_task_list(args)` at `ctx/cli.py:1040` (really a `--help` string), and
+  `class TaskRunnerTest` at `tests/test_tasks.py:1` (really a docstring). The
+  real functions are at lines 688 and 126.
+- **The citation gate caught all three** (once a parser bug was fixed — it did
+  not accept a backticked `(`file:line`)`, and the retry loop only checked for
+  the section's *presence*, not parseable citations).
+
+**The honest verdict:** the draft step is **not autonomous**. Cite-and-verify
+works — it catches fabrication — but the drafter still fabricates, so the human
+still reviews. The stack is now: retry (fixes structure) + citation gate (catches
+fabrication). What it does not yet do is *make the drafter trace correctly in
+the first place* — that remains a model-capability gap, not a deterministic one.
+"draft: human-mostly" is the honest, measured state.
