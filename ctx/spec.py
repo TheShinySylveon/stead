@@ -882,12 +882,45 @@ def _draft_read(code: Path, rel: str, start=None, end=None) -> str:
             return f"read {rel}: start and end must be integers"
         shown = "\n".join(lines[first - 1:last])
         if len(shown) > _DRAFT_MAX_READ_CHARS:
-            return (f"read {rel} lines {first}-{last}: range is {len(shown)} chars; "
-                    "read a smaller line range")
+            kept = []
+            total = 0
+            for line in lines[first - 1:last]:
+                cost = len(line) + (1 if kept else 0)
+                if total + cost > _DRAFT_MAX_READ_CHARS and kept:
+                    break
+                kept.append(line)
+                total += cost
+            shown = "\n".join(kept)
+            if len(shown) > _DRAFT_MAX_READ_CHARS:
+                shown = shown[:_DRAFT_MAX_READ_CHARS]
+            return (f"read {rel} lines {first}-{last}: range exceeds "
+                    f"{_DRAFT_MAX_READ_CHARS} chars; showing first "
+                    f"{len(kept)} lines (truncated, read a smaller range):\n{shown}")
         return f"read {rel} lines {first}-{last} of {len(lines)}:\n{shown}"
     if len(text) > _DRAFT_MAX_READ_CHARS:
-        return (f"read {rel}: the file is {len(text)} chars; read a line range "
-                "instead (start/end)")
+        kept = []
+        total = 0
+        for line in lines[:200]:
+            cost = len(line) + (1 if kept else 0)
+            if total + cost > _DRAFT_MAX_READ_CHARS and kept:
+                break
+            kept.append(line)
+            total += cost
+        excerpt = "\n".join(kept)
+        if len(excerpt) > _DRAFT_MAX_READ_CHARS:
+            excerpt = excerpt[:_DRAFT_MAX_READ_CHARS]
+        outline = []
+        for lineno, line in enumerate(lines, 1):
+            match = re.match(r"^(def|class)\s+([A-Za-z_]\w*)", line)
+            if match:
+                outline.append(f"{lineno}: {match.group(1)} {match.group(2)}")
+                if len(outline) >= 50:
+                    break
+        outline_text = "\n".join(outline) if outline else "(none found)"
+        return (f"read {rel}: file is {len(text)} chars ({len(lines)} lines); "
+                f"showing first {len(kept)} lines plus outline:\n"
+                f"{excerpt}\n\nOutline (top-level def/class):\n{outline_text}\n"
+                "Read a specific line range with start/end.")
     return f"read {rel}:\n{text}"
 
 
