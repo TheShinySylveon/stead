@@ -6,6 +6,7 @@ import re
 import sys
 from datetime import date
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from ctx import db, factory, frontmatter, objects, sync
 
@@ -98,10 +99,21 @@ def cmd_task_set(root: Path, task_id: str, status: str) -> int:
 
 
 def _repo_slug(title: str, url: str | None) -> str:
-    if url:
-        m = re.search(r"github\.com[:/]([^/]+/[^/]+?)(?:\.git)?/?$", url)
-        if m:
-            return _slugify(m.group(1).replace("/", "-"))
+    if not url:
+        return _slugify(title)
+    url = url.strip()
+    if url.startswith(("git@github.com:", "github.com:")):
+        path = url.partition(":")[2]
+    else:
+        try:
+            remote = urlsplit("//" + url if url.startswith("github.com/") else url)
+            path = remote.path.removeprefix("/") if remote.hostname == "github.com" else ""
+        except ValueError:
+            path = ""
+    owner, _, repo = path.removesuffix("/").partition("/")
+    repo = repo.removesuffix(".git")
+    if re.fullmatch(r"[A-Za-z0-9_-]+", owner) and re.fullmatch(r"[A-Za-z0-9_.-]+", repo):
+        return _slugify(f"{owner}-{repo}")
     return _slugify(title)
 
 

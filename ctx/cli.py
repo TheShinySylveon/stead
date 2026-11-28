@@ -12,7 +12,7 @@ import sys
 from datetime import date
 from pathlib import Path
 
-from ctx import db, factory, frontmatter, objects
+from ctx import db, factory, objects
 from ctx.commands import (
     CONTRIB_CI, CONTRIB_KINDS, CONTRIB_METHODS, CONTRIB_REVIEW, CONTRIB_ROLES,
     CONTRIB_STATES, REPO_KINDS, REPO_STATUSES, TASK_STATUSES, _info, _maybe_draft,

@@ -11,7 +11,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from unittest.mock import patch
 from pathlib import Path
 
-from ctx import agent, autonomy, cli, db, frontmatter, models, ui, writeback
+from ctx import agent, autonomy, cli, commands, db, frontmatter, models, ui, writeback
 
 
 class CliGuiParityTest(unittest.TestCase):
@@ -62,6 +62,18 @@ class CliGuiParityTest(unittest.TestCase):
             0,
         )
         self.assertEqual(ui.list_inbox(self.root), [])
+
+    def test_repo_slug_accepts_github_remotes_and_ignores_other_hosts(self) -> None:
+        for url in ("https://github.com/Owner/project-name.git/",
+                    "git@github.com:Owner/project-name.git",
+                    "ssh://git@github.com/Owner/project-name",
+                    "github.com/Owner/project-name"):
+            with self.subTest(url=url):
+                self.assertEqual(commands._repo_slug("Local Title", url), "owner-project-name")
+        for url in ("https://example.com/github.com/owner/repo",
+                    "https://github.com/owner/repo/issues", "https://[invalid"):
+            with self.subTest(url=url):
+                self.assertEqual(commands._repo_slug("Local Title", url), "local-title")
 
     def test_improve_edit_cli_matches_ui(self) -> None:
         prop = writeback.propose_improvement(
