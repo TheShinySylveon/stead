@@ -102,11 +102,12 @@ def _repo_slug(title: str, url: str | None) -> str:
     if not url:
         return _slugify(title)
     url = url.strip()
-    if url.startswith(("git@github.com:", "github.com:")):
-        path = url.partition(":")[2]
+    authority, separator, location = url.partition(":")
+    if separator and authority.lower() in ("git@github.com", "github.com"):
+        path = location
     else:
         try:
-            remote = urlsplit("//" + url if url.startswith("github.com/") else url)
+            remote = urlsplit(url if "://" in url or url.startswith("//") else f"//{url}")
             path = remote.path.removeprefix("/") if remote.hostname == "github.com" else ""
         except ValueError:
             path = ""

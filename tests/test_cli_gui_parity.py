@@ -71,6 +71,8 @@ class CliGuiParityTest(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertEqual(commands._repo_slug("Local Title", url), "owner-project-name")
         for url in ("https://example.com/github.com/owner/repo",
+                    "https://github.com.example.com/owner/repo",
+                    "https://github.com@example.com/owner/repo",
                     "https://github.com/owner/repo/issues", "https://[invalid"):
             with self.subTest(url=url):
                 self.assertEqual(commands._repo_slug("Local Title", url), "local-title")
