@@ -157,6 +157,17 @@ class CliGuiParityTest(unittest.TestCase):
         self.assertIn(f"locked pid={os.getpid()}", output.getvalue())
         self.assertIn("stale=False", output.getvalue())
 
+    def test_eval_judge_role_binding_is_shared_between_cli_and_cockpit(self) -> None:
+        models.add_model(self.root, "grader", provider="ollama", name="judge-model")
+        args = ["--root", str(self.root), "model", "role", "judge"]
+        self.assertEqual(cli.main(args + ["grader"]), 0)
+        self.assertEqual(ui.snapshot(self.root)["model_profiles"]["roles"]["judge"], "grader")
+
+        status, _, _ = ui.dispatch(self.root, "POST", "/api/model/role", {},
+                                   {"role": "judge", "profile": ""}, token_ok=True)
+        self.assertEqual(status, 200)
+        self.assertEqual(models.profiles_view(self.root)["roles"]["judge"], "")
+
     def test_ui_model_pricing_and_repo_safety_fields_and_autonomy_index_sync(self) -> None:
         status, body, _ct = ui.dispatch(self.root, "POST", "/api/model", {}, {
             "provider": "openai", "name": "gpt-4.1-mini",

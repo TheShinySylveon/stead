@@ -598,7 +598,7 @@ def build_parser() -> argparse.ArgumentParser:
     model = sub.add_parser("model", help="the rented model factories may draft with").add_subparsers(dest="sub", required=True)
     model.add_parser("show", help="show the configured model. Never prints the key.")
     ms = model.add_parser("set", help="choose an OpenAI-compatible endpoint")
-    from ctx.models import PROVIDERS
+    from ctx.models import MODEL_ROLES, PROVIDERS
     ms.add_argument("--provider", required=True, choices=tuple(PROVIDERS))
     ms.add_argument("--name", required=True, help="model name, such as gpt-4.1-mini or llama3.2")
     ms.add_argument("--base-url", help="defaults to the provider preset")
@@ -638,8 +638,8 @@ def build_parser() -> argparse.ArgumentParser:
                     help="the model's context window in tokens (0 = unset)")
     mr = model.add_parser("remove", help="remove a saved profile")
     mr.add_argument("profile")
-    mrole = model.add_parser("role", help="bind a job to a profile (build/draft/review/address)")
-    mrole.add_argument("role", choices=("build", "draft", "review", "address"))
+    mrole = model.add_parser("role", help="bind a job to a profile")
+    mrole.add_argument("role", choices=MODEL_ROLES)
     mrole.add_argument("profile", help="profile name, or '-' to unbind and fall back to the default")
 
     ev = sub.add_parser("eval", help="factory eval cases").add_subparsers(dest="sub", required=True)

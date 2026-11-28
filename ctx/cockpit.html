@@ -1238,13 +1238,13 @@ function renderSettings() {
     </div>
     <div class="section-title">Model profiles</div>
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
-      <p class="meta">Bind jobs to saved connections. A blank binding uses the model above. build = implementation loop · draft = spec/plan · review = independent reviewer · address = review-fixing.</p>
+      <p class="meta" id="model-role-help">Bind jobs to saved connections: build = implementation · draft = spec/plan · review = independent review · address = review fixes · judge = factory evals. Without a judge binding, evals use the build model.</p>
       <div class="stack" style="margin-top:8px">
         ${Object.keys(pv.roles || {}).map(role => `
           <div class="inline" style="margin:0">
-            <span class="meta" style="min-width:72px">${esc(role)}</span>
-            <select data-model-role="${esc(role)}" aria-label="Role ${esc(role)}">
-              <option value="">default</option>
+            <label for="model-role-${esc(role)}" class="meta" style="min-width:72px">${esc(role)}</label>
+            <select id="model-role-${esc(role)}" data-model-role="${esc(role)}" ${role === "judge" ? 'aria-describedby="model-role-help"' : ''}>
+              <option value="">${role === "judge" ? "Use build model" : "default"}</option>
               ${Object.keys(pv.profiles || {}).map(p => `<option value="${esc(p)}" ${(pv.roles || {})[role] === p ? "selected" : ""}>${esc(p)}</option>`).join("")}
             </select>
           </div>`).join("")}

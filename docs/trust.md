@@ -251,7 +251,7 @@ outbound calls are the ones a command makes:
 | `stead sync github` | Read-only `gh` queries for your PRs, reviews, and issues; read-only PR state to reconcile build records (merged/closed, human edits) | GitHub, through `gh` |
 | `stead factory run --generate` | The assembled prompt: digest = cached public contributions; project status = one project's tasks, documents, meetings; feature-builder = spec, criteria, repo notes, related documents | Your configured model endpoint |
 | `stead build` | The system prompt, the approved spec body, repo conventions and related context (marked untrusted), the repo tree, every file the model reads, and check output | Your configured model endpoint |
-| `stead eval judge` | The draft and its pass criteria | Your configured model endpoint |
+| `stead eval judge` | The draft and its pass criteria | Your configured judge endpoint, or the build endpoint if no judge is bound |
 | `stead ui` | Nothing. The page has no external assets. | Loopback, or your own container |
 
 `stead model set --provider ollama` keeps every prompt on the machine. The

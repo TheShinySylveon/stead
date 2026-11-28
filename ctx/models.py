@@ -51,7 +51,7 @@ _REQUIRED = ("id", "title", "input", "pass_criteria")
 # draft writes specs/plans; review is the independent reviewer; address fixes
 # review comments. Each falls back to the legacy `model` (or `reviewer`) block
 # when no profile is bound.
-MODEL_ROLES = ("build", "draft", "review", "address")
+MODEL_ROLES = ("build", "draft", "review", "address", "judge")
 
 
 class ModelError(Exception):
@@ -269,14 +269,18 @@ def set_role(root: Path, role: str, profile: str) -> dict:
 
 
 def _profile_for_role(root: Path, role: str) -> dict:
-    """The raw profile dict for a role: `models[roles[role]]`, else the legacy
-    `model` (build/draft) or `reviewer`-then-`model` (review/address) blocks."""
+    """Get the bound profile, or the role's fallback when no profile is bound.
+
+    Judge falls back to the build binding before considering the legacy model.
+    Review and address can use the legacy reviewer block; other roles use model.
+    """
     raw = config.read_raw(root)
     profiles = raw.get("models") if isinstance(raw.get("models"), dict) else {}
     roles = raw.get("roles") if isinstance(raw.get("roles"), dict) else {}
-    name = roles.get(role)
-    if name and isinstance(profiles.get(name), dict):
-        return profiles[name]
+    for candidate in (("judge", "build") if role == "judge" else (role,)):
+        name = roles.get(candidate)
+        if name and isinstance(profiles.get(name), dict):
+            return profiles[name]
     if role in ("review", "address"):
         block = raw.get("reviewer") or raw.get("model")
     else:
@@ -305,8 +309,8 @@ def role_configured(root: Path, role: str) -> bool:
 def resolve(root: Path, role: str = "build") -> dict:
     """Settings for one call. Includes the key. Do not print or store this.
 
-    `role` is one of MODEL_ROLES (build, draft, review, address); "reviewer" is
-    accepted as an alias for "review". Unbound roles fall back to the legacy
+    `role` is one of MODEL_ROLES; "reviewer" is an alias for "review".
+    An unbound judge uses the build model. Other unbound roles use the legacy
     `model`/`reviewer` blocks."""
     if role == "reviewer":
         role = "review"
@@ -548,7 +552,7 @@ def judge(root: Path, factory_name: str, case_id: str, output_path: str | None,
         "## Draft\n"
         f"{draft_text}\n"
     )
-    settings = resolve(root)
+    settings = resolve(root, "judge")
     text = complete(prompt, settings, transport=transport,
                     timeout=_call_timeout(settings.get("call_timeout")) if timeout is None else timeout,
                     temperature=0)
