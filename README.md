@@ -6,34 +6,17 @@
 [![License](https://img.shields.io/github/license/TheShinySylveon/stead)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.11%2B-blue)](docs/getting-started.md)
 
-Notion described [a new shape for work](https://www.notion.com/nsfw): projects,
-tasks, documents, and meetings connected in one graph, instead of files
-scattered across a dozen tools. Stead takes that shape and makes it executable.
+Stead is a local workspace for projects, tasks, notes, and GitHub work. It stores
+context in plain Markdown you can read and version with Git. Browse those files
+in the cockpit or use the CLI; neither requires a model or an account.
 
-Stead runs that graph locally — plain markdown you can read, diff, and own —
-with two readers over the same files. You browse it as a wiki; an agent reads a
-scoped bundle and gets to work. Each repo has one dial for how far that work may
-go (draft a plan, open a pull request, or merge), and every delivered build
-writes a versioned record back into the graph, so the next run learns from the
-last.
+With a model configured, a **factory** can draft a spec from an issue, build the
+approved change on a separate branch, and run the repo's checks. Each repo has
+its own limit: for example, draft a plan only, open a PR, or merge after the
+configured checks pass. Build records go back into the same Markdown store.
 
-The twist is execution, not filing. A factory doesn't stop at a draft: with a
-model configured, it plans, writes the code, runs the repo's checks, and can
-deliver under that repo's ceiling. Notion gave work a shape; Stead gives it a
-way to get done.
-
-Built for the solo open-source contributor: a dozen repos, a weekly review
-queue, and no vendor holding your notes. The same files work for a small team
-behind one container.
-
-> **Status: [MVP](docs/mvp.md) met.** The issue → spec → tested change → PR →
-> merge loop runs end to end — now including on a **model-drafted** spec: the
-> build is autonomous on a local 27B model, and the draft is model-written with a
-> fast human review. The scored dogfood run ([Dogfood](docs/dogfood.md)) is
-> complete (Set C 3/3 + hold-out correct, and the full loop measured on a fresh
-> model draft, [#179](https://github.com/TheShinySylveon/stead/pull/179)). The
-> post-MVP list — shared-server hardening, eval redesign, filing issues upstream —
-> is now the active roadmap.
+See [MVP status and roadmap](docs/mvp.md) for what's shipped and
+[Dogfood results](docs/dogfood.md) for what was tested end to end.
 
 ## Quick start
 
@@ -68,23 +51,21 @@ project and you're in. No browser? `python -m stead welcome --title "My Project"
 - **A browser cockpit or the CLI.** The same actions either way, plus an
   optional shared Docker server ([deploy](docs/deploy.md)).
 
-## Quality and consistency, built in
+## Build checks
 
-An agent that can edit code and open PRs can ship slop just as fast as it can
-ship the good stuff. Stead puts the back-pressure *in the pipeline*, so the
-model has to make its own work pass deterministic gates before a human ever
-looks at it:
+Stead checks the spec before building and runs the repo's tests before delivery.
+These checks complement human review:
 
 - **Planning before code, always.** A build refuses to start without a spec and
   an approved plan; autonomy changes what the agent may produce, never whether
   it plans.
-- **Spec quality is enforced, not vibes.** A spec is refused if it's too vague,
+- **Spec validation.** A spec is refused if it's too vague,
   too large, has no acceptance criteria, or asks for a value a hardcoded number
   could satisfy — a "score" or "non-zero float" gets flagged `fabricated-value`
   before any code is written.
-- **Fail-before, pass-after tests.** Every acceptance criterion maps to a test
-  that must fail without the change and pass with it. A test that passes anyway
-  proves nothing, so it's sent back.
+- **Fail-before, pass-after tests.** The build maps acceptance criteria to
+  tests. When the regression-test gate is enabled, Stead checks that new tests
+  fail without the change and pass with it.
 - **Anti-slop gate on new code.** Deterministic, language-agnostic rules refuse
   a new file that carries a hard finding (bare `except:`, `gets(`, `%`-format,
   commented-out code, dead branches) and nudge on advisory ones (debug `print`,
@@ -93,10 +74,7 @@ looks at it:
 - **Honest CI.** The build runs the repo's checks and reports them truthfully.
   Nothing is claimed green that wasn't checked.
 
-None of this is a prompt asking the model to *please be careful*. Each gate is a
-deterministic, model-free check that refuses bad work outright.
-
-## The self-improvement loop
+## Build records and metrics
 
 The context outlives the model, and the system gets stricter over time. Every
 build — success or failure — writes a versioned `build-record` into the same
@@ -139,6 +117,20 @@ there too.
 | [CONVENTIONS.md](CONVENTIONS.md) | Frontmatter schema. Read before writing objects. |
 | [AGENTS.md](AGENTS.md) | Entry point for coding agents |
 
+## Repository layout
+
+| Path | What belongs there |
+|---|---|
+| [`stead/`](stead/) and [`ctx/`](ctx/) | Command entry point and standard-library implementation |
+| [`tests/`](tests/) | Regression tests |
+| [`factories/`](factories/) | Workflow definitions, prompts, and eval cases |
+| [`context/`](context/), [`inbox/`](inbox/), and [`examples/`](examples/) | Store structure, capture entry point, and sample data. Keep your working data in a separate context repo. |
+| [`docs/`](docs/) | User and contributor guides |
+| [`deploy/`](deploy/) | Container startup script; `Dockerfile` and `docker-compose.yml` stay at the root |
+
+Local worktrees, caches, generated runs, and credentials are not part of the
+source tree. See [local artifact rules](docs/README.md#keep-local-artifacts-out-of-commits).
+
 ## Develop
 
 ```bash
@@ -147,9 +139,8 @@ python -m unittest discover -s tests -b
 
 CI runs the suite on Python 3.11 and 3.12, Linux and Windows, plus `ruff`
 (config in `ruff.toml`) and CodeQL. Merging to `main` publishes
-`ghcr.io/theshinysylveon/stead`. AI review is optional and advisory: the
-repo carries configs for CodeRabbit (`.coderabbit.yaml`) and Gemini Code
-Assist (`.gemini/`), both free for public repositories once installed.
+`ghcr.io/theshinysylveon/stead`. The [review guide](docs/review.md) applies
+whether feedback comes from a person or a review bot.
 
 ## License
 

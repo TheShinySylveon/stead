@@ -19,7 +19,7 @@ COPY --chown=stead:stead inbox ./inbox
 COPY --chown=stead:stead examples ./examples
 COPY --chown=stead:stead context ./context
 COPY --chown=stead:stead AGENTS.md CONVENTIONS.md README.md LICENSE ./
-COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY deploy/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/private && chown -R stead:stead /app
 
 ENV HOME=/home/stead \
