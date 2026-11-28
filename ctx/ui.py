@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from ctx import autonomy, cli, db, factory, frontmatter, objects
+from ctx import autonomy, commands, db, factory, frontmatter, objects
 from ctx.tasks import TaskRunner
 
 PKG_DIR = Path(__file__).resolve().parent
@@ -93,6 +93,12 @@ def _gate_page(people: bool) -> bytes:
 MAX_BODY = 512 * 1024
 MAX_NOTE = 200_000
 EDITABLE = ("project", "task", "document", "meeting")
+REPO_SAFETY_BOOLEANS = (
+    "allow_comment", "allow_test_edits", "allow_ci_edits", "allow_protected",
+    "merge_without_required_checks", "merge_without_review",
+)
+REPO_SAFETY_TEXT = ("checks", "checks_isolation", "checks_image", "trust_checks")
+REPO_SAFETY_FIELDS = (*REPO_SAFETY_BOOLEANS, *REPO_SAFETY_TEXT, "protected_paths")
 PROJECT_STATUSES = ("active", "paused", "done")
 
 # What a shadow assemble needs. Unknown factories ask for a project.
@@ -136,6 +142,10 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
         if meta.get(key) not in (None, ""):
             item[key] = meta[key]
     if otype == "repo":
+        if not shared_server(root):
+            from ctx.safety import truthy
+            item.update({key: meta[key] for key in REPO_SAFETY_FIELDS if key in meta})
+            item.update({key: truthy(meta.get(key)) for key in REPO_SAFETY_BOOLEANS})
         from ctx.autonomy import effective
         policy = effective(root, meta)
         item["factory_trigger"] = policy["trigger"]
@@ -613,11 +623,11 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
     projects = _list(root, "project")
     by_project: dict[str, dict[str, int]] = {}
     for task in tasks:
-        bucket = by_project.setdefault(task.get("project") or "", {s: 0 for s in cli.TASK_STATUSES})
+        bucket = by_project.setdefault(task.get("project") or "", {s: 0 for s in commands.TASK_STATUSES})
         status = task.get("status", "to-do")
         bucket[status] = bucket.get(status, 0) + 1
     for project in projects:
-        project["counts"] = by_project.get(project["id"], {s: 0 for s in cli.TASK_STATUSES})
+        project["counts"] = by_project.get(project["id"], {s: 0 for s in commands.TASK_STATUSES})
 
     statuses = _prompt_status(root)
     factories = _factories(root, runs)
@@ -633,6 +643,7 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
         "version": _version(),
         "first_run": _needs_welcome(root),
         "deployment": _deployment_view(root, port),
+        "shared_server": shared_server(root),
         "model": _model_view(root),
         "model_profiles": _profiles_view(root),
         "factory": _factory_defaults(root),
@@ -662,16 +673,16 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
         "factories": factories,
         "runs": runs,
         "choices": {
-            "task_status": list(cli.TASK_STATUSES),
-            "contrib_state": list(cli.CONTRIB_STATES),
-            "contrib_ci": list(cli.CONTRIB_CI),
-            "contrib_review": list(cli.CONTRIB_REVIEW),
-            "contrib_role": list(cli.CONTRIB_ROLES),
-            "method": list(cli.CONTRIB_METHODS),
-            "contrib_kind": list(cli.CONTRIB_KINDS),
+            "task_status": list(commands.TASK_STATUSES),
+            "contrib_state": list(commands.CONTRIB_STATES),
+            "contrib_ci": list(commands.CONTRIB_CI),
+            "contrib_review": list(commands.CONTRIB_REVIEW),
+            "contrib_role": list(commands.CONTRIB_ROLES),
+            "method": list(commands.CONTRIB_METHODS),
+            "contrib_kind": list(commands.CONTRIB_KINDS),
             "project_status": list(PROJECT_STATUSES),
-            "repo_kind": list(cli.REPO_KINDS),
-            "repo_status": list(cli.REPO_STATUSES),
+            "repo_kind": list(commands.REPO_KINDS),
+            "repo_status": list(commands.REPO_STATUSES),
             "factory_trigger": ["on-demand", "watch"],
             "factory_reach": list(autonomy.REACHES),
             "factory_reach_install": list(autonomy.INSTALL_REACHES),
@@ -708,7 +719,7 @@ def object_detail(root: Path, otype: str, ref: str) -> dict:
 
 
 def _project_rollup(root: Path, project_id: str) -> dict:
-    counts = {status: 0 for status in cli.TASK_STATUSES}
+    counts = {status: 0 for status in commands.TASK_STATUSES}
     for _path, meta, _body in objects.iter_objects(root, "task"):
         if meta.get("project") == project_id:
             status = meta.get("status", "to-do")
@@ -847,7 +858,7 @@ def create_object(root: Path, payload: dict) -> dict:
     if not title or len(title) > 200:
         raise UiError("needs a title of at most 200 characters")
     if otype == "repo":
-        _call(cli.cmd_repo_add, root, title,
+        _call(commands.cmd_repo_add, root, title,
               _https_or_empty(payload.get("url"), "url"),
               payload.get("kind") or "oss",
               payload.get("status") or "active",
@@ -980,7 +991,7 @@ def create_contribution(root: Path, payload: dict) -> dict:
     kind = payload.get("kind") or "issue"
     method = payload.get("method") or "spec-kit"
     role = payload.get("role") or ("assignee" if shared_server(root) else "author")
-    _call(cli.cmd_contribution_add, root, title, repo, kind, number, None,
+    _call(commands.cmd_contribution_add, root, title, repo, kind, number, None,
           role, "open", "none", "none", method)
     found_repo = objects.find(root, "repo", repo)
     if found_repo is None:
@@ -1049,12 +1060,9 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
     if found is None:
         raise UiError(f"repo not found: {repo_id}", 404)
     if shared_server(root):
-        locked = {"trigger", "reach", "code_path", "default_branch", "checks",
-                  "checks_isolation", "checks_image", "checks_env",
-                  "protected_paths", "trust_checks", "allow_test_edits",
-                  "allow_ci_edits", "allow_protected", "allow_comment",
-                  "merge_without_required_checks", "merge_without_review",
-                  "auto_publish", "require_tests", "slop_gate", "kind"}
+        locked = {"trigger", "reach", "code_path", "default_branch", "checks_env",
+                  "auto_publish", "require_tests", "slop_gate", "kind",
+                  *REPO_SAFETY_FIELDS}
         touched = locked.intersection(payload)
         if touched:
             raise UiError(
@@ -1064,12 +1072,12 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
     path, meta, body = found
     changed = False
     if payload.get("status"):
-        if payload["status"] not in cli.REPO_STATUSES:
+        if payload["status"] not in commands.REPO_STATUSES:
             raise UiError(f"invalid status {payload['status']!r}")
         meta["status"] = payload["status"]
         changed = True
     if payload.get("kind"):
-        if payload["kind"] not in cli.REPO_KINDS:
+        if payload["kind"] not in commands.REPO_KINDS:
             raise UiError(f"invalid kind {payload['kind']!r}")
         meta["kind"] = payload["kind"]
         changed = True
@@ -1139,9 +1147,7 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
         else:
             meta.pop("default_branch", None)
         changed = True
-    for bool_field in ("allow_comment", "allow_test_edits", "allow_ci_edits",
-                       "allow_protected", "merge_without_required_checks",
-                       "merge_without_review"):
+    for bool_field in REPO_SAFETY_BOOLEANS:
         if bool_field in payload:
             from ctx import safety
             if safety.truthy(payload.get(bool_field)):
@@ -1149,7 +1155,7 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
             else:
                 meta.pop(bool_field, None)
             changed = True
-    for text_field in ("checks", "checks_isolation", "checks_image", "trust_checks"):
+    for text_field in REPO_SAFETY_TEXT:
         if text_field in payload:
             val = (payload.get(text_field) or "").strip()
             if text_field == "checks_isolation" and val and val not in ("host", "docker"):
@@ -1272,7 +1278,7 @@ def sync_github(root: Path, offline: bool = False, *, repos: list[str] | None = 
                 digest: bool = False, all_repos: bool = False,
                 remember: bool = False) -> dict:
     """Read-only GitHub refresh, or an offline re-index. Never writes remotely."""
-    _call(cli.cmd_sync_github, root, "@me", 30, bool(offline),
+    _call(commands.cmd_sync_github, root, "@me", 30, bool(offline),
           digest=digest, repos=repos or None, all_repos=all_repos, remember=remember)
     return {"ok": True, "offline": bool(offline)}
 
@@ -1686,7 +1692,7 @@ def promote_prompt(root: Path, factory_name: str, version: str) -> dict:
         raise UiError(
             "on a shared server, prompt promotion is read-only. Promote prompts "
             "on the machine that runs builds.")
-    _call(cli.cmd_prompt_promote, root, factory_name, version)
+    _call(commands.cmd_prompt_promote, root, factory_name, version)
     return {"ok": True, "factory": factory_name, "version": version}
 
 
@@ -1788,14 +1794,14 @@ def _call(fn, *args, **kwargs) -> None:
 def add_task(root: Path, title: str, project: str, status: str = "to-do") -> dict:
     if not (title or "").strip() or not (project or "").strip():
         raise UiError("a task needs a title and a project")
-    _call(cli.cmd_task_add, root, title.strip(), project.strip(), status or "to-do")
+    _call(commands.cmd_task_add, root, title.strip(), project.strip(), status or "to-do")
     return {"ok": True}
 
 
 def set_task_status(root: Path, task_id: str, status: str) -> dict:
     if not task_id or not status:
         raise UiError("a status change needs an id and a status")
-    _call(cli.cmd_task_set, root, task_id, status)
+    _call(commands.cmd_task_set, root, task_id, status)
     return {"ok": True}
 
 
@@ -1811,7 +1817,7 @@ def set_contribution(root: Path, payload: dict) -> dict:
         raise UiError(
             "on a shared server the author role is read-only. Set it on the "
             "machine that runs builds.")
-    _call(cli.cmd_contribution_set, root, ref,
+    _call(commands.cmd_contribution_set, root, ref,
           updates.get("state"), updates.get("ci"), updates.get("review"),
           updates.get("role"), updates.get("method"))
     return {"ok": True}

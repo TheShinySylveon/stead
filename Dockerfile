@@ -8,7 +8,7 @@ LABEL org.opencontainers.image.source="https://github.com/TheShinySylveon/stead"
       org.opencontainers.image.description="Stead local context system" \
       org.opencontainers.image.licenses="Apache-2.0"
 
-RUN useradd --create-home --shell /bin/sh stead
+RUN command -v setpriv && useradd --create-home --shell /bin/sh stead
 
 WORKDIR /app
 COPY --chown=stead:stead ctx ./ctx
@@ -19,16 +19,17 @@ COPY --chown=stead:stead inbox ./inbox
 COPY --chown=stead:stead examples ./examples
 COPY --chown=stead:stead context ./context
 COPY --chown=stead:stead AGENTS.md CONVENTIONS.md README.md LICENSE ./
-RUN mkdir -p /app/private && chown -R stead:stead /app
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh && mkdir -p /app/private && chown -R stead:stead /app
 
-ENV PYTHONUNBUFFERED=1 \
+ENV HOME=/home/stead \
+    PYTHONUNBUFFERED=1 \
     STEAD_DEPLOYMENT=multi \
     STEAD_BIND=0.0.0.0 \
     STEAD_PORT=8765
 
-USER stead
-
 EXPOSE 8765
 VOLUME ["/app/context", "/app/private", "/app/inbox"]
 
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["python", "-m", "stead", "ui", "--no-browser", "--deploy"]

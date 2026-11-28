@@ -798,6 +798,28 @@ function flowTrack(c) {
   const label = at >= 4 ? "Lifecycle complete" : `Lifecycle: ${FLOW_STEPS[at]} is next, step ${at + 1} of 4`;
   return `<ol class="flow" aria-label="${esc(label)}. Repo limit: ${esc(ceiling)}">${steps}<li class="limit">limit · ${esc(ceiling)}</li></ol>`;
 }
+function repoSafetyFields(repo) {
+  const id = esc(repo.id);
+  const input = (key, label, value) => `<label class="meta">${label}
+    <input type="text" data-set-repo-text data-id="${id}" data-field="${key}" value="${esc(value ?? repo[key] ?? "")}"></label>`;
+  const select = (key, label, values, selected) => `<label class="meta">${label}
+    <select data-set-repo data-id="${id}" data-field="${key}">${options(values, selected)}</select></label>`;
+  const toggle = (key, label) => select(key, label, ["off", "on"], repo[key] ? "on" : "off");
+  return `<div class="inline fields" style="display:flex;gap:8px;flex-wrap:wrap">
+    ${input("checks", "Checks command")}
+    ${select("checks_isolation", "Checks isolation", ["host", "docker"], repo.checks_isolation || "host")}
+    ${input("checks_image", "Checks Docker image")}
+    ${input("protected_paths", "Protected paths (comma-separated)", Array.isArray(repo.protected_paths) ? repo.protected_paths.join(", ") : repo.protected_paths)}
+    ${select("trust_checks", "Trust host checks for merge", ["off", "host"], repo.trust_checks || "off")}
+    ${toggle("allow_comment", "Allow issue comments")}
+    ${toggle("allow_test_edits", "Allow test edits")}
+    ${toggle("allow_ci_edits", "Allow CI edits")}
+    ${toggle("allow_protected", "Allow protected-path edits")}
+    ${toggle("merge_without_required_checks", "Allow merge without required checks")}
+    ${toggle("merge_without_review", "Allow merge without independent review")}
+  </div>`;
+}
+
 function renderRepos() {
   const repos = state.snap.repos.filter(match);
   const contribs = (state.snap.pipeline || []).filter(match);
@@ -854,6 +876,7 @@ function renderRepos() {
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
       <button type="button" class="quiet" data-sync="0">Sync GitHub</button>
       <button type="button" class="quiet" data-sync="1">Re-index offline</button>
+      <button type="button" class="quiet" data-draft-all>Draft all specs</button>
       <input type="text" id="sync-scope" placeholder="Scope: owner/name, comma-separated (blank = saved/all)" aria-label="Sync scope" style="max-width:300px">
     </div>
     ${contribs.length
@@ -901,6 +924,7 @@ function renderRepos() {
                   <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="url" value="${esc(r.url || "")}" placeholder="Repo URL" aria-label="URL for ${esc(r.title)}">
                   <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="notes" value="${esc(r.notes || "")}" placeholder="Short notes" aria-label="Notes for ${esc(r.title)}">
                 </div>
+                ${state.snap.shared_server ? "" : repoSafetyFields(r)}
               </div>
             </details>
           </div>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
@@ -1455,23 +1479,25 @@ function contributionDetail(data, title, id) {
   const stage = flow.stage || "";
   const primary = (flow.actions || []).map(a =>
     `<button type="button" class="${a.tone}" data-action="${a.key}" data-id="${esc(actId)}" data-title="${esc(title)}">${esc(a.label)}</button>`).join("");
+  const metaFields = data.meta || {};
+  const targetId = data.id || id;
+  const sourceId = metaFields.drafted_from || targetId;
   const review = ["built", "published"].includes(stage)
     ? `<button type="button" class="quiet" data-review="${esc(actId)}">Review</button>` : "";
-  const redraft = stage && stage !== "merged" && stage !== "closed"
-    ? `<button type="button" class="quiet" data-action="redraft" data-id="${esc(actId)}" data-title="${esc(title)}">Redraft</button>` : "";
+  const redraft = metaFields.kind === "issue" && stage && !done
+    ? `<button type="button" class="quiet" data-action="redraft" data-id="${esc(sourceId)}" data-title="${esc(title)}">Redraft</button>` : "";
   const pipe = (state.snap.pipeline || []).find(x => x.act_id === actId) || {};
   const ceiling = repoCeiling(pipe.repo || flow.repo || "");
   const choices = state.snap.choices || {};
-  const metaFields = data.meta || {};
   const contribFields = `
     <details style="margin-top:10px">
       <summary class="meta">Fields</summary>
       <div class="inline" style="margin-top:8px;flex-wrap:wrap">
-        <label class="meta">State <select data-set-contrib data-id="${esc(actId)}" data-field="state">${options(choices.contrib_state || ["open", "closed", "merged"], metaFields.state || "open")}</select></label>
-        <label class="meta">CI <select data-set-contrib data-id="${esc(actId)}" data-field="ci">${options(choices.contrib_ci || ["none", "pending", "pass", "fail"], metaFields.ci || "none")}</select></label>
-        <label class="meta">Review <select data-set-contrib data-id="${esc(actId)}" data-field="review">${options(choices.contrib_review || ["none", "requested", "approved", "changes"], metaFields.review || "none")}</select></label>
-        <label class="meta">Role <select data-set-contrib data-id="${esc(actId)}" data-field="role">${options(choices.contrib_role || ["author", "assignee", "reviewer"], metaFields.role || "author")}</select></label>
-        <label class="meta">Method <select data-set-contrib data-id="${esc(actId)}" data-field="method">${options(choices.contrib_method || ["spec-kit", "builtin"], metaFields.method || "spec-kit")}</select></label>
+        <label class="meta">State <select data-set-contrib data-id="${esc(targetId)}" data-field="state">${options(choices.contrib_state || ["open", "closed", "merged"], metaFields.state || "open")}</select></label>
+        <label class="meta">CI <select data-set-contrib data-id="${esc(targetId)}" data-field="ci">${options(choices.contrib_ci || ["none", "pending", "pass", "fail"], metaFields.ci || "none")}</select></label>
+        <label class="meta">Review <select data-set-contrib data-id="${esc(targetId)}" data-field="review">${options(choices.contrib_review || ["none", "requested", "approved", "changes"], metaFields.review || "none")}</select></label>
+        <label class="meta">Role <select data-set-contrib data-id="${esc(targetId)}" data-field="role">${options(choices.contrib_role || ["author", "assignee", "reviewer"], metaFields.role || "author")}</select></label>
+        <label class="meta">Method <select data-set-contrib data-id="${esc(targetId)}" data-field="method">${options(choices.method || ["spec-kit", "builtin"], metaFields.method || "spec-kit")}</select></label>
       </div>
     </details>`;
   const result = state.results[actId];
@@ -1760,6 +1786,23 @@ document.body.addEventListener("click", async (event) => {
       await load();
     } catch (err) {
       toast(err.message);
+    }
+    return;
+  }
+  const draftAll = event.target.closest("[data-draft-all]");
+  if (draftAll) {
+    try {
+      draftAll.disabled = true;
+      const result = await awaitTask("/api/spec/draft-all", {}, "Draft all specs");
+      const drafted = result.drafted || [];
+      const skipped = result.skipped || [];
+      const summary = `Drafted ${drafted.length}; skipped ${skipped.length}.`;
+      toast(skipped.length ? `${summary} ${skipped.map(item => `${item.id}: ${item.reason}`).join("; ")}` : summary);
+      await load();
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      draftAll.disabled = false;
     }
     return;
   }
@@ -2412,7 +2455,9 @@ document.body.addEventListener("change", async (event) => {
       await load();
     } else if (event.target.closest("[data-set-repo]")) {
       const repo = event.target.closest("[data-set-repo]");
-      await api("/api/repo", {method: "POST", body: JSON.stringify({id: repo.dataset.id, [repo.dataset.field]: repo.value})});
+      const field = repo.dataset.field;
+      const value = field === "trust_checks" && repo.value === "off" ? "" : repo.value;
+      await api("/api/repo", {method: "POST", body: JSON.stringify({id: repo.dataset.id, [field]: value})});
       toast("Repo updated");
       await load();
     } else if (event.target.closest("[data-set-repo-text]")) {

@@ -48,8 +48,8 @@ add a person and sign in by name. The session cookie stays in that browser.
 Passwords are hashes in the private volume, not in `context/`.
 
 ```bash
-docker compose exec stead python -m stead actor add --title "Ada" --kind human
-docker compose exec stead python -m stead account add --name ada --actor actor-ada
+docker compose exec --user stead stead python -m stead actor add --title "Ada" --kind human
+docker compose exec --user stead stead python -m stead account add --name ada --actor actor-ada
 ```
 
 The password is printed once. `stead account list` never prints it. After
@@ -73,6 +73,15 @@ docker compose up --no-build
 notes survive a rebuild. `private/` is a second volume. Password hashes live
 there, not in `context/`. `state.db` is recreated if the container is new.
 That is safe. The files are the source of truth.
+
+On startup, the entrypoint migrates root-owned files in the `context/`,
+`private/`, and `inbox/` mounts without changing file modes, then starts Stead
+as the unprivileged `stead` user. This lets existing Compose volumes upgrade
+without losing access to their private account file. On a host bind mount, this
+also changes ownership of root-owned entries on the host. If you override the
+container user, make the mounts writable by that user before starting.
+Use `docker compose exec --user stead` for maintenance commands so they do not
+create root-owned files.
 
 Do not publish port 8765 to the public internet without a TLS proxy in front.
 A sign-in is a password for one actor. It is not a second database.

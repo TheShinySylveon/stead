@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import io
 import json
+import os
 import tempfile
 import unittest
+from contextlib import redirect_stderr, redirect_stdout
+from unittest.mock import patch
 from pathlib import Path
 
-from ctx import autonomy, cli, db, frontmatter, models, ui, writeback
+from ctx import agent, autonomy, cli, db, frontmatter, models, ui, writeback
 
 
 class CliGuiParityTest(unittest.TestCase):
@@ -32,6 +36,10 @@ class CliGuiParityTest(unittest.TestCase):
         self.assertEqual(items[0]["title"], "Use WAL mode")
         self.assertEqual(items[0]["kind"], "note")
         name = items[0]["name"]
+
+        with redirect_stderr(io.StringIO()), self.assertRaises(SystemExit) as error:
+            cli.build_parser().parse_args(["inbox", "triage", name, "--type", "project"])
+        self.assertEqual(error.exception.code, 2)
 
         self.assertEqual(
             cli.main(["--root", str(self.root), "inbox", "triage", name,
@@ -104,7 +112,7 @@ class CliGuiParityTest(unittest.TestCase):
         tok2 = json.loads((self.root / "stead.json").read_text(encoding="utf-8"))["access_token"]
         self.assertNotEqual(tok1, tok2)
 
-    def test_lock_cli_inspects_unlocked_checkout(self) -> None:
+    def test_lock_cli_distinguishes_absent_and_live_lock(self) -> None:
         code_tmp = tempfile.TemporaryDirectory()
         self.addCleanup(code_tmp.cleanup)
         (self.root / "context/repos/app.md").write_text(
@@ -123,11 +131,17 @@ class CliGuiParityTest(unittest.TestCase):
             }, "# Issue\n"),
             encoding="utf-8",
         )
-        self.assertEqual(
-            cli.main(["--root", str(self.root), "lock",
-                      "--contribution", "contribution-app-issue-1"]),
-            0,
-        )
+        argv = ["--root", str(self.root), "lock", "--contribution", "contribution-app-issue-1"]
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(cli.main(argv), 0)
+        self.assertEqual(output.getvalue().strip(), "not locked")
+
+        lock = agent._lock(Path(code_tmp.name))
+        self.addCleanup(agent._unlock, lock)
+        with redirect_stdout(io.StringIO()) as output:
+            self.assertEqual(cli.main(argv), 0)
+        self.assertIn(f"locked pid={os.getpid()}", output.getvalue())
+        self.assertIn("stale=False", output.getvalue())
 
     def test_ui_model_pricing_and_repo_safety_fields_and_autonomy_index_sync(self) -> None:
         status, body, _ct = ui.dispatch(self.root, "POST", "/api/model", {}, {
@@ -169,6 +183,18 @@ class CliGuiParityTest(unittest.TestCase):
         self.assertEqual(meta["checks_isolation"], "docker")
         self.assertEqual(meta["allow_comment"], "true")
         self.assertEqual(meta["protected_paths"], ["Makefile", "pyproject.toml"])
+        repo, = ui.snapshot(self.root)["repos"]
+        self.assertEqual(repo["checks_isolation"], "docker")
+        self.assertEqual(repo["protected_paths"], ["Makefile", "pyproject.toml"])
+        self.assertIs(repo["allow_comment"], True)
+
+        with patch("ctx.ui.shared_server", return_value=True):
+            snapshot = ui.snapshot(self.root)
+            self.assertTrue(snapshot["shared_server"])
+            shared_repo, = snapshot["repos"]
+            self.assertNotIn("checks", shared_repo)
+            with self.assertRaisesRegex(ui.UiError, "read-only"):
+                ui.set_repo(self.root, "repo-app", {"checks_isolation": "host"})
 
     def test_cockpit_html_exposes_parity_controls(self) -> None:
         html = ui.PAGE_PATH.read_text(encoding="utf-8")
@@ -183,6 +209,10 @@ class CliGuiParityTest(unittest.TestCase):
             'id="metrics-repo"',
             'id="metrics-since"',
             'data-action="redraft"',
+            "data-draft-all",
+            '"/api/spec/draft-all"',
+            'select("checks_isolation",',
+            'input("protected_paths",',
         ):
             self.assertIn(needle, html, needle)
 
