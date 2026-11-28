@@ -63,7 +63,7 @@ GitHub-derived data is public; the digest stays public-safe.
 
 ## Tools
 
-Python 3.14+ standard library only (`python -m stead`). External open-source
+Python 3.11+ standard library only (`python -m stead`). External open-source
 tools invoked via subprocess: `gh` (read-only sync), `git` (audit trail).
 Generation step: any LLM/agent the operator chooses. Assembly is offline.
 

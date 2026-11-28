@@ -57,6 +57,26 @@ jobs:
       - uses: actions/checkout@v7
       - name: Build image
         run: docker build -t stead:ci .
+      - name: Verify mounted data upgrades without running Stead as root
+        run: |
+          volumes=(stead-ci-context stead-ci-private stead-ci-inbox)
+          trap 'docker volume rm "${volumes[@]}"' EXIT
+          mounts=(-v "${volumes[0]}:/app/context" -v "${volumes[1]}:/app/private" -v "${volumes[2]}:/app/inbox")
+          docker run --rm "${mounts[@]}" --entrypoint /bin/sh stead:ci -ec '
+            chown 0:0 /app/context /app/private /app/inbox
+            umask 077
+            printf "legacy account data" > /app/private/accounts.json
+            mkdir -p /app/context/tasks
+            chown 0:0 /app/context/tasks
+            touch /app/inbox/legacy-note.md
+          '
+          docker run --rm "${mounts[@]}" stead:ci /bin/sh -ec '
+            test "$(id -un)" = stead
+            test "$(stat -c %a /app/private/accounts.json)" = 600
+            test "$(cat /app/private/accounts.json)" = "legacy account data"
+            touch /app/context/tasks/new.md /app/inbox/new.md
+            test -w /app/inbox/legacy-note.md
+          '
 
   publish:
     name: publish image

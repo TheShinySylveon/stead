@@ -26,7 +26,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from ctx import autonomy, cli, db, factory, frontmatter, objects
+from ctx import autonomy, commands, db, factory, frontmatter, objects
 from ctx.tasks import TaskRunner
 
 PKG_DIR = Path(__file__).resolve().parent
@@ -93,6 +93,12 @@ def _gate_page(people: bool) -> bytes:
 MAX_BODY = 512 * 1024
 MAX_NOTE = 200_000
 EDITABLE = ("project", "task", "document", "meeting")
+REPO_SAFETY_BOOLEANS = (
+    "allow_comment", "allow_test_edits", "allow_ci_edits", "allow_protected",
+    "merge_without_required_checks", "merge_without_review",
+)
+REPO_SAFETY_TEXT = ("checks", "checks_isolation", "checks_image", "trust_checks")
+REPO_SAFETY_FIELDS = (*REPO_SAFETY_BOOLEANS, *REPO_SAFETY_TEXT, "protected_paths")
 PROJECT_STATUSES = ("active", "paused", "done")
 
 # What a shadow assemble needs. Unknown factories ask for a project.
@@ -136,6 +142,10 @@ def _summary(root: Path, otype: str, path: Path, meta: dict) -> dict:
         if meta.get(key) not in (None, ""):
             item[key] = meta[key]
     if otype == "repo":
+        if not shared_server(root):
+            from ctx.safety import truthy
+            item.update({key: meta[key] for key in REPO_SAFETY_FIELDS if key in meta})
+            item.update({key: truthy(meta.get(key)) for key in REPO_SAFETY_BOOLEANS})
         from ctx.autonomy import effective
         policy = effective(root, meta)
         item["factory_trigger"] = policy["trigger"]
@@ -349,16 +359,21 @@ def _comment_eligible(root: Path, meta: dict) -> bool:
 
 
 def list_inbox(root: Path) -> list[dict]:
-    folder = root / "inbox"
-    if not folder.is_dir():
+    from ctx.inbox_import import list_notes
+    status, rows = list_notes(root)
+    if status != "ok":
         return []
     items = []
-    for path in sorted(folder.iterdir()):
-        if not path.is_file() or path.name == "README.md" or path.name.startswith("."):
+    for row in rows:
+        path = root / "inbox" / row["name"]
+        try:
+            stat = path.stat()
+        except OSError:
             continue
-        stat = path.stat()
         items.append({
-            "name": path.name,
+            "name": row["name"],
+            "kind": row["kind"],
+            "title": row["title"],
             "path": _rel(root, path),
             "updated": date.fromtimestamp(stat.st_mtime).isoformat(),
             "bytes": stat.st_size,
@@ -608,11 +623,11 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
     projects = _list(root, "project")
     by_project: dict[str, dict[str, int]] = {}
     for task in tasks:
-        bucket = by_project.setdefault(task.get("project") or "", {s: 0 for s in cli.TASK_STATUSES})
+        bucket = by_project.setdefault(task.get("project") or "", {s: 0 for s in commands.TASK_STATUSES})
         status = task.get("status", "to-do")
         bucket[status] = bucket.get(status, 0) + 1
     for project in projects:
-        project["counts"] = by_project.get(project["id"], {s: 0 for s in cli.TASK_STATUSES})
+        project["counts"] = by_project.get(project["id"], {s: 0 for s in commands.TASK_STATUSES})
 
     statuses = _prompt_status(root)
     factories = _factories(root, runs)
@@ -628,6 +643,7 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
         "version": _version(),
         "first_run": _needs_welcome(root),
         "deployment": _deployment_view(root, port),
+        "shared_server": shared_server(root),
         "model": _model_view(root),
         "model_profiles": _profiles_view(root),
         "factory": _factory_defaults(root),
@@ -657,16 +673,16 @@ def snapshot(root: Path, port: int | None = None, session_actor: str = "") -> di
         "factories": factories,
         "runs": runs,
         "choices": {
-            "task_status": list(cli.TASK_STATUSES),
-            "contrib_state": list(cli.CONTRIB_STATES),
-            "contrib_ci": list(cli.CONTRIB_CI),
-            "contrib_review": list(cli.CONTRIB_REVIEW),
-            "contrib_role": list(cli.CONTRIB_ROLES),
-            "method": list(cli.CONTRIB_METHODS),
-            "contrib_kind": list(cli.CONTRIB_KINDS),
+            "task_status": list(commands.TASK_STATUSES),
+            "contrib_state": list(commands.CONTRIB_STATES),
+            "contrib_ci": list(commands.CONTRIB_CI),
+            "contrib_review": list(commands.CONTRIB_REVIEW),
+            "contrib_role": list(commands.CONTRIB_ROLES),
+            "method": list(commands.CONTRIB_METHODS),
+            "contrib_kind": list(commands.CONTRIB_KINDS),
             "project_status": list(PROJECT_STATUSES),
-            "repo_kind": list(cli.REPO_KINDS),
-            "repo_status": list(cli.REPO_STATUSES),
+            "repo_kind": list(commands.REPO_KINDS),
+            "repo_status": list(commands.REPO_STATUSES),
             "factory_trigger": ["on-demand", "watch"],
             "factory_reach": list(autonomy.REACHES),
             "factory_reach_install": list(autonomy.INSTALL_REACHES),
@@ -703,7 +719,7 @@ def object_detail(root: Path, otype: str, ref: str) -> dict:
 
 
 def _project_rollup(root: Path, project_id: str) -> dict:
-    counts = {status: 0 for status in cli.TASK_STATUSES}
+    counts = {status: 0 for status in commands.TASK_STATUSES}
     for _path, meta, _body in objects.iter_objects(root, "task"):
         if meta.get("project") == project_id:
             status = meta.get("status", "to-do")
@@ -842,7 +858,7 @@ def create_object(root: Path, payload: dict) -> dict:
     if not title or len(title) > 200:
         raise UiError("needs a title of at most 200 characters")
     if otype == "repo":
-        _call(cli.cmd_repo_add, root, title,
+        _call(commands.cmd_repo_add, root, title,
               _https_or_empty(payload.get("url"), "url"),
               payload.get("kind") or "oss",
               payload.get("status") or "active",
@@ -975,7 +991,7 @@ def create_contribution(root: Path, payload: dict) -> dict:
     kind = payload.get("kind") or "issue"
     method = payload.get("method") or "spec-kit"
     role = payload.get("role") or ("assignee" if shared_server(root) else "author")
-    _call(cli.cmd_contribution_add, root, title, repo, kind, number, None,
+    _call(commands.cmd_contribution_add, root, title, repo, kind, number, None,
           role, "open", "none", "none", method)
     found_repo = objects.find(root, "repo", repo)
     if found_repo is None:
@@ -1044,12 +1060,9 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
     if found is None:
         raise UiError(f"repo not found: {repo_id}", 404)
     if shared_server(root):
-        locked = {"trigger", "reach", "code_path", "default_branch", "checks",
-                  "checks_isolation", "checks_image", "checks_env",
-                  "protected_paths", "trust_checks", "allow_test_edits",
-                  "allow_ci_edits", "allow_protected", "allow_comment",
-                  "merge_without_required_checks", "merge_without_review",
-                  "auto_publish", "require_tests", "slop_gate", "kind"}
+        locked = {"trigger", "reach", "code_path", "default_branch", "checks_env",
+                  "auto_publish", "require_tests", "slop_gate", "kind",
+                  *REPO_SAFETY_FIELDS}
         touched = locked.intersection(payload)
         if touched:
             raise UiError(
@@ -1059,12 +1072,12 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
     path, meta, body = found
     changed = False
     if payload.get("status"):
-        if payload["status"] not in cli.REPO_STATUSES:
+        if payload["status"] not in commands.REPO_STATUSES:
             raise UiError(f"invalid status {payload['status']!r}")
         meta["status"] = payload["status"]
         changed = True
     if payload.get("kind"):
-        if payload["kind"] not in cli.REPO_KINDS:
+        if payload["kind"] not in commands.REPO_KINDS:
             raise UiError(f"invalid kind {payload['kind']!r}")
         meta["kind"] = payload["kind"]
         changed = True
@@ -1134,6 +1147,37 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
         else:
             meta.pop("default_branch", None)
         changed = True
+    for bool_field in REPO_SAFETY_BOOLEANS:
+        if bool_field in payload:
+            from ctx import safety
+            if safety.truthy(payload.get(bool_field)):
+                meta[bool_field] = "true"
+            else:
+                meta.pop(bool_field, None)
+            changed = True
+    for text_field in REPO_SAFETY_TEXT:
+        if text_field in payload:
+            val = (payload.get(text_field) or "").strip()
+            if text_field == "checks_isolation" and val and val not in ("host", "docker"):
+                raise UiError(f"invalid checks_isolation {val!r}")
+            if text_field == "trust_checks" and val and val != "host":
+                raise UiError("trust_checks must be 'host' or empty")
+            if val:
+                meta[text_field] = val
+            else:
+                meta.pop(text_field, None)
+            changed = True
+    if "protected_paths" in payload:
+        raw_pp = payload.get("protected_paths")
+        if isinstance(raw_pp, list):
+            items = [str(p).strip() for p in raw_pp if str(p).strip()]
+        else:
+            items = [p.strip() for p in str(raw_pp or "").split(",") if p.strip()]
+        if items:
+            meta["protected_paths"] = items
+        else:
+            meta.pop("protected_paths", None)
+        changed = True
     if not changed:
         raise UiError("nothing to set")
     today = date.today().isoformat()
@@ -1148,7 +1192,15 @@ def set_repo(root: Path, repo_id: str, payload: dict) -> dict:
             conn.commit()
         finally:
             conn.close()
-    return {"ok": True, "id": meta.get("id")}
+    warnings: list[str] = []
+    raw_code = str(meta.get("code_path") or "").strip()
+    if raw_code and Path(raw_code).is_dir():
+        from ctx import safety
+        warnings = safety.runner_warnings(Path(raw_code), meta)
+    res = {"ok": True, "id": meta.get("id")}
+    if warnings:
+        res["warnings"] = warnings
+    return res
 
 
 def set_project_status(root: Path, project_id: str, status: str) -> dict:
@@ -1226,7 +1278,7 @@ def sync_github(root: Path, offline: bool = False, *, repos: list[str] | None = 
                 digest: bool = False, all_repos: bool = False,
                 remember: bool = False) -> dict:
     """Read-only GitHub refresh, or an offline re-index. Never writes remotely."""
-    _call(cli.cmd_sync_github, root, "@me", 30, bool(offline),
+    _call(commands.cmd_sync_github, root, "@me", 30, bool(offline),
           digest=digest, repos=repos or None, all_repos=all_repos, remember=remember)
     return {"ok": True, "offline": bool(offline)}
 
@@ -1355,11 +1407,19 @@ def approve_spec(root: Path, ref: str) -> dict:
         raise UiError(
             "on a shared server, approving a build spec is read-only. Approve it "
             "on the machine that runs builds.")
-    from ctx.spec import SpecError, approve
+    from ctx.spec import SpecError, approve, source_changed_note
+    warning = ""
+    found = objects.find(root, "contribution", ref)
+    if found is not None:
+        warning = source_changed_note(root, found[1]) or ""
     try:
-        return {"ok": True, **approve(root, ref)}
+        approved = approve(root, ref)
     except SpecError as exc:
         raise UiError(str(exc)) from exc
+    result = {"ok": True, **approved}
+    if warning:
+        result["warning"] = warning
+    return result
 
 
 def _opt_int(payload: dict, key: str) -> int | None:
@@ -1403,17 +1463,24 @@ def _repo_auto_publish(root: Path, contribution: str) -> bool:
 
 def build_task(root: Path, contribution: str, max_minutes: int | None,
                max_tokens: int | None, max_cost: float | None,
-               max_steps: int | None, tasks: TaskRunner) -> dict:
+               max_steps: int | None, tasks: TaskRunner, *,
+               resume: bool = False, retry: bool = False,
+               publish: bool | None = None, merge: bool = False,
+               wait: bool = False, wait_minutes: int | None = None,
+               repair_rounds: int | None = None) -> dict:
     """Build off the request; poll /api/task. The repo's auto_publish setting
     opens a PR after a successful build when its reach allows it."""
     require_local_execution(root)
     from ctx.agent import BuildError, build
     from ctx.models import ModelError
 
-    auto_publish = _repo_auto_publish(root, contribution)
+    do_publish = _repo_auto_publish(root, contribution) if publish is None else bool(publish)
 
     def run(progress):
-        kwargs = {"publish": auto_publish, "merge": False, "progress": progress}
+        kwargs = {
+            "publish": do_publish, "merge": bool(merge), "resume": bool(resume),
+            "retry": bool(retry), "wait": bool(wait), "progress": progress,
+        }
         if max_minutes:
             kwargs["max_minutes"] = max_minutes
         if max_tokens is not None:
@@ -1422,11 +1489,28 @@ def build_task(root: Path, contribution: str, max_minutes: int | None,
             kwargs["max_cost"] = max_cost
         if max_steps:
             kwargs["max_steps"] = max_steps
+        if wait_minutes:
+            kwargs["wait_minutes"] = wait_minutes
+        if repair_rounds is not None:
+            kwargs["repair_rounds"] = max(0, repair_rounds)
         try:
             return build(root, contribution, **kwargs)
         except (BuildError, ModelError, TimeoutError) as exc:
             raise UiError(str(exc)) from exc
     return {"ok": True, "task": tasks.start("build", contribution, run)}
+
+
+def draft_all_specs_task(root: Path, tasks: TaskRunner) -> dict:
+    """Auto-draft all open stead-build issues without drafts. Never approves."""
+    from ctx.models import ModelError
+    from ctx.spec import SpecError, auto_draft
+
+    def run(_progress):
+        try:
+            return auto_draft(root)
+        except (SpecError, ModelError, TimeoutError) as exc:
+            raise UiError(str(exc)) from exc
+    return {"ok": True, "task": tasks.start("draft-all", "all", run)}
 
 
 def _contribution_checkout(root: Path, contribution: str) -> Path:
@@ -1582,30 +1666,18 @@ def comment_contribution(root: Path, contribution: str, pr_url: str) -> dict:
 
 def judge_eval(root: Path, factory_name: str, case_id: str, version: str = "") -> dict:
     """Judge the newest draft for one factory. Local result file only."""
-    from ctx.models import ModelError, _factory_dir, _safe_segment, judge
+    from ctx.models import ModelError, _factory_dir, _safe_segment, judge, latest_draft
     try:
         safe_factory = _safe_segment(factory_name, "factory")
     except ModelError as exc:
         raise UiError(str(exc)) from exc
     if _factory_dir(root, safe_factory) is None:
         raise UiError(f"unknown factory: {safe_factory}", 404)
-    if not db.db_path(root).exists():
-        raise UiError("state.db not found — run stead init first", 404)
-    conn = db.connect(root)
     try:
-        _ensure_note_column(conn)
-        row = conn.execute(
-            "SELECT id, output, prompt_version FROM runs "
-            "WHERE factory = ? AND output IS NOT NULL AND TRIM(output) != '' "
-            "ORDER BY id DESC LIMIT 1", (safe_factory,)).fetchone()
-    finally:
-        conn.close()
-    if row is None:
-        raise UiError("no draft to judge. Run the factory with --generate, or record output.")
-    try:
+        output_text, recorded_version = latest_draft(root, safe_factory)
         return judge(root, safe_factory, case_id, None,
-                     prompt_version=version or row["prompt_version"],
-                     output_text=row["output"])
+                     prompt_version=version or recorded_version,
+                     output_text=output_text)
     except ModelError as exc:
         raise UiError(str(exc)) from exc
 
@@ -1620,7 +1692,7 @@ def promote_prompt(root: Path, factory_name: str, version: str) -> dict:
         raise UiError(
             "on a shared server, prompt promotion is read-only. Promote prompts "
             "on the machine that runs builds.")
-    _call(cli.cmd_prompt_promote, root, factory_name, version)
+    _call(commands.cmd_prompt_promote, root, factory_name, version)
     return {"ok": True, "factory": factory_name, "version": version}
 
 
@@ -1722,14 +1794,14 @@ def _call(fn, *args, **kwargs) -> None:
 def add_task(root: Path, title: str, project: str, status: str = "to-do") -> dict:
     if not (title or "").strip() or not (project or "").strip():
         raise UiError("a task needs a title and a project")
-    _call(cli.cmd_task_add, root, title.strip(), project.strip(), status or "to-do")
+    _call(commands.cmd_task_add, root, title.strip(), project.strip(), status or "to-do")
     return {"ok": True}
 
 
 def set_task_status(root: Path, task_id: str, status: str) -> dict:
     if not task_id or not status:
         raise UiError("a status change needs an id and a status")
-    _call(cli.cmd_task_set, root, task_id, status)
+    _call(commands.cmd_task_set, root, task_id, status)
     return {"ok": True}
 
 
@@ -1745,7 +1817,7 @@ def set_contribution(root: Path, payload: dict) -> dict:
         raise UiError(
             "on a shared server the author role is read-only. Set it on the "
             "machine that runs builds.")
-    _call(cli.cmd_contribution_set, root, ref,
+    _call(commands.cmd_contribution_set, root, ref,
           updates.get("state"), updates.get("ci"), updates.get("review"),
           updates.get("role"), updates.get("method"))
     return {"ok": True}
@@ -2033,6 +2105,10 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     name=payload.get("name") or "",
                     base_url=payload.get("base_url") or "",
                     api_key=payload.get("api_key"),
+                    api_key_env=payload.get("api_key_env") or None,
+                    block="reviewer" if payload.get("review") else "model",
+                    input_price=_opt_float(payload, "input_price"),
+                    output_price=_opt_float(payload, "output_price"),
                     call_timeout=_opt_int(payload, "call_timeout"),
                     context=_opt_int(payload, "context"),
                 )
@@ -2067,7 +2143,9 @@ def dispatch(root: Path, method: str, path: str, query: dict,
                     name=payload.get("name") or "",
                     base_url=payload.get("base_url") or "",
                     api_key=payload.get("api_key"),
-                    api_key_env=payload.get("api_key_env"),
+                    api_key_env=payload.get("api_key_env") or None,
+                    input_price=_opt_float(payload, "input_price"),
+                    output_price=_opt_float(payload, "output_price"),
                     call_timeout=_opt_int(payload, "call_timeout"),
                     context=_opt_int(payload, "context"))
                 result["ok"] = True
@@ -2155,11 +2233,24 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/spec/approve":
             result = approve_spec(root, payload.get("contribution") or "")
         elif path == "/api/build":
-            result = build_task(root, payload.get("contribution") or "",
-                                _opt_int(payload, "max_minutes"),
-                                _opt_int(payload, "max_tokens"),
-                                _opt_float(payload, "max_cost"),
-                                _opt_int(payload, "max_steps"), tasks)
+            if payload.get("publish") or payload.get("merge"):
+                _require_confirm(payload, "build publish/merge")
+                _refuse_shared_remote(root)
+            pub_opt = payload["publish"] if "publish" in payload else None
+            result = build_task(
+                root, payload.get("contribution") or "",
+                _opt_int(payload, "max_minutes"),
+                _opt_int(payload, "max_tokens"),
+                _opt_float(payload, "max_cost"),
+                _opt_int(payload, "max_steps"), tasks,
+                resume=bool(payload.get("resume")),
+                retry=bool(payload.get("retry")),
+                publish=pub_opt,
+                merge=bool(payload.get("merge")),
+                wait=bool(payload.get("wait")),
+                wait_minutes=_opt_int(payload, "wait_minutes"),
+                repair_rounds=_opt_int(payload, "repair_rounds"),
+            )
         elif path == "/api/build/lock/remove":
             if shared_server(root):
                 raise UiError(
@@ -2200,6 +2291,8 @@ def dispatch(root: Path, method: str, path: str, query: dict,
         elif path == "/api/spec/draft":
             result = draft_spec_task(root, payload.get("contribution") or "",
                                      bool(payload.get("redraft")), tasks)
+        elif path == "/api/spec/draft-all":
+            result = draft_all_specs_task(root, tasks)
         elif path == "/api/review":
             result = review_task(root, payload.get("contribution") or "", tasks)
         elif path == "/api/review/address":

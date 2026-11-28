@@ -28,7 +28,7 @@ all of these:
 - the contribution is `kind: issue` and **enabled** — tagged `feature-spec`
   (locally authored) or `stead-build` (the GitHub label, synced);
 - its body has a description and a `## Acceptance criteria` checklist;
-- its repo has `code_path` and a ceiling above `shadow`;
+- its repo has `code_path` (`ghost` and `shadow` build locally with zero remote writes; publishing requires `draft-pr` or higher);
 - **a person approved this exact body** with `stead spec approve`.
 
 Approval stores a SHA-256 of the body (`spec_sha`). Any later edit or sync that

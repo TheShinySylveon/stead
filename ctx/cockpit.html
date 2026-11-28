@@ -798,6 +798,28 @@ function flowTrack(c) {
   const label = at >= 4 ? "Lifecycle complete" : `Lifecycle: ${FLOW_STEPS[at]} is next, step ${at + 1} of 4`;
   return `<ol class="flow" aria-label="${esc(label)}. Repo limit: ${esc(ceiling)}">${steps}<li class="limit">limit · ${esc(ceiling)}</li></ol>`;
 }
+function repoSafetyFields(repo) {
+  const id = esc(repo.id);
+  const input = (key, label, value) => `<label class="meta">${label}
+    <input type="text" data-set-repo-text data-id="${id}" data-field="${key}" value="${esc(value ?? repo[key] ?? "")}"></label>`;
+  const select = (key, label, values, selected) => `<label class="meta">${label}
+    <select data-set-repo data-id="${id}" data-field="${key}">${options(values, selected)}</select></label>`;
+  const toggle = (key, label) => select(key, label, ["off", "on"], repo[key] ? "on" : "off");
+  return `<div class="inline fields" style="display:flex;gap:8px;flex-wrap:wrap">
+    ${input("checks", "Checks command")}
+    ${select("checks_isolation", "Checks isolation", ["host", "docker"], repo.checks_isolation || "host")}
+    ${input("checks_image", "Checks Docker image")}
+    ${input("protected_paths", "Protected paths (comma-separated)", Array.isArray(repo.protected_paths) ? repo.protected_paths.join(", ") : repo.protected_paths)}
+    ${select("trust_checks", "Trust host checks for merge", ["off", "host"], repo.trust_checks || "off")}
+    ${toggle("allow_comment", "Allow issue comments")}
+    ${toggle("allow_test_edits", "Allow test edits")}
+    ${toggle("allow_ci_edits", "Allow CI edits")}
+    ${toggle("allow_protected", "Allow protected-path edits")}
+    ${toggle("merge_without_required_checks", "Allow merge without required checks")}
+    ${toggle("merge_without_review", "Allow merge without independent review")}
+  </div>`;
+}
+
 function renderRepos() {
   const repos = state.snap.repos.filter(match);
   const contribs = (state.snap.pipeline || []).filter(match);
@@ -854,6 +876,7 @@ function renderRepos() {
     <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-bottom:16px">
       <button type="button" class="quiet" data-sync="0">Sync GitHub</button>
       <button type="button" class="quiet" data-sync="1">Re-index offline</button>
+      <button type="button" class="quiet" data-draft-all>Draft all specs</button>
       <input type="text" id="sync-scope" placeholder="Scope: owner/name, comma-separated (blank = saved/all)" aria-label="Sync scope" style="max-width:300px">
     </div>
     ${contribs.length
@@ -901,6 +924,7 @@ function renderRepos() {
                   <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="url" value="${esc(r.url || "")}" placeholder="Repo URL" aria-label="URL for ${esc(r.title)}">
                   <input type="text" data-set-repo-text data-id="${esc(r.id)}" data-field="notes" value="${esc(r.notes || "")}" placeholder="Short notes" aria-label="Notes for ${esc(r.title)}">
                 </div>
+                ${state.snap.shared_server ? "" : repoSafetyFields(r)}
               </div>
             </details>
           </div>`).join("") || `<div class="empty">No repos yet.</div>`}</div>
@@ -1198,6 +1222,11 @@ function renderSettings() {
         ${field("Base URL <span class=\"meta\">optional</span>", `<input type="text" name="base_url" placeholder="Your endpoint’s /v1 address" value="${esc(m.base_url)}">`)}
         ${field("Call timeout, seconds <span class=\"meta\">optional</span>", `<input type="text" name="call_timeout" inputmode="numeric" placeholder="300" value="${esc(m.call_timeout || "")}">`)}
         ${field("Context window, tokens <span class=\"meta\">optional</span>", `<input type="text" name="context" inputmode="numeric" placeholder="0 = unset" value="${esc(m.context || "")}">`)}
+        <div class="inline" style="margin:0">
+          ${field("Input $/1M <span class=\"meta\">optional</span>", `<input type="number" name="input_price" min="0" step="0.01" placeholder="0" value="${esc(m.input_price_per_mtok || "")}" style="width:7em">`)}
+          ${field("Output $/1M <span class=\"meta\">optional</span>", `<input type="number" name="output_price" min="0" step="0.01" placeholder="0" value="${esc(m.output_price_per_mtok || "")}" style="width:7em">`)}
+          ${field("API key env <span class=\"meta\">optional</span>", `<input type="text" name="api_key_env" placeholder="STEAD_MODEL_API_KEY" value="${esc(m.key_env || "")}">`)}
+        </div>
         ${field("API key", `<input type="password" name="api_key" placeholder="Leave blank to keep the saved key" autocomplete="off">`)}
         <div><button class="primary" type="submit">Save model</button></div>
       </form>
@@ -1231,6 +1260,10 @@ function renderSettings() {
         ${field("API key env <span class=\"meta\">optional</span>", `<input type="text" name="api_key_env" placeholder="STEAD_MODEL_API_KEY">`)}
         ${field("Call timeout, seconds <span class=\"meta\">optional</span>", `<input type="text" name="call_timeout" inputmode="numeric" placeholder="300">`)}
         ${field("Context window, tokens <span class=\"meta\">optional</span>", `<input type="text" name="context" inputmode="numeric" placeholder="0 = unset">`)}
+        <div class="inline" style="margin:0">
+          ${field("Input $/1M <span class=\"meta\">optional</span>", `<input type="number" name="input_price" min="0" step="0.01" placeholder="0" style="width:7em">`)}
+          ${field("Output $/1M <span class=\"meta\">optional</span>", `<input type="number" name="output_price" min="0" step="0.01" placeholder="0" style="width:7em">`)}
+        </div>
         ${field("API key", `<input type="password" name="api_key" placeholder="Leave blank to keep the saved key" autocomplete="off">`)}
         <div><button class="quiet" type="submit">Save profile</button></div>
       </form>
@@ -1242,7 +1275,10 @@ function renderSettings() {
       <form class="inline fields" id="set-factory">
         ${field("Trigger", `<select name="trigger">${options(state.snap.choices.factory_trigger, (state.snap.factory || {}).trigger || "on-demand")}</select>`)}
         ${field("Default reach", `<select name="reach">${options(state.snap.choices.factory_reach_install, (state.snap.factory || {}).reach || "shadow")}</select>`)}
-        ${field("Build minutes", `<input type="number" name="build_minutes" min="1" max="1440" placeholder="240" value="${esc((state.snap.factory || {}).build_minutes || 240)}" style="width:7em">`)}
+        ${field("Build minutes", `<input type="number" name="build_minutes" min="1" max="1440" placeholder="240" value="${esc((state.snap.factory || {}).build_minutes || 240)}" style="width:6.5em">`)}
+        ${field("Builds/day", `<input type="number" name="max_builds_per_day" min="0" max="100" placeholder="3" value="${esc((state.snap.factory || {}).max_builds_per_day ?? 3)}" style="width:5.5em">`)}
+        ${field("Max tokens", `<input type="number" name="max_tokens_per_build" min="0" placeholder="10000000" value="${esc((state.snap.factory || {}).max_tokens_per_build ?? 10000000)}" style="width:7.5em">`)}
+        ${field("Max USD", `<input type="number" name="max_cost_per_build_usd" min="0" step="0.01" placeholder="0" value="${esc((state.snap.factory || {}).max_cost_per_build_usd ?? 0)}" style="width:5.5em">`)}
         <button class="primary" type="submit">Save factory default</button>
       </form>
       <div class="inline" style="margin-top:8px">
@@ -1255,7 +1291,11 @@ function renderSettings() {
     <div class="panel" style="padding:14px 16px;margin-bottom:16px">
       <strong>Build ledger</strong>
       <p class="meta">The dogfood numbers: specs built, merged, correct, and the failure rate.</p>
-      <button type="button" class="quiet" data-metrics>Show metrics</button>
+      <div class="inline fields" style="margin:0">
+        <input type="text" id="metrics-repo" placeholder="Repo id (optional)" aria-label="Filter metrics by repo" style="max-width:220px">
+        <input type="text" id="metrics-since" placeholder="Since YYYY-MM-DD" aria-label="Filter metrics since date" style="max-width:170px">
+        <button type="button" class="quiet" data-metrics>Show metrics</button>
+      </div>
       <div id="metrics-result" style="margin-top:8px"></div>
     </div>
     <div class="section-title">Capture and schedule</div>
@@ -1439,10 +1479,27 @@ function contributionDetail(data, title, id) {
   const stage = flow.stage || "";
   const primary = (flow.actions || []).map(a =>
     `<button type="button" class="${a.tone}" data-action="${a.key}" data-id="${esc(actId)}" data-title="${esc(title)}">${esc(a.label)}</button>`).join("");
+  const metaFields = data.meta || {};
+  const targetId = data.id || id;
+  const sourceId = metaFields.drafted_from || targetId;
   const review = ["built", "published"].includes(stage)
     ? `<button type="button" class="quiet" data-review="${esc(actId)}">Review</button>` : "";
+  const redraft = metaFields.kind === "issue" && stage && !done
+    ? `<button type="button" class="quiet" data-action="redraft" data-id="${esc(sourceId)}" data-title="${esc(title)}">Redraft</button>` : "";
   const pipe = (state.snap.pipeline || []).find(x => x.act_id === actId) || {};
   const ceiling = repoCeiling(pipe.repo || flow.repo || "");
+  const choices = state.snap.choices || {};
+  const contribFields = `
+    <details style="margin-top:10px">
+      <summary class="meta">Fields</summary>
+      <div class="inline" style="margin-top:8px;flex-wrap:wrap">
+        <label class="meta">State <select data-set-contrib data-id="${esc(targetId)}" data-field="state">${options(choices.contrib_state || ["open", "closed", "merged"], metaFields.state || "open")}</select></label>
+        <label class="meta">CI <select data-set-contrib data-id="${esc(targetId)}" data-field="ci">${options(choices.contrib_ci || ["none", "pending", "pass", "fail"], metaFields.ci || "none")}</select></label>
+        <label class="meta">Review <select data-set-contrib data-id="${esc(targetId)}" data-field="review">${options(choices.contrib_review || ["none", "requested", "approved", "changes"], metaFields.review || "none")}</select></label>
+        <label class="meta">Role <select data-set-contrib data-id="${esc(targetId)}" data-field="role">${options(choices.contrib_role || ["author", "assignee", "reviewer"], metaFields.role || "author")}</select></label>
+        <label class="meta">Method <select data-set-contrib data-id="${esc(targetId)}" data-field="method">${options(choices.method || ["spec-kit", "builtin"], metaFields.method || "spec-kit")}</select></label>
+      </div>
+    </details>`;
   const result = state.results[actId];
   const resultNote = result ? `<div class="result-note ${result.ok ? "ok" : "bad"}" role="status">${esc(result.text)}</div>` : "";
   const buildOptions = ["approved", "built", "published"].includes(stage) ? `
@@ -1453,6 +1510,9 @@ function contributionDetail(data, title, id) {
         <input type="number" name="max_steps" min="1" placeholder="Steps" aria-label="Max steps" style="width:5.5em">
         <input type="number" name="max_tokens" min="0" placeholder="Tokens" aria-label="Max tokens" style="width:6.5em">
         <input type="number" name="max_cost" min="0" step="0.01" placeholder="USD" aria-label="Max cost" style="width:6em">
+        <label class="meta" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" name="resume"> Resume</label>
+        <label class="meta" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" name="retry"> Retry</label>
+        <label class="meta" style="display:inline-flex;gap:4px;align-items:center"><input type="checkbox" name="wait"> Wait CI</label>
         <label class="meta" style="display:inline-flex;gap:6px;align-items:center">Reach <select name="reach" aria-label="Reach (repo limit: ${esc(ceiling)})">${(state.snap.choices.factory_reach || []).map(r => `<option value="${esc(r)}"${r === ceiling ? " selected" : ""}>${esc(r)}</option>`).join("")}</select></label>
         <button type="button" class="quiet" data-assemble="${esc(actId)}">Preview bundle</button>
       </div>
@@ -1469,9 +1529,11 @@ function contributionDetail(data, title, id) {
           ${chip(flow.stage_label || "Ready to draft", done ? "done" : "doing")}
           ${primary}
           ${review}
+          ${redraft}
         </div>
         ${resultNote}
         ${buildOptions}
+        ${contribFields}
         <details style="margin-top:10px">
           <summary class="meta">Edit spec</summary>
           <form id="save-spec" data-id="${esc(data.id || id)}" style="margin-top:8px">
@@ -1727,6 +1789,23 @@ document.body.addEventListener("click", async (event) => {
     }
     return;
   }
+  const draftAll = event.target.closest("[data-draft-all]");
+  if (draftAll) {
+    try {
+      draftAll.disabled = true;
+      const result = await awaitTask("/api/spec/draft-all", {}, "Draft all specs");
+      const drafted = result.drafted || [];
+      const skipped = result.skipped || [];
+      const summary = `Drafted ${drafted.length}; skipped ${skipped.length}.`;
+      toast(skipped.length ? `${summary} ${skipped.map(item => `${item.id}: ${item.reason}`).join("; ")}` : summary);
+      await load();
+    } catch (err) {
+      toast(err.message);
+    } finally {
+      draftAll.disabled = false;
+    }
+    return;
+  }
   const sync = event.target.closest("[data-sync]");
   if (sync) {
     try {
@@ -1875,13 +1954,13 @@ document.body.addEventListener("click", async (event) => {
     const act = actionBtn.dataset.action;
     try {
       actionBtn.disabled = true;
-      if (act === "draft") {
-        await awaitTask("/api/spec/draft", {contribution: id}, "Draft spec", logFor(actionBtn));
-        toast("Drafted. Now approve it.");
+      if (act === "draft" || act === "redraft") {
+        await awaitTask("/api/spec/draft", {contribution: id, redraft: act === "redraft"}, act === "redraft" ? "Redraft spec" : "Draft spec", logFor(actionBtn));
+        toast(act === "redraft" ? "Redrafted. Re-approve before building." : "Drafted. Now approve it.");
       } else if (act === "approve") {
         if (!confirm("Approve this spec body for building? Any later edit needs re-approval.")) return;
-        await api("/api/spec/approve", {method: "POST", body: JSON.stringify({contribution: id})});
-        toast("Spec approved");
+        const approved = await api("/api/spec/approve", {method: "POST", body: JSON.stringify({contribution: id})});
+        toast(approved && approved.warning ? "Spec approved (" + approved.warning + ")" : "Spec approved");
       } else if (act === "build") {
         if (!confirm("Build " + title + " with the model? It plans, runs checks, and commits to a branch. It opens a pull request only if this repo is set to auto-publish — otherwise use Publish.")) return;
         const payload = {contribution: id};
@@ -1891,11 +1970,18 @@ document.body.addEventListener("click", async (event) => {
             const el = detail.querySelector('[data-build-options] [name="' + name + '"]');
             return el && el.value !== "" ? Number(el.value) : undefined;
           };
+          const chk = (name) => {
+            const el = detail.querySelector('[data-build-options] [name="' + name + '"]');
+            return !!(el && el.checked);
+          };
           const mm = opt("max_minutes"); if (mm) payload.max_minutes = mm;
           const ms = opt("max_steps"); if (ms) payload.max_steps = ms;
           // 0 means "off" for tokens/cost and must reach the server; only an empty field is omitted.
           const mt = opt("max_tokens"); if (mt !== undefined) payload.max_tokens = mt;
           const mc = opt("max_cost"); if (mc !== undefined) payload.max_cost = mc;
+          if (chk("resume")) payload.resume = true;
+          if (chk("retry")) payload.retry = true;
+          if (chk("wait")) payload.wait = true;
         }
         const result = await awaitTask("/api/build", payload, "Build", logFor(actionBtn));
         const where = result && result.branch ? "Built on " + result.branch : "Build finished";
@@ -2181,7 +2267,13 @@ document.body.addEventListener("click", async (event) => {
   if (event.target.closest("[data-metrics]")) {
     const out = document.getElementById("metrics-result");
     try {
-      const r = await api("/api/metrics");
+      const mRepo = ((document.getElementById("metrics-repo") || {}).value || "").trim();
+      const mSince = ((document.getElementById("metrics-since") || {}).value || "").trim();
+      const qs = new URLSearchParams();
+      if (mRepo) qs.set("repo", mRepo);
+      if (mSince) qs.set("since", mSince);
+      const url = "/api/metrics" + (qs.toString() ? "?" + qs.toString() : "");
+      const r = await api(url);
       const rows = (r.recent || []).map(rec => `<div class="row">
         <span><strong>${esc(rec.title)}</strong><br><small>${esc(rec.created)} · ${esc(rec.outcome)} · ${esc(rec.repo)}</small></span>
         <span class="chips">${chip(rec.correct || "unverified", rec.correct === "true" ? "done" : rec.correct === "false" ? "fail" : "doing")}
@@ -2363,7 +2455,9 @@ document.body.addEventListener("change", async (event) => {
       await load();
     } else if (event.target.closest("[data-set-repo]")) {
       const repo = event.target.closest("[data-set-repo]");
-      await api("/api/repo", {method: "POST", body: JSON.stringify({id: repo.dataset.id, [repo.dataset.field]: repo.value})});
+      const field = repo.dataset.field;
+      const value = field === "trust_checks" && repo.value === "off" ? "" : repo.value;
+      await api("/api/repo", {method: "POST", body: JSON.stringify({id: repo.dataset.id, [field]: value})});
       toast("Repo updated");
       await load();
     } else if (event.target.closest("[data-set-repo-text]")) {
@@ -2431,11 +2525,17 @@ document.body.addEventListener("submit", async (event) => {
     } else if (form.id === "set-factory") {
       const body = {trigger: data.trigger, reach: data.reach};
       if (data.build_minutes) body.build_minutes = Number(data.build_minutes);
+      if (data.max_builds_per_day !== "") body.max_builds_per_day = Number(data.max_builds_per_day);
+      if (data.max_tokens_per_build !== "") body.max_tokens_per_build = Number(data.max_tokens_per_build);
+      if (data.max_cost_per_build_usd !== "") body.max_cost_per_build_usd = Number(data.max_cost_per_build_usd);
       await api("/api/factory/defaults", {method: "POST", body: JSON.stringify(body)});
       toast("Factory default saved");
     } else if (form.id === "set-model") {
       const body = {provider: data.provider, name: data.name, base_url: data.base_url || ""};
       if (data.api_key) body.api_key = data.api_key;
+      if (data.api_key_env) body.api_key_env = data.api_key_env;
+      if (data.input_price !== "") body.input_price = Number(data.input_price);
+      if (data.output_price !== "") body.output_price = Number(data.output_price);
       if (data.call_timeout) body.call_timeout = Number(data.call_timeout);
       if (data.context) body.context = Number(data.context);
       await api("/api/model", {method: "POST", body: JSON.stringify(body)});
@@ -2444,6 +2544,8 @@ document.body.addEventListener("submit", async (event) => {
       const body = {profile: data.profile, provider: data.provider, name: data.name, base_url: data.base_url || ""};
       if (data.api_key) body.api_key = data.api_key;
       if (data.api_key_env) body.api_key_env = data.api_key_env;
+      if (data.input_price !== "") body.input_price = Number(data.input_price);
+      if (data.output_price !== "") body.output_price = Number(data.output_price);
       if (data.call_timeout) body.call_timeout = Number(data.call_timeout);
       if (data.context) body.context = Number(data.context);
       await api("/api/model/add", {method: "POST", body: JSON.stringify(body)});

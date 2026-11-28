@@ -164,12 +164,12 @@ def onboard(root: Path, title: str, *, kind: str = "own", url: str | None = None
     Returns a result dict. Raises OnboardError for bad input. A missing or
     failing `specify` does not undo the context objects.
     """
-    from ctx import cli, db
+    from ctx import commands, db
 
     title = (title or "").strip()
     if not title or len(title) > 200:
         raise OnboardError("needs a title of at most 200 characters")
-    if kind not in cli.REPO_KINDS:
+    if kind not in commands.REPO_KINDS:
         raise OnboardError(f"invalid kind {kind!r}")
     if method not in factory.CONTRIB_METHODS:
         raise OnboardError(f"invalid method {method!r}")
@@ -183,10 +183,10 @@ def onboard(root: Path, title: str, *, kind: str = "own", url: str | None = None
     project_id, project_path = _alloc(root, "project", title)
     doc_id, doc_path = _alloc(root, "document", f"{title} constitution")
 
-    slug = cli._repo_slug(title, url)
+    slug = commands._repo_slug(title, url)
     n = 2
     while (root / "context" / "repos" / f"{slug}.md").exists():
-        slug, n = f"{cli._repo_slug(title, url)}-{n}", n + 1
+        slug, n = f"{commands._repo_slug(title, url)}-{n}", n + 1
     repo_id = f"repo-{slug}"
     repo_path = root / "context" / "repos" / f"{slug}.md"
 

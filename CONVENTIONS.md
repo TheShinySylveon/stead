@@ -161,7 +161,8 @@ not depend on `method`. `method` selects only the *tooling*:
 - `builtin` — the same phases, hand-rolled as `constitution.md` / `spec.md` /
   `plan.md` / `tasks.md`. No `specify` CLI.
 
-`ctx` never imports or invokes `specify`. Set or change it with
+Factory assembly never imports or invokes `specify` (`stead onboard` may run
+`specify init` unless `--no-specify` is passed). Set or change it with
 `stead contribution add --method ...` or `stead contribution set ID --method ...`.
 Full flow, install, and own-vs-OSS rules: `docs/spec-kit-workflow.md`.
 EXAMPLE seed issue 202 sets `method: spec-kit`; issue 201 omits the field and
@@ -170,7 +171,8 @@ seeds the highest version; switch with `stead prompt promote`).
 
 The assembler applies **deterministic quality flags** (no LLM):
 `missing-acceptance-criteria` (no checklist), `vague-spec` (description under
-25 words), `large-spec` (over 8 criteria or 400 description words). Any flag
+25 words), `large-spec` (over 8 criteria or 400 description words),
+`fabricated-value`, `vague-criterion`, and `vague-plan`. Any flag
 means **NEEDS DECOMPOSITION** — an agent must produce a decomposition /
 clarification plan, never guess and build.
 

@@ -350,19 +350,19 @@ class ScheduleAndSyncTest(unittest.TestCase):
         unchanged = {"offline": False, "fetched": 0, "new": 0, "updated": 0,
                      "repos": 0, "contributions": 0}
         with unittest.mock.patch("ctx.sync.sync_github", return_value=unchanged), \
-             unittest.mock.patch("ctx.cli.cmd_digest") as digest:
+             unittest.mock.patch("ctx.commands.cmd_digest") as digest:
             self.assertEqual(cli.cmd_sync_github(root, digest=True), 0)
             digest.assert_not_called()
         changed = dict(unchanged, new=1)
         with unittest.mock.patch("ctx.sync.sync_github", return_value=changed), \
-             unittest.mock.patch("ctx.cli.cmd_digest", return_value=0) as digest:
+             unittest.mock.patch("ctx.commands.cmd_digest", return_value=0) as digest:
             self.assertEqual(cli.cmd_sync_github(root, digest=True), 0)
             digest.assert_called_once()
         # A merge-only reconciliation (no fetched/new/updated) also counts as a
         # change, so the digest still assembles.
         reconciled = dict(unchanged, reconciled_prs=1)
         with unittest.mock.patch("ctx.sync.sync_github", return_value=reconciled), \
-             unittest.mock.patch("ctx.cli.cmd_digest", return_value=0) as digest:
+             unittest.mock.patch("ctx.commands.cmd_digest", return_value=0) as digest:
             self.assertEqual(cli.cmd_sync_github(root, digest=True), 0)
             digest.assert_called_once()
 

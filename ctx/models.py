@@ -501,6 +501,28 @@ def run_eval_checks(root: Path, factory_name: str | None = None,
             "problems": checked["problems"] + gates["problems"], "spec_gates": gates}
 
 
+def latest_draft(root: Path, factory_name: str) -> tuple[str, str]:
+    """Return (output_text, prompt_version) for the newest recorded draft of one
+    factory in state.db. Shared by CLI `stead eval judge` and cockpit judge."""
+    safe = _safe_segment(factory_name, "factory")
+    from ctx import db
+    if not db.db_path(root).exists():
+        raise ModelError("state.db not found — run stead init first")
+    conn = db.connect(root)
+    try:
+        row = conn.execute(
+            "SELECT output, prompt_version FROM runs "
+            "WHERE factory = ? AND output IS NOT NULL AND TRIM(output) != '' "
+            "ORDER BY id DESC LIMIT 1", (safe,)).fetchone()
+    finally:
+        conn.close()
+    if row is None:
+        raise ModelError(
+            "no draft to judge. Run the factory with --generate, record output, "
+            "or pass --output PATH.")
+    return str(row["output"]), str(row["prompt_version"] or "")
+
+
 def judge(root: Path, factory_name: str, case_id: str, output_path: str | None,
           *, transport=None, timeout: float | None = None, prompt_version: str = "",
           output_text: str | None = None) -> dict:
