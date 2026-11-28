@@ -28,6 +28,7 @@ repo context, and one context graph across repos.
 - [Factories](factories.md) — the four workflows, scheduling, and why a draft is not a merge.
 - [Models](models.md) — the optional OpenAI-compatible endpoint factories draft with.
 - [Spec Kit](spec-kit-workflow.md) — planning before code, and `stead onboard`.
+- [Review guide](review.md) — what to verify before merging a PR.
 
 ## Not in this folder
 

@@ -361,8 +361,9 @@ large specs are flagged, never guessed; report CI honestly. Assembly alone
 does no LLM/network/subprocess/remote writes. `stead build` is a separate,
 explicit step.
 
-**PR review before merge (all repos and delivery modes).** Check the live PR,
-including inline threads, review summaries, and top-level comments, for human
+**PR review before merge (all repos and delivery modes).** Use the
+[review guide](docs/review.md). Check the live PR, including inline threads,
+review summaries, and top-level comments, for human
 and bot feedback (including Greptile). Address every actionable comment before
 merging or handing off as ready to merge: make and verify the fix on the current
 PR head, or record why no change is needed and get reviewer or maintainer
