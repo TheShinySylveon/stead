@@ -40,7 +40,8 @@ The same form is in the cockpit, under Settings (including optional `--input-pri
 
 ## Multiple profiles & role bindings
 
-Save named provider connections and bind them to individual jobs (`build`, `draft`, `review`, `address`):
+Save named provider connections and bind them to individual jobs (`build`,
+`draft`, `review`, `address`, `judge`):
 
 ```bash
 python -m stead model add local --provider ollama --name qwen3:30b --context 32768
@@ -48,12 +49,17 @@ python -m stead model add strong --provider openai --name gpt-4.1 --key-env OPEN
 python -m stead model role draft strong
 python -m stead model role review strong
 python -m stead model role build local
+python -m stead model role judge strong
 python -m stead model profiles
 python -m stead model role review -   # unbind (falls back to default model)
 python -m stead model remove local
 ```
 
-Settings → **Model profiles** exposes the same profile CRUD and role bindings.
+Settings → **Model profiles** exposes the same profile management and role
+bindings. The `judge` role is used only for factory evals. Clear the binding
+(or run `python -m stead model role judge -`) to use the active build model,
+including a bound build profile. Eval results record the model that judged
+the draft.
 
 ## Verify it works
 

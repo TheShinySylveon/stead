@@ -389,6 +389,32 @@ class ModelTest(unittest.TestCase):
         self.assertNotIn("api_key", recorded)
         self.assertIn("pass", recorded)
 
+    def test_eval_judge_uses_bound_judge_then_build_profile_then_legacy_model(self) -> None:
+        root = _root()
+        self.addCleanup(lambda: __import__("shutil").rmtree(root.parent, ignore_errors=True))
+        models.set_model(root, provider="ollama", name="legacy-model")
+        models.add_model(root, "builder", provider="ollama", name="build-model")
+        models.add_model(root, "grader", provider="ollama", name="judge-model")
+        models.set_role(root, "build", "builder")
+
+        for judge, build, expected in (("grader", "builder", "judge-model"),
+                                       ("", "builder", "build-model"),
+                                       ("", "", "legacy-model")):
+            with self.subTest(expected=expected):
+                models.set_role(root, "judge", judge)
+                models.set_role(root, "build", build)
+
+                def transport(body, settings):
+                    self.assertEqual(settings["name"], expected)
+                    self.assertEqual(body["model"], expected)
+                    return {"choices": [{"message": {"content": "verdict: pass\nreason: meets criteria"}}]}
+
+                result = models.judge(root, "weekly-project-status", "eval-ok", None,
+                                      output_text="The project is fine.", transport=transport)
+                self.assertEqual(result["model"], expected)
+                recorded = json.loads((root / result["path"]).read_text(encoding="utf-8"))
+                self.assertEqual(recorded["model"], expected)
+
     def test_write_output_does_not_execute_the_draft(self) -> None:
         root = _root()
         self.addCleanup(lambda: __import__("shutil").rmtree(root.parent, ignore_errors=True))
