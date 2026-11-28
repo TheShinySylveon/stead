@@ -33,3 +33,10 @@ repo context, and one context graph across repos.
 
 - `examples/context/` — sample objects. Not loaded into a fresh checkout.
 - `PLAN.md` — design record and the autonomy roadmap. Do not treat it as a user guide.
+
+## Keep local artifacts out of commits
+
+Use `.worktrees/` for local Git worktrees and `.venv/` for an optional development
+environment. Git and Docker exclude these, tool caches, local secrets, and generated
+factory runs. Keep authored Markdown under `context/` or `inbox/` in your own
+context repository; don't put your working data in the public Stead repo.

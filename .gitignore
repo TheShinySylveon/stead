@@ -7,25 +7,41 @@ state.db-shm
 factories/*/runs/
 factories/*/evals/results/
 
-# Python artifacts
+# Local checkouts, Python environments, and build output
+/.worktrees/
+/.venv/
+/venv/
+/build/
+/dist/
+*.egg-info/
+
+# Python bytecode and tool caches
 __pycache__/
 *.pyc
 *.pyo
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+/htmlcov/
 
 # Deployment secrets. Never commit an access token or a password hash.
 stead.json
 private/
 .env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
 
 # One local kill switch. Create with `stead factory stop`.
 .stead-stop
 
-# Hallmark redesign records. Not the product.
-.hallmark/
-
-# Website working files. Not part of the Stead package.
-site/
-site.zip
+# Local design and website drafts, not shipped with Stead
+/.hallmark/
+/site/
+/site.zip
 
 # OS noise
 .DS_Store
